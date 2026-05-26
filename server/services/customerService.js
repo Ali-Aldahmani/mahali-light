@@ -2,6 +2,7 @@ const { withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
+const journalService = require('./journalService');
 
 const VALID_METHODS = new Set(['cash', 'bank_transfer']);
 
@@ -124,6 +125,18 @@ async function collectPayment({
       });
     }
 
+    // Auto-post the matching journal entry. Bank transfers ride the same
+    // accounts-receivable → bank flow as cash receipts.
+    await journalService.postCustomerPaymentEntry(client, {
+      paymentId: payment.id,
+      amount: amt,
+      method: method === 'cash' ? 'cash' : 'bank',
+      bankAccountId,
+      customerName: customer.name,
+      date: payment.payment_date,
+      userId: employeeId,
+    });
+
     return {
       payment,
       customer: {
@@ -226,6 +239,12 @@ async function voidPayment({ paymentId }) {
           allowOverdraft: true,
         });
       }
+
+      // Reverse the journal entries from the original collection.
+      await journalService.reverseCustomerPaymentEntries(client, paymentId, {
+        date: new Date().toISOString().slice(0, 10),
+        userId: pm.employee_id,
+      });
     }
 
     return {

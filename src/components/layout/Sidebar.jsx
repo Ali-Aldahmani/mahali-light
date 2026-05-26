@@ -25,6 +25,10 @@ import {
   CalendarDays,
   CalendarOff,
   Zap,
+  LineChart,
+  Scale,
+  BookOpen,
+  CalendarRange,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
@@ -163,6 +167,11 @@ const NAV = [
     permission: 'bills.view',
     badge: 'billsAttention',
   },
+  { section: 'Finance' },
+  { to: '/finance',          label: 'Finance',           icon: LineChart,     permission: 'finance.view_dashboard' },
+  { to: '/finance/journal',  label: 'Journal entries',   icon: BookOpen,      permission: 'finance.view_journal'    },
+  { to: '/finance/accounts', label: 'Chart of accounts', icon: Scale,         permission: 'finance.view_journal'    },
+  { to: '/finance/periods',  label: 'Periods',           icon: CalendarRange, permission: 'finance.view_journal'    },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },

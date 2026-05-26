@@ -4,6 +4,7 @@ import {
   FolderTree,
   Package,
   Receipt,
+  LineChart,
   RotateCcw,
   Shield,
   ShieldAlert,
@@ -23,6 +24,7 @@ import PageHeader from '../components/ui/PageHeader.jsx';
 import { useAuthStore } from '../store/authStore.js';
 import PermissionGate from '../components/ui/PermissionGate.jsx';
 import UpcomingBillsWidget from '../components/ui/UpcomingBillsWidget.jsx';
+import FinanceDashboardWidget from '../components/ui/FinanceDashboardWidget.jsx';
 
 function StatCard({ icon: Icon, label, value, to }) {
   const body = (
@@ -165,6 +167,14 @@ export default function DashboardPage() {
             to="/expenses"
           />
         </PermissionGate>
+        <PermissionGate permission="finance.view_dashboard">
+          <StatCard
+            icon={LineChart}
+            label="Finance"
+            value="P&L · Balance · VAT"
+            to="/finance"
+          />
+        </PermissionGate>
         <PermissionGate permission="user.edit">
           <StatCard icon={UserCog} label="Users" value="Manage accounts" to="/users" />
         </PermissionGate>
@@ -186,22 +196,25 @@ export default function DashboardPage() {
         </PermissionGate>
       </div>
 
-      <PermissionGate permission="bills.view">
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <PermissionGate permission="bills.view">
           <div className="lg:col-span-1">
             <UpcomingBillsWidget />
           </div>
-        </div>
-      </PermissionGate>
+        </PermissionGate>
+        <PermissionGate permission="finance.view_dashboard">
+          <div className="lg:col-span-2">
+            <FinanceDashboardWidget />
+          </div>
+        </PermissionGate>
+      </div>
 
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          POS, invoicing, warranties, returns, treasury, attendance and bills
-          are all live — open <strong>POS</strong> to ring up a sale, head to
-          <strong> Treasury</strong> for the cash drawer and banks, or jump to
-          <strong> Bills &amp; expenses</strong> to track recurring spend.
-          Finance and reporting are next.
+          The finance system is now live — P&amp;L, balance sheet, cash flow
+          and the UAE VAT report all run live from the journal. Reporting,
+          analytics and backup polish are next.
         </p>
       </div>
     </div>

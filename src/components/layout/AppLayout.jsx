@@ -68,6 +68,10 @@ const TITLES = {
   '/attendance/holidays': 'Holidays',
   '/expenses': 'Bills & expenses',
   '/expenses/bills': 'Bill',
+  '/finance': 'Finance',
+  '/finance/journal': 'Journal entries',
+  '/finance/accounts': 'Chart of accounts',
+  '/finance/periods': 'Financial periods',
 };
 
 export default function AppLayout() {

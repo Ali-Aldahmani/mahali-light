@@ -3,6 +3,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
+const journalService = require('./journalService');
 const { deleteAttachmentFile } = require('../utils/upload');
 
 const PAYMENT_METHODS = new Set(['cash', 'bank']);
@@ -115,6 +116,26 @@ async function createExpense({
         allowOverdraft: true,
       });
     }
+
+    // Resolve the category name so the journal entry hits the right account.
+    let categoryName = null;
+    if (categoryId) {
+      const { rows: catRows } = await client.query(
+        `SELECT name FROM expense_categories WHERE id = $1`,
+        [categoryId],
+      );
+      categoryName = catRows[0]?.name || null;
+    }
+
+    await journalService.postExpenseEntry(client, {
+      expenseId: expense.id,
+      amount: amt,
+      method: paymentMethod,
+      categoryName,
+      description: description.trim(),
+      date: expense.expense_date,
+      userId,
+    });
 
     await logActivity({
       entityType: 'expense',
@@ -340,6 +361,14 @@ async function deleteExpense({ id, userId }) {
         });
       }
     }
+
+    // Reverse the journal entries for this expense before the row is deleted
+    // (ON DELETE RESTRICT against the chart_of_accounts would otherwise block
+    // a row that still has journal_lines linked through a deleted ref).
+    await journalService.reverseExpenseEntries(client, id, {
+      date: todayIso(),
+      userId,
+    });
 
     if (expense.receipt_attachment) {
       try {

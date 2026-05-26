@@ -2,6 +2,7 @@ const { withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { applyStockMovement } = require('./stockService');
 const { nextDocumentNumber } = require('../utils/docNumbers');
+const journalService = require('./journalService');
 
 // Round to 2 decimals (currency) to avoid floating-point drift.
 function money(n) {
@@ -65,6 +66,8 @@ async function receiveItems({ poId, items, employeeId }) {
 
     const affectedVariants = [];
     const costChanges = [];
+    // Track value received in this call to post a single journal entry below.
+    let receivedValue = 0;
 
     for (const i of items) {
       if (!i.id || !Number.isFinite(Number(i.quantityReceived))) continue;
@@ -125,6 +128,8 @@ async function receiveItems({ poId, items, employeeId }) {
           WHERE id = $2`,
         [recvQty, i.id],
       );
+
+      receivedValue = money(receivedValue + recvQty * Number(item.cost_price_per_unit));
 
       // Cost history record for every receive.
       await client.query(
@@ -201,6 +206,20 @@ async function receiveItems({ poId, items, employeeId }) {
       `SELECT * FROM purchase_orders WHERE id = $1`,
       [poId],
     );
+
+    // Post the receive's journal entry. VAT on the PO is captured separately
+    // by the VAT report straight from purchase_orders.vat_amount, so we keep
+    // the receive entry to inventory ↔ payables only.
+    if (receivedValue > 0) {
+      await journalService.postPurchaseReceiveEntry(client, {
+        poId,
+        poNumber: po.po_number,
+        date: new Date().toISOString().slice(0, 10),
+        inventoryValue: receivedValue,
+        vatAmount: 0,
+        userId: employeeId,
+      });
+    }
 
     return {
       po: updatedPo[0],

@@ -11,6 +11,7 @@ const {
 } = require('./warrantyService');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
+const journalService = require('./journalService');
 
 // Lazy-require to avoid circular deps and to keep puppeteer cold-start cost
 // off the boot path. Returns null if PDF generation is unavailable.
@@ -443,6 +444,33 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
 
     const totals = await recalculateAndPersistTotals(client, invoiceId);
 
+    // Compute COGS (cost × qty across all items) for the sale's journal pass.
+    let cogsAmount = 0;
+    for (const it of items) {
+      const cost = Number(it.cost_price_at_time) || 0;
+      cogsAmount += cost * Number(it.quantity);
+    }
+    cogsAmount = money(cogsAmount);
+
+    // Auto-post the sale journal entry inside the same transaction so a
+    // closed period or unbalanced ledger fails the entire confirm.
+    // Use taxableAmount (subtotal minus discounts) as the revenue line so the
+    // sum of (revenue + tax) equals what the customer actually paid.
+    await journalService.postSaleEntry(client, {
+      invoiceId,
+      invoiceNumber: invoice.invoice_number,
+      date: new Date().toISOString().slice(0, 10),
+      subtotal: totals.taxableAmount,
+      taxAmount: totals.taxAmount,
+      payments: payments.map((p) => ({
+        method: p.method,
+        amount: p.amount,
+        bankAccountId: p.bank_account_id || null,
+      })),
+      cogsAmount,
+      userId: employeeId,
+    });
+
     await client.query(
       `UPDATE invoices
           SET status = 'confirmed',
@@ -699,6 +727,16 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
           );
         }
       }
+    }
+
+    // Reverse the sale's journal entries if it was confirmed. Drafts have no
+    // ledger footprint so they don't need any journal action.
+    if (invoice.status === 'confirmed') {
+      await journalService.reverseSaleEntries(client, invoiceId, {
+        invoiceNumber: invoice.invoice_number,
+        date: new Date().toISOString().slice(0, 10),
+        userId: employeeId,
+      });
     }
 
     await client.query(

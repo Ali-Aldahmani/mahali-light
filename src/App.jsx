@@ -41,6 +41,10 @@ import LeaveBalancesPage from './pages/attendance/LeaveBalancesPage.jsx';
 import HolidaysPage from './pages/attendance/HolidaysPage.jsx';
 import ExpensesPage from './pages/expenses/ExpensesPage.jsx';
 import BillDetailPage from './pages/expenses/BillDetailPage.jsx';
+import FinancePage from './pages/finance/FinancePage.jsx';
+import JournalPage from './pages/finance/JournalPage.jsx';
+import AccountsPage from './pages/finance/AccountsPage.jsx';
+import PeriodsPage from './pages/finance/PeriodsPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -389,6 +393,47 @@ export default function App() {
             element={
               <ProtectedRoute permission="bills.view">
                 <BillDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/finance"
+            element={
+              <ProtectedRoute permission="finance.view_dashboard">
+                <FinancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/journal"
+            element={
+              <ProtectedRoute permission="finance.view_journal">
+                <JournalPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/journal/:id"
+            element={
+              <ProtectedRoute permission="finance.view_journal">
+                <JournalPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/accounts"
+            element={
+              <ProtectedRoute permission="finance.view_journal">
+                <AccountsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finance/periods"
+            element={
+              <ProtectedRoute permission="finance.view_journal">
+                <PeriodsPage />
               </ProtectedRoute>
             }
           />

@@ -67,6 +67,15 @@ const ERROR_CODES = {
   BIZ_BANK_HAS_BALANCE: 'BIZ_BANK_HAS_BALANCE',
   BIZ_NO_DEFAULT_BANK: 'BIZ_NO_DEFAULT_BANK',
 
+  // Phase 13 — Finance
+  BIZ_JOURNAL_UNBALANCED: 'BIZ_JOURNAL_UNBALANCED',
+  BIZ_JOURNAL_IMMUTABLE: 'BIZ_JOURNAL_IMMUTABLE',
+  BIZ_PERIOD_CLOSED: 'BIZ_PERIOD_CLOSED',
+  BIZ_PERIOD_NOT_FOUND: 'BIZ_PERIOD_NOT_FOUND',
+  BIZ_ACCOUNT_SYSTEM: 'BIZ_ACCOUNT_SYSTEM',
+  BIZ_ACCOUNT_IN_USE: 'BIZ_ACCOUNT_IN_USE',
+  BIZ_ACCOUNT_NOT_FOUND: 'BIZ_ACCOUNT_NOT_FOUND',
+
   // Phase 12 — Bills & Expenses
   BIZ_BILL_NOT_DUE: 'BIZ_BILL_NOT_DUE',
   BIZ_BILL_ALREADY_PAID: 'BIZ_BILL_ALREADY_PAID',
@@ -208,6 +217,20 @@ const ERROR_MESSAGES = {
     'Expenses can only be deleted on the same day they were created.',
   [ERROR_CODES.BIZ_AMOUNT_REQUIRED]:
     'Variable-amount bills require the actual paid amount.',
+  [ERROR_CODES.BIZ_JOURNAL_UNBALANCED]:
+    'Journal entry is not balanced — debits must equal credits.',
+  [ERROR_CODES.BIZ_JOURNAL_IMMUTABLE]:
+    'Posted journal entries cannot be modified. Post a reversing entry instead.',
+  [ERROR_CODES.BIZ_PERIOD_CLOSED]:
+    'The financial period for this date is closed.',
+  [ERROR_CODES.BIZ_PERIOD_NOT_FOUND]:
+    'No financial period exists for this date.',
+  [ERROR_CODES.BIZ_ACCOUNT_SYSTEM]:
+    'System accounts cannot be modified or deleted.',
+  [ERROR_CODES.BIZ_ACCOUNT_IN_USE]:
+    'This account is referenced by journal entries and cannot be deleted.',
+  [ERROR_CODES.BIZ_ACCOUNT_NOT_FOUND]:
+    'Chart of accounts entry not found.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };

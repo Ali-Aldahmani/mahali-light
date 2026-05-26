@@ -1,4 +1,5 @@
 const { withTransaction } = require('../db/postgres');
+const journalService = require('./journalService');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
@@ -135,6 +136,19 @@ async function addPayment({
         employeeId,
         description: `Payment to supplier on ${po.po_number || po.id}`,
         allowOverdraft: true,
+      });
+    }
+
+    // Cheques are tracked but don't move money until cleared, so no journal
+    // entry yet for cheque method. Cash + bank transfers post immediately.
+    if (method === 'cash' || method === 'bank_transfer') {
+      await journalService.postSupplierPaymentEntry(client, {
+        paymentId: payment.id,
+        amount: amt,
+        method: method === 'cash' ? 'cash' : 'bank',
+        poNumber: po.po_number,
+        date: payment.payment_date,
+        userId: employeeId,
       });
     }
 

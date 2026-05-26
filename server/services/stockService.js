@@ -1,6 +1,19 @@
 const { query, withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { checkReorderThreshold } = require('./reorderService');
+const journalService = require('./journalService');
+
+// Movement types that require an inventory-vs-equity journal entry. Sales +
+// purchases + quarantine moves are excluded — those flow through invoice /
+// PO receive / refund entries and posting again here would double-count.
+const ADJUSTMENT_JOURNAL_TYPES = new Set([
+  'adjustment',
+  'adjustment_in',
+  'adjustment_out',
+  'count_correction',
+  'count_correction_in',
+  'count_correction_out',
+]);
 
 // Movement type → sign convention for sales-style "delta" inputs.
 // Positive `quantity` always means stock is going IN, negative means going OUT.
@@ -217,6 +230,26 @@ async function applyStockMovement(params) {
         notes,
       ],
     );
+
+    // Stock adjustments + count corrections post inventory ↔ equity.
+    if (ADJUSTMENT_JOURNAL_TYPES.has(type) && Math.abs(movementQuantity) > 0) {
+      const { rows: costRows } = await client.query(
+        `SELECT cost_price FROM product_variants WHERE id = $1`,
+        [variantId],
+      );
+      const costPrice = Number(costRows[0]?.cost_price || 0);
+      if (costPrice > 0) {
+        await journalService.postStockAdjustmentEntry(client, {
+          movementId: movementRows[0].id,
+          movementType: type,
+          variantId,
+          delta: movementQuantity,
+          costPrice,
+          date: new Date().toISOString().slice(0, 10),
+          userId: employeeId,
+        });
+      }
+    }
 
     return {
       movement: movementRows[0],

@@ -50,6 +50,7 @@ const billsRouter = require('./routes/bills');
 const billPaymentsRouter = require('./routes/billPayments');
 const expensesRouter = require('./routes/expenses');
 const expenseCategoriesRouter = require('./routes/expenseCategories');
+const financeRouter = require('./routes/finance');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
@@ -129,6 +130,7 @@ async function bootstrap() {
   app.use('/api/bill-payments', billPaymentsRouter);
   app.use('/api/expenses', expensesRouter);
   app.use('/api/expense-categories', expenseCategoriesRouter);
+  app.use('/api/finance', financeRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

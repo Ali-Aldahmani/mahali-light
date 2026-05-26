@@ -3,6 +3,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
+const journalService = require('./journalService');
 
 const FREQUENCIES = new Set(['monthly', 'quarterly', 'yearly']);
 const PAYMENT_METHODS = new Set(['cash', 'bank']);
@@ -429,9 +430,11 @@ async function payBillPayment({
 
   const result = await withTransaction(async (client) => {
     const { rows: payRows } = await client.query(
-      `SELECT bp.*, b.name AS bill_name, b.is_variable_amount, b.status AS bill_status
+      `SELECT bp.*, b.name AS bill_name, b.is_variable_amount, b.status AS bill_status,
+              c.name AS category_name
          FROM bill_payments bp
          JOIN bills b ON b.id = bp.bill_id
+         LEFT JOIN expense_categories c ON c.id = b.category_id
         WHERE bp.id = $1 FOR UPDATE`,
       [billPaymentId],
     );
@@ -504,6 +507,17 @@ async function payBillPayment({
         allowOverdraft: true,
       });
     }
+
+    // Post the journal entry for this bill payment.
+    await journalService.postBillPaymentEntry(client, {
+      billPaymentId,
+      amount: amt,
+      method: paymentMethod,
+      categoryName: payment.category_name,
+      billName: payment.bill_name,
+      date: paidDateStr,
+      userId,
+    });
 
     // Mark any open notifications resolved.
     await client.query(

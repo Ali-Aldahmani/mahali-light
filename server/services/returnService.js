@@ -5,6 +5,7 @@ const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
+const journalService = require('./journalService');
 
 const RETURN_TYPES = new Set([
   'customer_refund',
@@ -772,6 +773,18 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
               [amount, request.customer_id],
             );
           }
+
+          // Post the journal entry for this refund line (DR refunds given,
+          // CR cash / bank / receivable depending on method).
+          await journalService.postRefundEntry(client, {
+            returnOrderId: orderId,
+            returnOrderNumber: orderNumber,
+            amount,
+            method: p.method,
+            date: new Date().toISOString().slice(0, 10),
+            userId: managerId,
+          });
+
           // Cash / bank refunds now book through the treasury services.
           if (p.method === 'cash') {
             const posted = await cashService.recordCashOut({
