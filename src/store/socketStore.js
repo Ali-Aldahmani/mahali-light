@@ -43,6 +43,7 @@ const pdfBus = makeBus();
 const printBus = makeBus();
 const warrantyBus = makeBus();
 const warrantyClaimBus = makeBus();
+const returnBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
@@ -58,6 +59,7 @@ export const onPdfReady = (cb) => pdfBus.on(cb);
 export const onPrintRequest = (cb) => printBus.on(cb);
 export const onWarrantyEvent = (cb) => warrantyBus.on(cb);
 export const onWarrantyClaimEvent = (cb) => warrantyClaimBus.on(cb);
+export const onReturnEvent = (cb) => returnBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -278,6 +280,33 @@ export const useSocketStore = create((set, get) => ({
     });
     socket.on('warranty_claim_updated', (payload) => {
       warrantyClaimBus.emit({ ...payload, kind: 'updated' });
+    });
+
+    socket.on('return_request_created', (payload) => {
+      returnBus.emit({ ...payload, kind: 'created' });
+      toast.info(
+        `New return request ${payload.requestNumber || ''}${
+          payload.isNoInvoice ? ' (no-invoice — needs scrutiny)' : ''
+        }.`,
+      );
+    });
+    socket.on('return_request_reviewed', (payload) => {
+      returnBus.emit({ ...payload, kind: 'reviewed' });
+      const me = useAuthStore.getState().user?.id;
+      if (payload.status === 'approved') {
+        toast.success('Your return request was approved.');
+      } else if (payload.status === 'rejected' && me) {
+        toast.error(
+          `Your return request was rejected${
+            payload.rejectionReason ? ': ' + payload.rejectionReason : '.'
+          }`,
+        );
+      } else if (payload.status === 'cancelled') {
+        toast.info('Return request cancelled.');
+      }
+    });
+    socket.on('return_executed', (payload) => {
+      returnBus.emit({ ...payload, kind: 'executed' });
     });
 
     socket.on('invoice_pdf_pending', (payload) => {

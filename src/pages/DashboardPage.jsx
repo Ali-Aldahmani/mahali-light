@@ -4,6 +4,7 @@ import {
   FolderTree,
   Package,
   Receipt,
+  RotateCcw,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -129,6 +130,14 @@ export default function DashboardPage() {
             to="/warranty-claims"
           />
         </PermissionGate>
+        <PermissionGate permission="return.request">
+          <StatCard
+            icon={RotateCcw}
+            label="Returns"
+            value="Refunds & replacements"
+            to="/returns"
+          />
+        </PermissionGate>
         <PermissionGate permission="user.edit">
           <StatCard icon={UserCog} label="Users" value="Manage accounts" to="/users" />
         </PermissionGate>
@@ -153,10 +162,11 @@ export default function DashboardPage() {
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          POS &amp; invoicing are live — open <strong>POS</strong> to ring up
-          a sale, or jump to <strong>Invoices</strong> to review recent sales.
-          Subsequent phases add printable invoices &amp; PDFs, warranties,
-          returns, attendance, cash &amp; bank, finance and reporting.
+          POS, invoicing, warranties and returns are live — open <strong>POS</strong> to
+          ring up a sale, head to <strong>Returns</strong> for refunds &amp;
+          replacements, or open <strong>Warranties</strong> to track customer
+          coverage. Subsequent phases add attendance, cash &amp; bank, finance
+          and reporting.
         </p>
       </div>
     </div>

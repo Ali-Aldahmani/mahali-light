@@ -441,7 +441,9 @@ async function listProducts(req, res, next) {
 
 async function listReturns(req, res, next) {
   try {
-    const { rows } = await query(
+    const supplierId = req.params.id;
+    // Phase 4 supplier_returns (receive-stage adjustments).
+    const { rows: legacyRows } = await query(
       `SELECT sr.*, COALESCE(ic.c, 0)::int AS items_count,
               u.username AS employee_username
          FROM supplier_returns sr
@@ -451,11 +453,35 @@ async function listReturns(req, res, next) {
          ) ic ON TRUE
         WHERE sr.supplier_id = $1
         ORDER BY sr.return_date DESC, sr.created_at DESC`,
-      [req.params.id],
+      [supplierId],
     );
-    return ok(
-      res,
-      rows.map((r) => ({
+
+    // Phase 9 return requests targeting this supplier.
+    const { rows: requestRows } = await query(
+      `SELECT r.*,
+              po.po_number AS po_number,
+              po.id AS po_id,
+              u.username AS requested_by_username,
+              ro.id AS return_order_id,
+              ro.return_order_number AS return_order_number,
+              (SELECT COALESCE(SUM(total_value),0)::numeric
+                 FROM return_request_items ri
+                WHERE ri.return_request_id = r.id) AS total_value,
+              (SELECT COUNT(*)::int FROM return_request_items ri
+                WHERE ri.return_request_id = r.id) AS item_count
+         FROM return_requests r
+         LEFT JOIN purchase_orders po ON po.id = r.reference_id
+              AND r.reference_type = 'purchase_order'
+         LEFT JOIN users u ON u.id = r.requested_by
+         LEFT JOIN return_orders ro ON ro.return_request_id = r.id
+        WHERE r.supplier_id = $1
+          AND r.return_type = 'supplier_return'
+        ORDER BY r.requested_at DESC`,
+      [supplierId],
+    );
+
+    return ok(res, {
+      legacy: legacyRows.map((r) => ({
         id: r.id,
         returnNumber: r.return_number,
         purchaseOrderId: r.purchase_order_id,
@@ -468,7 +494,23 @@ async function listReturns(req, res, next) {
         itemsCount: r.items_count,
         employeeUsername: r.employee_username,
       })),
-    );
+      requests: requestRows.map((r) => ({
+        id: r.id,
+        requestNumber: r.request_number,
+        status: r.status,
+        reason: r.reason,
+        requestedAt: r.requested_at,
+        reviewedAt: r.reviewed_at,
+        executedAt: r.executed_at,
+        totalValue: Number(r.total_value || 0),
+        itemCount: r.item_count,
+        poId: r.po_id,
+        poNumber: r.po_number,
+        returnOrderId: r.return_order_id,
+        returnOrderNumber: r.return_order_number,
+        requestedByUsername: r.requested_by_username,
+      })),
+    });
   } catch (err) {
     next(err);
   }

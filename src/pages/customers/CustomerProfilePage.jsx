@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Edit3,
@@ -590,14 +590,14 @@ function PaymentsTab({ customerId, canCollect, customer, onChanged, openPay }) {
 }
 
 function ReturnsTab({ customerId }) {
-  const [rows, setRows] = useState([]);
+  const [data, setData] = useState({ items: [], stats: null });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     getCustomerReturns(customerId)
-      .then((r) => setRows(r || []))
-      .catch(() => setRows([]))
+      .then((r) => setData(r || { items: [], stats: null }))
+      .catch(() => setData({ items: [], stats: null }))
       .finally(() => setLoading(false));
   }, [customerId]);
 
@@ -608,12 +608,88 @@ function ReturnsTab({ customerId }) {
       </div>
     );
   }
+
+  const items = data.items || [];
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        title="No returns yet"
+        description="When this customer returns or replaces purchased items, you'll see them here."
+        icon={<RefreshCw className="h-6 w-6" />}
+      />
+    );
+  }
+
+  const stats = data.stats || {};
   return (
-    <EmptyState
-      title="Returns available in Phase 9"
-      description="Customer returns and refunds will appear here once returns is enabled."
-      icon={<RefreshCw className="h-6 w-6" />}
-    />
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="card p-4">
+          <div className="text-xs uppercase tracking-wider text-ink-muted">Total spent</div>
+          <div className="text-xl font-semibold text-ink mt-1">
+            AED {Number(stats.totalSpent || 0).toFixed(2)}
+          </div>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs uppercase tracking-wider text-ink-muted">Returned value</div>
+          <div className="text-xl font-semibold text-warning mt-1">
+            AED {Number(stats.totalReturned || 0).toFixed(2)}
+          </div>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs uppercase tracking-wider text-ink-muted">Return rate</div>
+          <div className="text-xl font-semibold text-ink mt-1">
+            {Number(stats.returnRate || 0).toFixed(1)}%
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-0 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-2 text-left text-xs uppercase tracking-wide text-ink-muted">
+            <tr>
+              <th className="px-4 py-2">Request</th>
+              <th className="px-4 py-2">Type</th>
+              <th className="px-4 py-2">Items</th>
+              <th className="px-4 py-2">Value</th>
+              <th className="px-4 py-2">Invoice</th>
+              <th className="px-4 py-2">Status</th>
+              <th className="px-4 py-2">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((r) => (
+              <tr key={r.id} className="border-t border-border">
+                <td className="px-4 py-2">
+                  <RouterLink
+                    to={`/returns/requests/${r.id}`}
+                    className="font-mono text-xs text-accent hover:underline"
+                  >
+                    {r.requestNumber}
+                  </RouterLink>
+                </td>
+                <td className="px-4 py-2 capitalize">
+                  {(r.returnType || '').replace(/_/g, ' ')}
+                </td>
+                <td className="px-4 py-2">{r.itemCount}</td>
+                <td className="px-4 py-2">AED {Number(r.totalValue).toFixed(2)}</td>
+                <td className="px-4 py-2 font-mono text-xs">
+                  {r.invoiceNumber || (r.noInvoiceReturn ? '— (no invoice)' : '—')}
+                </td>
+                <td className="px-4 py-2 capitalize">{r.status}</td>
+                <td className="px-4 py-2 text-xs text-ink-muted">
+                  {new Date(r.requestedAt).toLocaleDateString('en-GB', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

@@ -599,9 +599,78 @@ async function listPayments(req, res, next) {
   }
 }
 
-async function listReturns(_req, res, _next) {
-  // Phase 9 will populate this; we return an empty array gracefully.
-  return ok(res, []);
+async function listReturns(req, res, next) {
+  try {
+    const customerId = req.params.id;
+    // Pull every return request raised on this customer's account (any
+    // status) so the profile can show pending + completed history.
+    const { rows: requests } = await query(
+      `SELECT r.id, r.request_number, r.return_type, r.status, r.reason,
+              r.no_invoice_return, r.requested_at, r.reviewed_at,
+              r.executed_at,
+              (SELECT COALESCE(SUM(total_value),0)::numeric
+                 FROM return_request_items ri
+                WHERE ri.return_request_id = r.id) AS total_value,
+              (SELECT COUNT(*)::int FROM return_request_items ri
+                WHERE ri.return_request_id = r.id) AS item_count,
+              i.invoice_number AS invoice_number,
+              i.id AS invoice_id,
+              ro.id AS return_order_id,
+              ro.return_order_number AS return_order_number,
+              ro.refund_total AS refund_total
+         FROM return_requests r
+         LEFT JOIN invoices i ON i.id = r.reference_id AND r.reference_type = 'invoice'
+         LEFT JOIN return_orders ro ON ro.return_request_id = r.id
+        WHERE r.customer_id = $1
+        ORDER BY r.requested_at DESC`,
+      [customerId],
+    );
+
+    // Compute return-rate vs total spent for the headline metric.
+    const { rows: totals } = await query(
+      `SELECT
+         COALESCE(SUM(i.total),0)::numeric AS total_spent
+         FROM invoices i
+        WHERE i.customer_id = $1 AND i.status <> 'cancelled'`,
+      [customerId],
+    );
+    const totalSpent = Number(totals[0]?.total_spent || 0);
+    const totalReturned = requests
+      .filter((r) => r.status === 'approved')
+      .reduce((acc, r) => acc + Number(r.total_value || 0), 0);
+    const returnRate = totalSpent > 0 ? (totalReturned / totalSpent) * 100 : 0;
+
+    return ok(
+      res,
+      {
+        items: requests.map((r) => ({
+          id: r.id,
+          requestNumber: r.request_number,
+          returnType: r.return_type,
+          status: r.status,
+          reason: r.reason,
+          noInvoiceReturn: r.no_invoice_return,
+          requestedAt: r.requested_at,
+          reviewedAt: r.reviewed_at,
+          executedAt: r.executed_at,
+          totalValue: Number(r.total_value || 0),
+          itemCount: r.item_count,
+          invoiceId: r.invoice_id,
+          invoiceNumber: r.invoice_number,
+          returnOrderId: r.return_order_id,
+          returnOrderNumber: r.return_order_number,
+          refundTotal: r.refund_total != null ? Number(r.refund_total) : null,
+        })),
+        stats: {
+          totalSpent,
+          totalReturned,
+          returnRate: Math.round(returnRate * 10) / 10,
+        },
+      },
+    );
+  } catch (err) {
+    next(err);
+  }
 }
 
 async function listWarranties(req, res, next) {

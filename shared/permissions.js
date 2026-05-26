@@ -133,7 +133,7 @@ const ROLE_DEFAULTS = {
     'stock.view', 'stock.adjust_approve', 'stock.adjust_direct', 'stock.count_initiate', 'stock.count_approve',
     'cash.view', 'cash.adjust',
     'bank.view', 'bank.transact',
-    'return.approve', 'return.process',
+    'return.request', 'return.approve', 'return.process',
     'attendance.view_own', 'attendance.view_all', 'attendance.mark_manual', 'attendance.correction_approve',
     'bills.view', 'bills.pay', 'bills.manage',
     'finance.view_dashboard', 'finance.view_pl', 'finance.view_cashflow', 'finance.view_vat',

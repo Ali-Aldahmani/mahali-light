@@ -8,6 +8,7 @@ import {
   Package,
   Printer,
   Receipt,
+  RotateCcw,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -27,6 +28,7 @@ import { useSupplierStore } from '../../store/supplierStore.js';
 import { useCustomerStore } from '../../store/customerStore.js';
 import { useInvoiceStore } from '../../store/invoiceStore.js';
 import { useWarrantyStore } from '../../store/warrantyStore.js';
+import { useReturnStore } from '../../store/returnStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -112,6 +114,14 @@ const NAV = [
     permission: 'warranty.view',
     badge: 'warrantyClaims',
   },
+  { section: 'Returns' },
+  {
+    to: '/returns',
+    label: 'Returns',
+    icon: RotateCcw,
+    permission: 'return.request',
+    badge: 'returnsPending',
+  },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
@@ -156,6 +166,7 @@ export default function Sidebar() {
   const pendingEditRequests = useInvoiceStore((s) => s.pendingEditRequests);
   const expiringSoonCount = useWarrantyStore((s) => s.expiringSoonCount);
   const openClaimsCount = useWarrantyStore((s) => s.openClaimsCount);
+  const returnsPending = useReturnStore((s) => s.pendingCount);
 
   function badgeFor(key) {
     if (key === 'inventory') {
@@ -180,6 +191,9 @@ export default function Sidebar() {
     }
     if (key === 'warrantyClaims') {
       return openClaimsCount > 0 ? openClaimsCount : null;
+    }
+    if (key === 'returnsPending') {
+      return returnsPending > 0 ? returnsPending : null;
     }
     return null;
   }

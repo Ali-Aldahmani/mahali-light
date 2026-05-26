@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Edit3,
@@ -523,17 +523,27 @@ function ProductsTab({ supplier }) {
 }
 
 function ReturnsTab({ supplier }) {
-  const [rows, setRows] = useState([]);
+  const [data, setData] = useState({ legacy: [], requests: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     getSupplierReturns(supplier.id)
-      .then((data) => setRows(data || []))
+      .then((res) => {
+        // Older API shape returned an array; new one is { legacy, requests }.
+        if (Array.isArray(res)) {
+          setData({ legacy: res, requests: [] });
+        } else {
+          setData({
+            legacy: res?.legacy || [],
+            requests: res?.requests || [],
+          });
+        }
+      })
       .finally(() => setLoading(false));
   }, [supplier.id]);
 
-  const columns = [
+  const legacyColumns = [
     { key: 'returnNumber', header: 'Return #' },
     {
       key: 'returnDate',
@@ -579,19 +589,113 @@ function ReturnsTab({ supplier }) {
     },
   ];
 
+  const requestColumns = [
+    {
+      key: 'requestNumber',
+      header: 'Request #',
+      render: (r) => (
+        <RouterLink
+          to={`/returns/requests/${r.id}`}
+          className="font-mono text-xs text-accent hover:underline"
+        >
+          {r.requestNumber}
+        </RouterLink>
+      ),
+    },
+    {
+      key: 'requestedAt',
+      header: 'Date',
+      render: (r) => formatDate(r.requestedAt),
+    },
+    {
+      key: 'poNumber',
+      header: 'PO',
+      render: (r) =>
+        r.poNumber ? (
+          <RouterLink
+            to={`/purchase-orders/${r.poId}`}
+            className="font-mono text-xs text-accent hover:underline"
+          >
+            {r.poNumber}
+          </RouterLink>
+        ) : (
+          <span className="text-ink-muted">—</span>
+        ),
+    },
+    { key: 'itemCount', header: 'Items', align: 'right' },
+    {
+      key: 'totalValue',
+      header: 'Value',
+      align: 'right',
+      render: (r) => formatCurrency(r.totalValue),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (r) => (
+        <Badge
+          tone={
+            r.status === 'approved'
+              ? 'success'
+              : r.status === 'rejected'
+                ? 'error'
+                : r.status === 'cancelled'
+                  ? 'muted'
+                  : 'warning'
+          }
+          size="sm"
+          dot
+        >
+          {r.status}
+        </Badge>
+      ),
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (!data.requests.length && !data.legacy.length) {
+    return (
+      <EmptyState
+        title="No returns recorded"
+        description="When you return goods to this supplier they will appear here."
+      />
+    );
+  }
+
   return (
-    <Table
-      columns={columns}
-      rows={rows}
-      loading={loading}
-      rowKey={(r) => r.id}
-      empty={
-        <EmptyState
-          title="No returns recorded"
-          description="When you return goods to this supplier they will appear here."
-        />
-      }
-    />
+    <div className="space-y-6">
+      {data.requests.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="border-b border-border bg-surface-2 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            Supplier return requests (Phase 9)
+          </div>
+          <Table
+            columns={requestColumns}
+            rows={data.requests}
+            rowKey={(r) => r.id}
+          />
+        </div>
+      )}
+      {data.legacy.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="border-b border-border bg-surface-2 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            Receive-stage returns
+          </div>
+          <Table
+            columns={legacyColumns}
+            rows={data.legacy}
+            rowKey={(r) => r.id}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

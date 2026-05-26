@@ -48,6 +48,15 @@ const ERROR_CODES = {
   BIZ_SERIAL_REQUIRED: 'BIZ_SERIAL_REQUIRED',
   BIZ_CLAIM_ALREADY_RESOLVED: 'BIZ_CLAIM_ALREADY_RESOLVED',
 
+  // Phase 9 — Returns
+  BIZ_RETURN_QTY_EXCEEDED: 'BIZ_RETURN_QTY_EXCEEDED',
+  BIZ_RETURN_ALREADY_EXISTS: 'BIZ_RETURN_ALREADY_EXISTS',
+  BIZ_INVOICE_CANCELLED: 'BIZ_INVOICE_CANCELLED',
+  BIZ_RETURN_NOT_PENDING: 'BIZ_RETURN_NOT_PENDING',
+  BIZ_RETURN_NOTE_TOO_SHORT: 'BIZ_RETURN_NOTE_TOO_SHORT',
+  BIZ_NO_INVOICE_NEEDS_APPROVAL: 'BIZ_NO_INVOICE_NEEDS_APPROVAL',
+  BIZ_REFUND_PLAN_MISMATCH: 'BIZ_REFUND_PLAN_MISMATCH',
+
   // Field validations
   VAL_DUPLICATE_PHONE: 'VAL_DUPLICATE_PHONE',
   VAL_INVALID_TRN: 'VAL_INVALID_TRN',
@@ -113,6 +122,20 @@ const ERROR_MESSAGES = {
     'A serial number is required for this product.',
   [ERROR_CODES.BIZ_CLAIM_ALREADY_RESOLVED]:
     'This claim has already been resolved.',
+  [ERROR_CODES.BIZ_RETURN_QTY_EXCEEDED]:
+    'Return quantity exceeds the originally sold quantity.',
+  [ERROR_CODES.BIZ_RETURN_ALREADY_EXISTS]:
+    'A pending or approved return already covers this item.',
+  [ERROR_CODES.BIZ_INVOICE_CANCELLED]:
+    'Cannot create a return against a cancelled invoice.',
+  [ERROR_CODES.BIZ_RETURN_NOT_PENDING]:
+    'This return request is no longer pending and cannot be modified.',
+  [ERROR_CODES.BIZ_RETURN_NOTE_TOO_SHORT]:
+    'Please describe the reason in detail (at least 10 characters).',
+  [ERROR_CODES.BIZ_NO_INVOICE_NEEDS_APPROVAL]:
+    'No-invoice returns require manager approval to be filed.',
+  [ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH]:
+    'The refund payments do not match the total being returned.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };

@@ -31,6 +31,10 @@ import WarrantiesPage from './pages/warranties/WarrantiesPage.jsx';
 import WarrantyDetailPage from './pages/warranties/WarrantyDetailPage.jsx';
 import WarrantyClaimsPage from './pages/warranties/WarrantyClaimsPage.jsx';
 import WarrantyClaimDetailPage from './pages/warranties/WarrantyClaimDetailPage.jsx';
+import ReturnsPage from './pages/returns/ReturnsPage.jsx';
+import NewReturnRequestPage from './pages/returns/NewReturnRequestPage.jsx';
+import ReturnRequestDetailPage from './pages/returns/ReturnRequestDetailPage.jsx';
+import ReturnOrderDetailPage from './pages/returns/ReturnOrderDetailPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -286,6 +290,39 @@ export default function App() {
             element={
               <ProtectedRoute permission="warranty.view">
                 <WarrantyClaimDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/returns"
+            element={
+              <ProtectedRoute permission="return.request">
+                <ReturnsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/returns/new"
+            element={
+              <ProtectedRoute permission="return.request">
+                <NewReturnRequestPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/returns/requests/:id"
+            element={
+              <ProtectedRoute permission="return.request">
+                <ReturnRequestDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/returns/orders/:id"
+            element={
+              <ProtectedRoute permission="return.request">
+                <ReturnOrderDetailPage />
               </ProtectedRoute>
             }
           />

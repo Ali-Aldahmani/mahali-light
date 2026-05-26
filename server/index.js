@@ -36,6 +36,8 @@ const invoiceEditRequestsRouter = require('./routes/invoiceEditRequests');
 const printRouter = require('./routes/print');
 const warrantiesRouter = require('./routes/warranties');
 const warrantyClaimsRouter = require('./routes/warrantyClaims');
+const returnRequestsRouter = require('./routes/returnRequests');
+const returnOrdersRouter = require('./routes/returnOrders');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
@@ -96,6 +98,11 @@ async function bootstrap() {
   app.use('/api/print', printRouter);
   app.use('/api/warranties', warrantiesRouter);
   app.use('/api/warranty-claims', warrantyClaimsRouter);
+  app.use('/api/return-requests', returnRequestsRouter);
+  app.use('/api/return-orders', returnOrdersRouter);
+  // Spec also exposes the lookup helper under /api/returns/lookup — alias so
+  // both paths resolve.
+  app.use('/api/returns', returnRequestsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
