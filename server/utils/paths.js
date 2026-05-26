@@ -15,6 +15,18 @@ function ensureProductDir(productId) {
   return dir;
 }
 
+function ensurePurchaseOrderDir(poId) {
+  const dir = path.join(getUploadsRoot(), 'purchase-orders', poId);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function ensureSupplierPaymentDir(paymentId) {
+  const dir = path.join(getUploadsRoot(), 'supplier-payments', paymentId);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 // Convert an absolute disk path to a forward-slash relative path stored in the DB.
 function toRelative(absPath) {
   const root = getUploadsRoot();
@@ -30,4 +42,11 @@ function toAbsolute(relPath) {
   return path.join(getUploadsRoot(), relPath);
 }
 
-module.exports = { getUploadsRoot, ensureProductDir, toRelative, toAbsolute };
+module.exports = {
+  getUploadsRoot,
+  ensureProductDir,
+  ensurePurchaseOrderDir,
+  ensureSupplierPaymentDir,
+  toRelative,
+  toAbsolute,
+};

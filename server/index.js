@@ -25,8 +25,13 @@ const productsRouter = require('./routes/products');
 const variantsRouter = require('./routes/variants');
 const stockRouter = require('./routes/stock');
 const settingsRouter = require('./routes/settings');
+const suppliersRouter = require('./routes/suppliers');
+const purchaseOrdersRouter = require('./routes/purchaseOrders');
+const supplierPaymentsRouter = require('./routes/supplierPayments');
+const supplierReturnsRouter = require('./routes/supplierReturns');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
+const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
 
 async function bootstrap() {
   await runMigrations();
@@ -70,9 +75,16 @@ async function bootstrap() {
   app.use('/api/variants', variantsRouter);
   app.use('/api/stock', stockRouter);
   app.use('/api/settings', settingsRouter);
+  app.use('/api/suppliers', suppliersRouter);
+  app.use('/api/purchase-orders', purchaseOrdersRouter);
+  app.use('/api/supplier-payments', supplierPaymentsRouter);
+  app.use('/api/supplier-returns', supplierReturnsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
+
+  // Background jobs.
+  startOverduePoJob(io);
 
   const port = Number(process.env.PORT || 3000);
   server.listen(port, '0.0.0.0', () => {

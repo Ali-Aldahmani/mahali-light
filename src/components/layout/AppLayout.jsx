@@ -5,11 +5,14 @@ import Header from './Header.jsx';
 import { useSocketStore } from '../../store/socketStore.js';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
+import { useSupplierStore } from '../../store/supplierStore.js';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
+  onPurchaseOrderEvent,
   onReorderAlert,
   onStockUpdate,
+  onSupplierReturnEvent,
 } from '../../store/socketStore.js';
 
 const TITLES = {
@@ -24,6 +27,9 @@ const TITLES = {
   '/inventory': 'Inventory',
   '/inventory/movements': 'Stock movements',
   '/inventory/counts': 'Stock count',
+  '/suppliers': 'Suppliers',
+  '/purchase-orders': 'Purchase orders',
+  '/purchase-orders/new': 'New purchase order',
 };
 
 export default function AppLayout() {
@@ -35,6 +41,7 @@ export default function AppLayout() {
   const refreshInventory = useInventoryStore((s) => s.refreshAll);
   const refreshAlerts = useInventoryStore((s) => s.refreshAlerts);
   const refreshAdjustments = useInventoryStore((s) => s.refreshAdjustmentsBadge);
+  const refreshSupplierSummary = useSupplierStore((s) => s.refreshSummary);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -44,6 +51,11 @@ export default function AppLayout() {
     if (hasStock) {
       initStockCache({ force: true }).catch(() => {});
       refreshInventory();
+    }
+    const hasSupplier =
+      permissions.includes('supplier.view') || permissions.includes('*');
+    if (hasSupplier) {
+      refreshSupplierSummary?.();
     }
 
     // Keep sidebar badges in sync with realtime events. Throttle the
@@ -59,11 +71,15 @@ export default function AppLayout() {
     const unsubA = onAdjustmentEvent(() => refreshAdjustments?.());
     const unsubB = onReorderAlert(() => refreshAlerts?.());
     const unsubC = onStockUpdate(throttledRefresh);
+    const unsubD = onPurchaseOrderEvent(() => refreshSupplierSummary?.());
+    const unsubE = onSupplierReturnEvent(() => refreshSupplierSummary?.());
 
     return () => {
       unsubA();
       unsubB();
       unsubC();
+      unsubD();
+      unsubE();
       if (throttleTimer) clearTimeout(throttleTimer);
       disconnect();
     };

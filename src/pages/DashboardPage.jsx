@@ -1,9 +1,11 @@
 import {
   Boxes,
+  Building2,
   FolderTree,
   Package,
   ShieldCheck,
   Sliders,
+  Truck,
   UserCog,
   UsersRound,
 } from 'lucide-react';
@@ -36,7 +38,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title={`Welcome back, ${user?.username || 'user'}`}
-        subtitle="Phases 1–3 — Auth, Catalog, and Inventory modules are live."
+        subtitle="Phases 1–4 — Auth, Catalog, Inventory, and Procurement are live."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -55,6 +57,22 @@ export default function DashboardPage() {
             label="Inventory"
             value="Stock, counts & alerts"
             to="/inventory"
+          />
+        </PermissionGate>
+        <PermissionGate permission="supplier.view">
+          <StatCard
+            icon={Building2}
+            label="Suppliers"
+            value="Vendors & balances"
+            to="/suppliers"
+          />
+        </PermissionGate>
+        <PermissionGate permission="supplier.view">
+          <StatCard
+            icon={Truck}
+            label="Purchase orders"
+            value="Issue, receive & pay"
+            to="/purchase-orders"
           />
         </PermissionGate>
         <PermissionGate permission="user.edit">
@@ -81,9 +99,9 @@ export default function DashboardPage() {
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Subsequent phases will add purchase orders &amp; suppliers, the POS,
-          customers, attendance, finance and reporting. Inventory, catalog, and
-          permissions are the foundation for all of them.
+          Subsequent phases will add the POS, customers, attendance, cash &amp;
+          bank, finance and reporting. Inventory and procurement are now the
+          foundation for those flows.
         </p>
       </div>
     </div>

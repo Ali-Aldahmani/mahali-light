@@ -34,12 +34,16 @@ const stockBus = makeBus();
 const reorderBus = makeBus();
 const adjustmentBus = makeBus();
 const countBus = makeBus();
+const poBus = makeBus();
+const supplierReturnBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
 export const onReorderAlert = (cb) => reorderBus.on(cb);
 export const onAdjustmentEvent = (cb) => adjustmentBus.on(cb);
 export const onCountEvent = (cb) => countBus.on(cb);
+export const onPurchaseOrderEvent = (cb) => poBus.on(cb);
+export const onSupplierReturnEvent = (cb) => supplierReturnBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -148,6 +152,45 @@ export const useSocketStore = create((set, get) => ({
           `Your stock count was rejected${payload.rejectionReason ? ': ' + payload.rejectionReason : '.'}`,
         );
       }
+    });
+
+    socket.on('po_created', (payload) => {
+      poBus.emit({ ...payload, kind: 'created' });
+      toast.info(
+        `New PO ${payload.poNumber || ''} from ${payload.createdByUsername || 'a user'}`,
+      );
+    });
+
+    socket.on('po_received', (payload) => {
+      poBus.emit({ ...payload, kind: 'received' });
+      toast.success(
+        `PO ${payload.poNumber || ''} ${payload.status === 'received' ? 'fully' : 'partially'} received.`,
+      );
+    });
+
+    socket.on('po_payment_added', (payload) => {
+      poBus.emit({ ...payload, kind: 'payment_added' });
+      toast.info(
+        `Payment recorded on PO ${payload.poNumber || ''}${
+          payload.paymentStatus === 'paid' ? ' (paid in full)' : ''
+        }.`,
+      );
+    });
+
+    socket.on('po_overdue', (payload) => {
+      poBus.emit({ ...payload, kind: 'overdue' });
+      if (payload?.count > 0) {
+        toast.warning(
+          `${payload.count} purchase order${payload.count === 1 ? '' : 's'} past due.`,
+        );
+      }
+    });
+
+    socket.on('supplier_return_created', (payload) => {
+      supplierReturnBus.emit({ ...payload, kind: 'created' });
+      toast.info(
+        `Supplier return ${payload.returnNumber || ''} created.`,
+      );
     });
 
     if (heartbeatTimer) clearInterval(heartbeatTimer);

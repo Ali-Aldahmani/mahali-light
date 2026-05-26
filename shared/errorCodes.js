@@ -27,6 +27,8 @@ const ERROR_CODES = {
   BIZ_INSUFFICIENT_STOCK: 'BIZ_INSUFFICIENT_STOCK',
   BIZ_STOCK_COUNT_IN_PROGRESS: 'BIZ_STOCK_COUNT_IN_PROGRESS',
   BIZ_INVALID_STATE: 'BIZ_INVALID_STATE',
+  BIZ_PAYMENT_EXCEEDS_BALANCE: 'BIZ_PAYMENT_EXCEEDS_BALANCE',
+  BIZ_RECEIVE_EXCEEDS_ORDER: 'BIZ_RECEIVE_EXCEEDS_ORDER',
 
   // Generic
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -53,6 +55,10 @@ const ERROR_MESSAGES = {
   [ERROR_CODES.BIZ_STOCK_COUNT_IN_PROGRESS]:
     'A stock count is in progress for this product. Try again once it is approved or rejected.',
   [ERROR_CODES.BIZ_INVALID_STATE]: 'This action is not allowed in the current state.',
+  [ERROR_CODES.BIZ_PAYMENT_EXCEEDS_BALANCE]:
+    'Payment amount cannot exceed the outstanding balance.',
+  [ERROR_CODES.BIZ_RECEIVE_EXCEEDS_ORDER]:
+    'Received quantity cannot exceed the ordered quantity.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };

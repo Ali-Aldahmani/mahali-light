@@ -1,17 +1,20 @@
 import { NavLink } from 'react-router-dom';
 import {
   Boxes,
+  Building2,
   FolderTree,
   LayoutDashboard,
   Package,
   ShieldCheck,
   Sliders,
+  Truck,
   UsersRound,
   UserCog,
   Zap,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
+import { useSupplierStore } from '../../store/supplierStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -27,6 +30,20 @@ const NAV = [
     icon: Boxes,
     permission: 'stock.view',
     badge: 'inventory',
+  },
+  { section: 'Procurement' },
+  {
+    to: '/suppliers',
+    label: 'Suppliers',
+    icon: Building2,
+    permission: 'supplier.view',
+  },
+  {
+    to: '/purchase-orders',
+    label: 'Purchase orders',
+    icon: Truck,
+    permission: 'supplier.view',
+    badge: 'po',
   },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
@@ -60,6 +77,8 @@ export default function Sidebar() {
   const lowStockCount = useInventoryStore((s) => s.lowStockCount);
   const pendingReorderAlerts = useInventoryStore((s) => s.pendingReorderAlerts);
   const pendingAdjustments = useInventoryStore((s) => s.pendingAdjustmentsCount);
+  const pendingPaymentCount = useSupplierStore((s) => s.pendingPaymentCount);
+  const overdueCount = useSupplierStore((s) => s.overdueCount);
 
   function badgeFor(key) {
     if (key === 'inventory') {
@@ -67,6 +86,10 @@ export default function Sidebar() {
         (lowStockCount || 0) +
         (pendingReorderAlerts?.length || 0) +
         (pendingAdjustments || 0);
+      return total > 0 ? total : null;
+    }
+    if (key === 'po') {
+      const total = (overdueCount || 0) + (pendingPaymentCount || 0);
       return total > 0 ? total : null;
     }
     return null;
