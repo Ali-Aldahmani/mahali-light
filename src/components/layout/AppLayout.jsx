@@ -7,10 +7,13 @@ import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
 import { useSupplierStore } from '../../store/supplierStore.js';
 import { useCustomerStore } from '../../store/customerStore.js';
+import { useInvoiceStore } from '../../store/invoiceStore.js';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
   onCustomerBalanceUpdate,
+  onInvoiceEditRequestEvent,
+  onInvoiceEvent,
   onPurchaseOrderEvent,
   onReorderAlert,
   onStockUpdate,
@@ -34,6 +37,9 @@ const TITLES = {
   '/purchase-orders/new': 'New purchase order',
   '/customers': 'Customers',
   '/customers/outstanding': 'Outstanding receivables',
+  '/pos': 'POS',
+  '/invoices': 'Invoices',
+  '/invoices/edit-requests': 'Edit requests',
 };
 
 export default function AppLayout() {
@@ -47,6 +53,10 @@ export default function AppLayout() {
   const refreshAdjustments = useInventoryStore((s) => s.refreshAdjustmentsBadge);
   const refreshSupplierSummary = useSupplierStore((s) => s.refreshSummary);
   const refreshCustomerSummary = useCustomerStore((s) => s.refreshSummary);
+  const refreshInvoiceSummary = useInvoiceStore((s) => s.refreshSummary);
+  const refreshEditRequestsCount = useInvoiceStore(
+    (s) => s.refreshEditRequestsCount,
+  );
 
   useEffect(() => {
     if (!token) return undefined;
@@ -67,6 +77,17 @@ export default function AppLayout() {
     if (hasCustomer) {
       refreshCustomerSummary?.();
     }
+    const hasInvoice =
+      permissions.includes('invoice.view') || permissions.includes('*');
+    if (hasInvoice) {
+      refreshInvoiceSummary?.();
+    }
+    const hasInvoiceApprove =
+      permissions.includes('invoice.edit_approve') ||
+      permissions.includes('*');
+    if (hasInvoiceApprove) {
+      refreshEditRequestsCount?.();
+    }
 
     // Keep sidebar badges in sync with realtime events. Throttle the
     // heavyweight inventory refresh so a busy POS session doesn't hammer it.
@@ -84,6 +105,10 @@ export default function AppLayout() {
     const unsubD = onPurchaseOrderEvent(() => refreshSupplierSummary?.());
     const unsubE = onSupplierReturnEvent(() => refreshSupplierSummary?.());
     const unsubF = onCustomerBalanceUpdate(() => refreshCustomerSummary?.());
+    const unsubG = onInvoiceEvent(() => refreshInvoiceSummary?.());
+    const unsubH = onInvoiceEditRequestEvent(() =>
+      refreshEditRequestsCount?.(),
+    );
 
     return () => {
       unsubA();
@@ -92,6 +117,8 @@ export default function AppLayout() {
       unsubD();
       unsubE();
       unsubF();
+      unsubG();
+      unsubH();
       if (throttleTimer) clearTimeout(throttleTimer);
       disconnect();
     };

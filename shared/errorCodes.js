@@ -32,6 +32,14 @@ const ERROR_CODES = {
   BIZ_CREDIT_LIMIT_EXCEEDED: 'BIZ_CREDIT_LIMIT_EXCEEDED',
   BIZ_OUTSTANDING_BALANCE: 'BIZ_OUTSTANDING_BALANCE',
 
+  // Phase 6 — POS / Invoices
+  BIZ_INVOICE_LOCKED: 'BIZ_INVOICE_LOCKED',
+  BIZ_INVALID_PAYMENT_TOTAL: 'BIZ_INVALID_PAYMENT_TOTAL',
+  BIZ_GUEST_NO_CREDIT: 'BIZ_GUEST_NO_CREDIT',
+  BIZ_INVOICE_EMPTY: 'BIZ_INVOICE_EMPTY',
+  BIZ_EDIT_REQUEST_REQUIRED: 'BIZ_EDIT_REQUEST_REQUIRED',
+  BIZ_EDIT_REQUEST_ALREADY_REVIEWED: 'BIZ_EDIT_REQUEST_ALREADY_REVIEWED',
+
   // Field validations
   VAL_DUPLICATE_PHONE: 'VAL_DUPLICATE_PHONE',
   VAL_INVALID_TRN: 'VAL_INVALID_TRN',
@@ -69,6 +77,18 @@ const ERROR_MESSAGES = {
     'This sale would exceed the customer credit limit.',
   [ERROR_CODES.BIZ_OUTSTANDING_BALANCE]:
     'This customer still has an outstanding balance.',
+  [ERROR_CODES.BIZ_INVOICE_LOCKED]:
+    'This invoice can no longer be edited.',
+  [ERROR_CODES.BIZ_INVALID_PAYMENT_TOTAL]:
+    'Payment total does not match the invoice total.',
+  [ERROR_CODES.BIZ_GUEST_NO_CREDIT]:
+    'Credit payments require a registered customer.',
+  [ERROR_CODES.BIZ_INVOICE_EMPTY]:
+    'Cannot confirm an empty invoice.',
+  [ERROR_CODES.BIZ_EDIT_REQUEST_REQUIRED]:
+    'You need a manager-approved edit request to change this invoice.',
+  [ERROR_CODES.BIZ_EDIT_REQUEST_ALREADY_REVIEWED]:
+    'This edit request has already been reviewed.',
   [ERROR_CODES.VAL_DUPLICATE_PHONE]:
     'A customer with this phone number already exists.',
   [ERROR_CODES.VAL_INVALID_TRN]:

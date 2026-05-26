@@ -29,6 +29,7 @@ import EmptyState from '../../components/ui/EmptyState.jsx';
 import CustomerAvatar from '../../components/ui/CustomerAvatar.jsx';
 import OutstandingBalanceCard from '../../components/ui/OutstandingBalanceCard.jsx';
 import PaymentMethodIcon from '../../components/ui/PaymentMethodIcon.jsx';
+import PaymentStatusBadge from '../../components/ui/PaymentStatusBadge.jsx';
 import { useAuthStore } from '../../store/authStore.js';
 import { toast } from '../../store/toastStore.js';
 import {
@@ -348,17 +349,8 @@ function StatCard({ icon, label, value, tone = 'default' }) {
 
 // Tabs --------------------------------------------------------------------
 
-const INVOICE_COLUMNS = [
-  { key: 'invoice', header: 'Invoice', render: () => '—' },
-  { key: 'date', header: 'Date', render: () => '—' },
-  { key: 'items', header: 'Items', align: 'right', render: () => '—' },
-  { key: 'total', header: 'Total', align: 'right', render: () => '—' },
-  { key: 'paid', header: 'Paid', align: 'right', render: () => '—' },
-  { key: 'balance', header: 'Balance', align: 'right', render: () => '—' },
-  { key: 'status', header: 'Status', render: () => '—' },
-];
-
 function InvoicesTab({ customerId }) {
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -378,6 +370,69 @@ function InvoicesTab({ customerId }) {
     };
   }, [customerId]);
 
+  const columns = [
+    {
+      key: 'invoice',
+      header: 'Invoice',
+      render: (r) => (
+        <button
+          type="button"
+          onClick={() => navigate(`/invoices/${r.id}`)}
+          className="font-mono text-sm text-ink hover:text-accent"
+        >
+          {r.invoiceNumber}
+        </button>
+      ),
+    },
+    {
+      key: 'date',
+      header: 'Date',
+      render: (r) => (
+        <span className="text-xs text-ink-muted">
+          {formatDateTime(r.createdAt)}
+        </span>
+      ),
+    },
+    {
+      key: 'items',
+      header: 'Items',
+      align: 'right',
+      render: (r) => r.itemCount,
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      align: 'right',
+      render: (r) => formatCurrency(r.total),
+    },
+    {
+      key: 'paid',
+      header: 'Paid',
+      align: 'right',
+      render: (r) => formatCurrency(r.amountPaid),
+    },
+    {
+      key: 'balance',
+      header: 'Balance',
+      align: 'right',
+      render: (r) =>
+        r.balanceDue > 0 ? (
+          <span className="text-accent font-medium">
+            {formatCurrency(r.balanceDue)}
+          </span>
+        ) : (
+          formatCurrency(r.balanceDue)
+        ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (r) => (
+        <PaymentStatusBadge status={r.paymentStatus} size="sm" />
+      ),
+    },
+  ];
+
   if (loading) {
     return (
       <div className="flex justify-center py-10">
@@ -386,29 +441,20 @@ function InvoicesTab({ customerId }) {
     );
   }
 
-  if (rows.length === 0) {
-    return (
-      <Table
-        columns={INVOICE_COLUMNS}
-        rows={[]}
-        rowKey={() => 'placeholder'}
-        empty={
-          <EmptyState
-            title="Invoices available in Phase 6"
-            description="Sales invoices and POS receipts will appear here once invoicing is enabled."
-            icon={<Receipt className="h-6 w-6" />}
-          />
-        }
-      />
-    );
-  }
-
-  // Phase 6 will provide real columns. Until then, fall back to a basic JSON
-  // view if any invoice rows happen to come through.
   return (
-    <pre className="rounded-card border border-border bg-surface p-4 text-xs overflow-auto">
-      {JSON.stringify(rows, null, 2)}
-    </pre>
+    <Table
+      columns={columns}
+      rows={rows}
+      rowKey={(r) => r.id}
+      onRowClick={(r) => navigate(`/invoices/${r.id}`)}
+      empty={
+        <EmptyState
+          title="No invoices yet"
+          description="This customer has no invoices recorded."
+          icon={<Receipt className="h-6 w-6" />}
+        />
+      }
+    />
   );
 }
 

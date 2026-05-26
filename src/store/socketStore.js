@@ -37,6 +37,8 @@ const countBus = makeBus();
 const poBus = makeBus();
 const supplierReturnBus = makeBus();
 const customerBus = makeBus();
+const invoiceBus = makeBus();
+const invoiceEditRequestBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
@@ -46,6 +48,8 @@ export const onCountEvent = (cb) => countBus.on(cb);
 export const onPurchaseOrderEvent = (cb) => poBus.on(cb);
 export const onSupplierReturnEvent = (cb) => supplierReturnBus.on(cb);
 export const onCustomerBalanceUpdate = (cb) => customerBus.on(cb);
+export const onInvoiceEvent = (cb) => invoiceBus.on(cb);
+export const onInvoiceEditRequestEvent = (cb) => invoiceEditRequestBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -193,6 +197,42 @@ export const useSocketStore = create((set, get) => ({
       toast.info(
         `Supplier return ${payload.returnNumber || ''} created.`,
       );
+    });
+
+    socket.on('invoice_confirmed', (payload) => {
+      invoiceBus.emit({ ...payload, kind: 'confirmed' });
+    });
+
+    socket.on('invoice_cancelled', (payload) => {
+      invoiceBus.emit({ ...payload, kind: 'cancelled' });
+      toast.warning(
+        `Invoice ${payload.invoiceNumber || ''} cancelled.`,
+      );
+    });
+
+    socket.on('edit_request_created', (payload) => {
+      invoiceEditRequestBus.emit({ ...payload, kind: 'created' });
+      toast.info(
+        `Edit request from ${payload.requestedByUsername || 'cashier'} on invoice ${payload.invoiceNumber || ''}.`,
+      );
+    });
+
+    socket.on('edit_request_reviewed', (payload) => {
+      invoiceEditRequestBus.emit({ ...payload, kind: 'reviewed' });
+      // Only show toast to the requesting cashier — best-effort by matching
+      // the current user. Manager-side feedback comes from their own UI.
+      const me = useAuthStore.getState().user?.id;
+      if (payload.requestedBy && me && payload.requestedBy === me) {
+        if (payload.status === 'approved') {
+          toast.success('Your invoice edit request was approved.');
+        } else if (payload.status === 'rejected') {
+          toast.error(
+            `Your invoice edit request was rejected${
+              payload.reason ? ': ' + payload.reason : '.'
+            }`,
+          );
+        }
+      }
     });
 
     socket.on('customer_balance_updated', (payload) => {

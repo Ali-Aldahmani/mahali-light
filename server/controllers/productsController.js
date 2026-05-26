@@ -709,33 +709,46 @@ async function search(req, res, next) {
   try {
     const includeCost = canSeeCost(req);
     const q = (req.query.q || '').toString().trim();
-    if (!q) return ok(res, []);
+    const categoryId = (req.query.categoryId || '').toString().trim() || null;
+    const limit = Math.min(100, Number(req.query.limit) || 25);
 
-    const limit = Math.min(50, Number(req.query.limit) || 25);
+    // Empty query is treated as "browse" for the POS — return the most
+    // recently-updated active variants, optionally filtered by category.
+    const term = q ? `%${q}%` : null;
+    const filters = [`v.is_active = true`, `p.is_active = true`];
+    const params = [];
+    if (term) {
+      params.push(term);
+      const i = params.length;
+      filters.push(`(
+        v.sku ILIKE $${i} OR v.barcode ILIKE $${i}
+        OR v.internal_barcode ILIKE $${i} OR v.supplier_barcode ILIKE $${i}
+        OR p.name ILIKE $${i} OR p.brand ILIKE $${i}
+        OR EXISTS (
+          SELECT 1 FROM product_variant_attributes pva
+            JOIN product_attribute_values av ON av.id = pva.attribute_value_id
+            JOIN product_attributes a ON a.id = av.attribute_id
+          WHERE pva.variant_id = v.id
+            AND (av.value ILIKE $${i} OR a.name ILIKE $${i})
+        )
+      )`);
+    }
+    if (categoryId) {
+      params.push(categoryId);
+      filters.push(`p.category_id = $${params.length}`);
+    }
+    params.push(limit);
 
-    const term = `%${q}%`;
     const { rows } = await query(
       `SELECT v.*, p.name AS product_name, p.brand, p.image_path AS product_image,
               p.sold_by, p.unit_label, p.has_variants, p.category_id,
               p.is_active AS product_active
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
-        WHERE v.is_active = true AND p.is_active = true
-          AND (
-            v.sku ILIKE $1 OR v.barcode ILIKE $1
-            OR v.internal_barcode ILIKE $1 OR v.supplier_barcode ILIKE $1
-            OR p.name ILIKE $1 OR p.brand ILIKE $1
-            OR EXISTS (
-              SELECT 1 FROM product_variant_attributes pva
-                JOIN product_attribute_values av ON av.id = pva.attribute_value_id
-                JOIN product_attributes a ON a.id = av.attribute_id
-              WHERE pva.variant_id = v.id
-                AND (av.value ILIKE $1 OR a.name ILIKE $1)
-            )
-          )
+        WHERE ${filters.join(' AND ')}
         ORDER BY p.name ASC, v.sku ASC
-        LIMIT $2`,
-      [term, limit],
+        LIMIT $${params.length}`,
+      params,
     );
 
     const variantIds = rows.map((r) => r.id);

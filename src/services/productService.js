@@ -57,7 +57,8 @@ export function deleteProductImage(id) {
   return apiDelete(`/products/${id}/image`);
 }
 
-export function searchProducts(q, limit = 25) {
-  const params = new URLSearchParams({ q, limit: String(limit) });
+export function searchProducts(q, limit = 25, opts = {}) {
+  const params = new URLSearchParams({ q: q || '', limit: String(limit) });
+  if (opts.categoryId) params.set('categoryId', opts.categoryId);
   return apiGet(`/products/search?${params.toString()}`);
 }

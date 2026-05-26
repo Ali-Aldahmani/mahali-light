@@ -2,10 +2,13 @@ import { NavLink } from 'react-router-dom';
 import {
   Boxes,
   Building2,
+  FileEdit,
   FolderTree,
   LayoutDashboard,
   Package,
+  Receipt,
   ShieldCheck,
+  ShoppingCart,
   Sliders,
   Truck,
   UsersRound,
@@ -18,6 +21,7 @@ import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
 import { useSupplierStore } from '../../store/supplierStore.js';
 import { useCustomerStore } from '../../store/customerStore.js';
+import { useInvoiceStore } from '../../store/invoiceStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -49,6 +53,25 @@ const NAV = [
     badge: 'po',
   },
   { section: 'Sales' },
+  {
+    to: '/pos',
+    label: 'POS',
+    icon: ShoppingCart,
+    permission: 'invoice.create',
+  },
+  {
+    to: '/invoices',
+    label: 'Invoices',
+    icon: Receipt,
+    permission: 'invoice.view',
+  },
+  {
+    to: '/invoices/edit-requests',
+    label: 'Edit requests',
+    icon: FileEdit,
+    permission: 'invoice.edit_approve',
+    badge: 'editRequests',
+  },
   {
     to: '/customers',
     label: 'Customers',
@@ -98,6 +121,7 @@ export default function Sidebar() {
   const pendingPaymentCount = useSupplierStore((s) => s.pendingPaymentCount);
   const overdueCount = useSupplierStore((s) => s.overdueCount);
   const customersWithBalance = useCustomerStore((s) => s.customersWithBalance);
+  const pendingEditRequests = useInvoiceStore((s) => s.pendingEditRequests);
 
   function badgeFor(key) {
     if (key === 'inventory') {
@@ -113,6 +137,9 @@ export default function Sidebar() {
     }
     if (key === 'customers' || key === 'receivables') {
       return customersWithBalance > 0 ? customersWithBalance : null;
+    }
+    if (key === 'editRequests') {
+      return pendingEditRequests > 0 ? pendingEditRequests : null;
     }
     return null;
   }

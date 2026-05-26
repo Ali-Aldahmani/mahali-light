@@ -1,9 +1,11 @@
-import { Banknote, Building2, FileSpreadsheet } from 'lucide-react';
+import { Banknote, Building2, CreditCard, FileSpreadsheet } from 'lucide-react';
 
 const META = {
   cash: { Icon: Banknote, label: 'Cash' },
+  bank: { Icon: Building2, label: 'Bank' },
   bank_transfer: { Icon: Building2, label: 'Bank transfer' },
   cheque: { Icon: FileSpreadsheet, label: 'Cheque' },
+  credit: { Icon: CreditCard, label: 'Credit' },
 };
 
 // Unified payment-method visual used by customer payments, supplier

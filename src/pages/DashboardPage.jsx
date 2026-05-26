@@ -3,7 +3,9 @@ import {
   Building2,
   FolderTree,
   Package,
+  Receipt,
   ShieldCheck,
+  ShoppingCart,
   Sliders,
   Truck,
   UserCog,
@@ -40,7 +42,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title={`Welcome back, ${user?.username || 'user'}`}
-        subtitle="Phases 1–5 — Auth, Catalog, Inventory, Procurement and Customers are live."
+        subtitle="Phases 1–6 — Auth, Catalog, Inventory, Procurement, Customers and POS are live."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -75,6 +77,22 @@ export default function DashboardPage() {
             label="Purchase orders"
             value="Issue, receive & pay"
             to="/purchase-orders"
+          />
+        </PermissionGate>
+        <PermissionGate permission="invoice.create">
+          <StatCard
+            icon={ShoppingCart}
+            label="POS"
+            value="Start a sale"
+            to="/pos"
+          />
+        </PermissionGate>
+        <PermissionGate permission="invoice.view">
+          <StatCard
+            icon={Receipt}
+            label="Invoices"
+            value="Sales & payments"
+            to="/invoices"
           />
         </PermissionGate>
         <PermissionGate permission="customer.view">
@@ -117,9 +135,10 @@ export default function DashboardPage() {
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Subsequent phases add the POS, sales invoicing, warranties, returns,
-          attendance, cash &amp; bank, finance and reporting. Customer
-          profiles and credit collection are now wired in for those flows.
+          POS &amp; invoicing are live — open <strong>POS</strong> to ring up
+          a sale, or jump to <strong>Invoices</strong> to review recent sales.
+          Subsequent phases add printable invoices &amp; PDFs, warranties,
+          returns, attendance, cash &amp; bank, finance and reporting.
         </p>
       </div>
     </div>

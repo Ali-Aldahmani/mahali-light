@@ -21,6 +21,10 @@ import PurchaseOrderDetailPage from './pages/purchases/PurchaseOrderDetailPage.j
 import CustomersPage from './pages/customers/CustomersPage.jsx';
 import CustomerProfilePage from './pages/customers/CustomerProfilePage.jsx';
 import OutstandingReceivablesPage from './pages/customers/OutstandingReceivablesPage.jsx';
+import POSPage from './pages/pos/POSPage.jsx';
+import InvoicesPage from './pages/invoices/InvoicesPage.jsx';
+import InvoiceDetailPage from './pages/invoices/InvoiceDetailPage.jsx';
+import InvoiceEditRequestsPage from './pages/invoices/InvoiceEditRequestsPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -202,6 +206,39 @@ export default function App() {
             element={
               <ProtectedRoute permission="customer.view">
                 <CustomerProfilePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/pos"
+            element={
+              <ProtectedRoute permission="invoice.create">
+                <POSPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoices"
+            element={
+              <ProtectedRoute permission="invoice.view">
+                <InvoicesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoices/edit-requests"
+            element={
+              <ProtectedRoute permission="invoice.edit_approve">
+                <InvoiceEditRequestsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoices/:id"
+            element={
+              <ProtectedRoute permission="invoice.view">
+                <InvoiceDetailPage />
               </ProtectedRoute>
             }
           />

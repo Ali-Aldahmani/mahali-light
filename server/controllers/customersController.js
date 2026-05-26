@@ -541,11 +541,29 @@ async function listInvoices(req, res, next) {
     const has = await detectInvoicesTable();
     if (!has) return ok(res, []);
     const { rows } = await query(
-      `SELECT * FROM invoices WHERE customer_id = $1
-        ORDER BY created_at DESC`,
+      `SELECT i.id, i.invoice_number, i.created_at, i.confirmed_at,
+              i.status, i.payment_status, i.total, i.amount_paid, i.balance_due,
+              i.pc_identifier,
+              (SELECT COUNT(*) FROM invoice_items it WHERE it.invoice_id = i.id)::int AS item_count
+         FROM invoices i
+        WHERE i.customer_id = $1
+        ORDER BY i.created_at DESC`,
       [req.params.id],
     );
-    return ok(res, rows);
+    const shaped = rows.map((r) => ({
+      id: r.id,
+      invoiceNumber: r.invoice_number,
+      createdAt: r.created_at,
+      confirmedAt: r.confirmed_at,
+      status: r.status,
+      paymentStatus: r.payment_status,
+      total: Number(r.total || 0),
+      amountPaid: Number(r.amount_paid || 0),
+      balanceDue: Number(r.balance_due || 0),
+      pcIdentifier: r.pc_identifier,
+      itemCount: r.item_count,
+    }));
+    return ok(res, shaped);
   } catch (err) {
     next(err);
   }
