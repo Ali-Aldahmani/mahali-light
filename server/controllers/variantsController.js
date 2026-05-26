@@ -9,6 +9,7 @@ const {
 } = require('../utils/sku');
 const { saveProductImage, deleteImageFile } = require('../utils/upload');
 const { emitProductChange } = require('./productsController');
+const { applyStockMovement } = require('../services/stockService');
 
 const createSchema = z.object({
   attributeValueIds: z.array(z.string().uuid()).default([]),
@@ -159,7 +160,7 @@ async function create(req, res, next) {
         `INSERT INTO product_variants
            (product_id, sku, supplier_barcode, internal_barcode, barcode,
             selling_price, cost_price, stock_qty, reorder_threshold, is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,true)
          RETURNING id`,
         [
           id,
@@ -169,7 +170,6 @@ async function create(req, res, next) {
           internalBarcode,
           body.sellingPrice || 0,
           body.costPrice || 0,
-          body.openingStock || 0,
           body.reorderThreshold ?? null,
         ],
       );
@@ -180,6 +180,20 @@ async function create(req, res, next) {
            VALUES ($1,$2) ON CONFLICT DO NOTHING`,
           [rows[0].id, valId],
         );
+      }
+
+      const opening = Number(body.openingStock || 0);
+      if (opening > 0) {
+        await applyStockMovement({
+          client,
+          variantId: rows[0].id,
+          productId: id,
+          type: 'opening_stock',
+          quantity: opening,
+          employeeId: req.user.id,
+          notes: 'Opening stock at variant creation',
+          skipReorderCheck: true,
+        });
       }
       return rows[0].id;
     });

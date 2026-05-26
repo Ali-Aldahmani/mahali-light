@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
+  Boxes,
   FolderTree,
   LayoutDashboard,
   Package,
@@ -7,8 +8,10 @@ import {
   Sliders,
   UsersRound,
   UserCog,
+  Zap,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
+import { useInventoryStore } from '../../store/inventoryStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -17,6 +20,14 @@ const NAV = [
   { to: '/products', label: 'Products', icon: Package, permission: 'product.view' },
   { to: '/categories', label: 'Categories', icon: FolderTree, permission: 'product.view' },
   { to: '/attributes', label: 'Attributes', icon: Sliders, permission: 'product.view' },
+  { section: 'Operations' },
+  {
+    to: '/inventory',
+    label: 'Inventory',
+    icon: Boxes,
+    permission: 'stock.view',
+    badge: 'inventory',
+  },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
@@ -46,16 +57,30 @@ function visibleItems(nav, hasPermission) {
 
 export default function Sidebar() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
+  const lowStockCount = useInventoryStore((s) => s.lowStockCount);
+  const pendingReorderAlerts = useInventoryStore((s) => s.pendingReorderAlerts);
+  const pendingAdjustments = useInventoryStore((s) => s.pendingAdjustmentsCount);
+
+  function badgeFor(key) {
+    if (key === 'inventory') {
+      const total =
+        (lowStockCount || 0) +
+        (pendingReorderAlerts?.length || 0) +
+        (pendingAdjustments || 0);
+      return total > 0 ? total : null;
+    }
+    return null;
+  }
 
   return (
     <aside className="w-64 shrink-0 border-r border-border bg-surface flex flex-col">
       <div className="flex items-center gap-2 px-5 py-5 border-b border-border">
         <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-          <Briefcase size={18} />
+          <Zap size={18} />
         </div>
         <div className="leading-tight">
           <p className="text-sm font-semibold text-ink">Mahali Light</p>
-          <p className="text-xs text-ink-muted">POS · Phase 1</p>
+          <p className="text-xs text-ink-muted">Electrical · POS</p>
         </div>
       </div>
 
@@ -72,6 +97,7 @@ export default function Sidebar() {
             );
           }
           const Icon = item.icon;
+          const badge = item.badge ? badgeFor(item.badge) : null;
           return (
             <NavLink
               key={item.to}
@@ -86,14 +112,19 @@ export default function Sidebar() {
               }
             >
               <Icon size={16} />
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              {badge !== null && (
+                <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-[11px] font-medium rounded-full bg-accent text-white">
+                  {badge}
+                </span>
+              )}
             </NavLink>
           );
         })}
       </nav>
 
       <div className="px-5 py-3 border-t border-border text-[11px] text-ink-muted">
-        v0.1.0 · {new Date().getFullYear()}
+        v0.3.0 · {new Date().getFullYear()}
       </div>
     </aside>
   );

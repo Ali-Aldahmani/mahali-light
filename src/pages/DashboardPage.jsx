@@ -1,4 +1,5 @@
 import {
+  Boxes,
   FolderTree,
   Package,
   ShieldCheck,
@@ -35,7 +36,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title={`Welcome back, ${user?.username || 'user'}`}
-        subtitle="Phase 1 — Auth & Users module is live."
+        subtitle="Phases 1–3 — Auth, Catalog, and Inventory modules are live."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -47,6 +48,14 @@ export default function DashboardPage() {
         </PermissionGate>
         <PermissionGate permission="product.view">
           <StatCard icon={Sliders} label="Attributes" value="Reusable specs" to="/attributes" />
+        </PermissionGate>
+        <PermissionGate permission="stock.view">
+          <StatCard
+            icon={Boxes}
+            label="Inventory"
+            value="Stock, counts & alerts"
+            to="/inventory"
+          />
         </PermissionGate>
         <PermissionGate permission="user.edit">
           <StatCard icon={UserCog} label="Users" value="Manage accounts" to="/users" />
@@ -72,9 +81,9 @@ export default function DashboardPage() {
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Subsequent phases will add the POS, inventory adjustments, customers, suppliers,
-          attendance, finance and reporting modules. The catalog and permissions layer
-          you see here is the foundation for all of them.
+          Subsequent phases will add purchase orders &amp; suppliers, the POS,
+          customers, attendance, finance and reporting. Inventory, catalog, and
+          permissions are the foundation for all of them.
         </p>
       </div>
     </div>

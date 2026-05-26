@@ -11,6 +11,7 @@ const {
   saveProductImage,
   deleteImageFile,
 } = require('../utils/upload');
+const { applyStockMovement } = require('../services/stockService');
 
 const SOLD_BY = ['piece', 'meter', 'roll', 'kg', 'box'];
 
@@ -324,6 +325,7 @@ async function insertVariant(client, {
   variant,
   categoryId,
   brand,
+  employeeId = null,
 }) {
   // SKU: caller-provided or generated.
   let sku = variant.sku ? variant.sku.trim() : null;
@@ -341,11 +343,13 @@ async function insertVariant(client, {
     : null;
   const displayBarcode = internalBarcode;
 
+  // Variant is created with zero stock; opening stock is then applied as a
+  // proper stock movement so the audit trail is complete.
   const { rows } = await client.query(
     `INSERT INTO product_variants
        (product_id, sku, supplier_barcode, internal_barcode, barcode,
         selling_price, cost_price, stock_qty, reorder_threshold, is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,true)
      RETURNING id`,
     [
       productId,
@@ -355,7 +359,6 @@ async function insertVariant(client, {
       displayBarcode,
       variant.sellingPrice || 0,
       variant.costPrice || 0,
-      variant.openingStock || 0,
       variant.reorderThreshold ?? null,
     ],
   );
@@ -370,6 +373,20 @@ async function insertVariant(client, {
         [variantId, valId],
       );
     }
+  }
+
+  const opening = Number(variant.openingStock || 0);
+  if (opening > 0) {
+    await applyStockMovement({
+      client,
+      variantId,
+      productId,
+      type: 'opening_stock',
+      quantity: opening,
+      employeeId,
+      notes: 'Opening stock at product creation',
+      skipReorderCheck: true,
+    });
   }
 
   return variantId;
@@ -427,6 +444,7 @@ async function create(req, res, next) {
             variant: v,
             categoryId: body.categoryId,
             brand: body.brand,
+            employeeId: req.user.id,
           });
         }
       } else {
@@ -444,6 +462,7 @@ async function create(req, res, next) {
           },
           categoryId: body.categoryId,
           brand: body.brand,
+          employeeId: req.user.id,
         });
       }
       return id;

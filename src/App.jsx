@@ -10,6 +10,9 @@ import NewProductPage from './pages/products/NewProductPage.jsx';
 import ProductDetailPage from './pages/products/ProductDetailPage.jsx';
 import CategoriesPage from './pages/products/CategoriesPage.jsx';
 import AttributesPage from './pages/products/AttributesPage.jsx';
+import InventoryPage from './pages/inventory/InventoryPage.jsx';
+import StockMovementsPage from './pages/inventory/StockMovementsPage.jsx';
+import StockCountDetailPage from './pages/inventory/StockCountDetailPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -100,6 +103,31 @@ export default function App() {
             element={
               <ProtectedRoute permission="product.view">
                 <AttributesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/inventory"
+            element={
+              <ProtectedRoute permission="stock.view">
+                <InventoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory/movements"
+            element={
+              <ProtectedRoute permission="stock.view">
+                <StockMovementsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory/counts/:id"
+            element={
+              <ProtectedRoute permission="stock.view">
+                <StockCountDetailPage />
               </ProtectedRoute>
             }
           />

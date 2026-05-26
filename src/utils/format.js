@@ -65,3 +65,24 @@ export function initials(name) {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
+
+// Format a numeric quantity, dropping trailing zeros so 5.00 -> "5".
+export function formatQty(value, { fractionDigits = 2 } = {}) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0';
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(fractionDigits).replace(/\.?0+$/, '');
+}
+
+// Format AED amounts.
+export function formatCurrency(value, { currency = 'AED' } = {}) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return `${currency} 0.00`;
+  return `${currency} ${n.toLocaleString('en-AE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+// Alias used by Phase 3 stock UIs.
+export const formatRelativeTime = timeAgo;

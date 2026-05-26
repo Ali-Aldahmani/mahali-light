@@ -4,24 +4,42 @@ import { SOCKET_URL } from '../config.js';
 import { useAuthStore } from './authStore.js';
 import { usePresenceStore } from './presenceStore.js';
 import { toast } from './toastStore.js';
+import { handleStockUpdate, syncOnReconnect } from '../services/stockCacheService.js';
 
 let heartbeatTimer = null;
 
-// Subscribers interested in product cache updates can register a callback.
-const productListeners = new Set();
-export function onProductUpdate(cb) {
-  productListeners.add(cb);
-  return () => productListeners.delete(cb);
+// Generic subscriber bus for stock/product realtime events. Pages use this to
+// re-fetch their data without each having to wire onto the socket directly.
+function makeBus() {
+  const listeners = new Set();
+  return {
+    on(cb) {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    emit(payload) {
+      for (const cb of listeners) {
+        try {
+          cb(payload);
+        } catch (_e) {
+          // ignore listener errors
+        }
+      }
+    },
+  };
 }
-function emitProductUpdate(payload) {
-  for (const cb of productListeners) {
-    try {
-      cb(payload);
-    } catch (_e) {
-      // ignore listener errors
-    }
-  }
-}
+
+const productBus = makeBus();
+const stockBus = makeBus();
+const reorderBus = makeBus();
+const adjustmentBus = makeBus();
+const countBus = makeBus();
+
+export const onProductUpdate = (cb) => productBus.on(cb);
+export const onStockUpdate = (cb) => stockBus.on(cb);
+export const onReorderAlert = (cb) => reorderBus.on(cb);
+export const onAdjustmentEvent = (cb) => adjustmentBus.on(cb);
+export const onCountEvent = (cb) => countBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -40,7 +58,21 @@ export const useSocketStore = create((set, get) => ({
       reconnectionDelay: 1500,
     });
 
-    socket.on('connect', () => set({ isConnected: true }));
+    let firstConnect = true;
+    socket.on('connect', () => {
+      const wasConnected = get().isConnected;
+      set({ isConnected: true });
+      // First connect is handled by initStockCache() in AppLayout. Re-sync
+      // only on subsequent connections (i.e. socket reconnects).
+      if (!firstConnect) {
+        syncOnReconnect().catch(() => {});
+      }
+      firstConnect = false;
+      if (wasConnected) {
+        // Notify listeners they may need to refresh after a reconnect.
+        stockBus.emit({ reconnected: true });
+      }
+    });
     socket.on('disconnect', () => set({ isConnected: false }));
 
     socket.on('connect_error', (err) => {
@@ -65,7 +97,57 @@ export const useSocketStore = create((set, get) => ({
     });
 
     socket.on('product_updated', (payload) => {
-      emitProductUpdate(payload);
+      productBus.emit(payload);
+    });
+
+    socket.on('stock_updated', (payload) => {
+      handleStockUpdate(payload);
+      stockBus.emit(payload);
+    });
+
+    socket.on('reorder_alert_created', (payload) => {
+      reorderBus.emit(payload);
+      toast.warning(
+        `Low stock: ${payload.productName} (${payload.currentStock} ${payload.unitLabel || ''})`,
+      );
+    });
+
+    socket.on('adjustment_request_created', (payload) => {
+      adjustmentBus.emit({ ...payload, kind: 'created' });
+      toast.info(
+        `Adjustment request from ${payload.requestedByUsername || 'a user'}: ${payload.productName}`,
+      );
+    });
+
+    socket.on('adjustment_request_reviewed', (payload) => {
+      adjustmentBus.emit({ ...payload, kind: 'reviewed' });
+      if (payload.status === 'approved') {
+        toast.success(
+          `Your adjustment request was approved by ${payload.reviewedByUsername || 'a manager'}.`,
+        );
+      } else if (payload.status === 'rejected') {
+        toast.error(
+          `Your adjustment request was rejected${payload.rejectionReason ? ': ' + payload.rejectionReason : '.'}`,
+        );
+      }
+    });
+
+    socket.on('stock_count_submitted', (payload) => {
+      countBus.emit({ ...payload, kind: 'submitted' });
+      toast.info(
+        `Stock count submitted (${payload.discrepancyCount} discrepancies)`,
+      );
+    });
+
+    socket.on('stock_count_reviewed', (payload) => {
+      countBus.emit({ ...payload, kind: 'reviewed' });
+      if (payload.status === 'approved') {
+        toast.success('Your stock count was approved.');
+      } else if (payload.status === 'rejected') {
+        toast.error(
+          `Your stock count was rejected${payload.rejectionReason ? ': ' + payload.rejectionReason : '.'}`,
+        );
+      }
     });
 
     if (heartbeatTimer) clearInterval(heartbeatTimer);

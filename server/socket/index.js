@@ -49,6 +49,8 @@ function attachSocket(httpServer) {
 
     socket.join(`user:${userId}`);
     socket.join(`token:${token}`);
+    // Role-based room used by stock alerts, adjustment requests, etc.
+    if (role) socket.join(`role:${role}`);
 
     socket.emit('connected', { userId, username, role });
     socket.broadcast.emit('user_online', { userId, username, role, pcIdentifier });

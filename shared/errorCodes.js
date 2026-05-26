@@ -23,6 +23,11 @@ const ERROR_CODES = {
   ROLE_IS_SYSTEM: 'ROLE_IS_SYSTEM',
   USERNAME_TAKEN: 'USERNAME_TAKEN',
 
+  // Business rule violations
+  BIZ_INSUFFICIENT_STOCK: 'BIZ_INSUFFICIENT_STOCK',
+  BIZ_STOCK_COUNT_IN_PROGRESS: 'BIZ_STOCK_COUNT_IN_PROGRESS',
+  BIZ_INVALID_STATE: 'BIZ_INVALID_STATE',
+
   // Generic
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   NETWORK_ERROR: 'NETWORK_ERROR',
@@ -43,6 +48,11 @@ const ERROR_MESSAGES = {
   [ERROR_CODES.RESOURCE_IN_USE]: 'This resource is still in use and cannot be removed.',
   [ERROR_CODES.ROLE_IS_SYSTEM]: 'System roles cannot be modified or deleted.',
   [ERROR_CODES.USERNAME_TAKEN]: 'This username is already taken.',
+  [ERROR_CODES.BIZ_INSUFFICIENT_STOCK]:
+    'Not enough stock available for this operation.',
+  [ERROR_CODES.BIZ_STOCK_COUNT_IN_PROGRESS]:
+    'A stock count is in progress for this product. Try again once it is approved or rejected.',
+  [ERROR_CODES.BIZ_INVALID_STATE]: 'This action is not allowed in the current state.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };

@@ -10,6 +10,7 @@ const compression = require('compression');
 const { runMigrations } = require('./db/migrate');
 const { run: runSeed } = require('./db/seed');
 const { run: runSeedProducts } = require('./db/seedProducts');
+const { run: runSeedSettings } = require('./db/seedSettings');
 const { attachSocket } = require('./socket');
 const { getUploadsRoot } = require('./utils/paths');
 
@@ -22,6 +23,8 @@ const categoriesRouter = require('./routes/categories');
 const attributesRouter = require('./routes/attributes');
 const productsRouter = require('./routes/products');
 const variantsRouter = require('./routes/variants');
+const stockRouter = require('./routes/stock');
+const settingsRouter = require('./routes/settings');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 
@@ -29,6 +32,7 @@ async function bootstrap() {
   await runMigrations();
   await runSeed();
   await runSeedProducts();
+  await runSeedSettings();
 
   const app = express();
   const server = http.createServer(app);
@@ -64,6 +68,8 @@ async function bootstrap() {
   app.use('/api/attributes', attributesRouter);
   app.use('/api/products', productsRouter);
   app.use('/api/variants', variantsRouter);
+  app.use('/api/stock', stockRouter);
+  app.use('/api/settings', settingsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
