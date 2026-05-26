@@ -107,8 +107,12 @@ const PERMISSIONS = {
     perfAll: 'report.employee_performance_all',
   },
   analytics: {
+    viewDashboard: 'analytics.view_dashboard',
+    view: 'analytics.view',
     peaks: 'analytics.view_peaks',
+    seasonality: 'analytics.view_seasonality',
     reorder: 'analytics.view_reorder',
+    manageReorderSettings: 'analytics.manage_reorder_settings',
     exportForecast: 'analytics.export_forecast',
   },
   backup: {
@@ -151,7 +155,10 @@ const ROLE_DEFAULTS = {
     'report.analytics',
     'report.export_pdf', 'report.export_csv', 'report.export_excel',
     'report.employee_performance_all',
-    'analytics.view_peaks', 'analytics.view_reorder',
+    'analytics.view_dashboard', 'analytics.view',
+    'analytics.view_peaks', 'analytics.view_seasonality',
+    'analytics.view_reorder', 'analytics.manage_reorder_settings',
+    'analytics.export_forecast',
     'backup.view', 'backup.run_manual',
     'settings.view',
     'warranty.view', 'warranty.create', 'warranty.claim',
@@ -167,6 +174,7 @@ const ROLE_DEFAULTS = {
     'warranty.view', 'warranty.create',
     'report.sales', 'report.export_pdf', 'report.export_csv',
     'report.employee_performance_own',
+    'analytics.view_dashboard',
   ],
   Warehouse: [
     'product.view', 'product.adjust_stock',
@@ -175,6 +183,8 @@ const ROLE_DEFAULTS = {
     'attendance.view_own', 'attendance.correction_request',
     'report.inventory',
     'report.employee_performance_own',
+    'analytics.view_dashboard',
+    'analytics.view_reorder',
   ],
 };
 

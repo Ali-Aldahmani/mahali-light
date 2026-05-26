@@ -31,6 +31,7 @@ import {
   CalendarRange,
   BarChart3,
   CalendarCheck2,
+  Activity,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
@@ -205,6 +206,17 @@ const NAV = [
     label: 'Scheduled reports',
     icon: CalendarCheck2,
     permission: 'report.schedule',
+  },
+  { section: 'Analytics' },
+  {
+    to: '/analytics',
+    label: 'Analytics hub',
+    icon: Activity,
+    anyPermissions: [
+      'analytics.view',
+      'analytics.view_peaks',
+      'analytics.view_reorder',
+    ],
   },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },

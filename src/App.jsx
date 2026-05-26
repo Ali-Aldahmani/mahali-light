@@ -49,6 +49,7 @@ import ReportsHubPage from './pages/reports/ReportsHubPage.jsx';
 import ReportPage from './pages/reports/ReportPage.jsx';
 import NetProfitPage from './pages/reports/NetProfitPage.jsx';
 import ScheduledReportsPage from './pages/reports/ScheduledReportsPage.jsx';
+import AnalyticsPage from './pages/analytics/AnalyticsPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -453,6 +454,15 @@ export default function App() {
             }
           />
           <Route path="/reports/:category/:type" element={<ReportPage />} />
+
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute permission="analytics.view">
+                <AnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -75,6 +75,7 @@ const TITLES = {
   '/reports': 'Reports',
   '/reports/net-profit': 'Net profit',
   '/reports/scheduled': 'Scheduled reports',
+  '/analytics': 'Analytics',
 };
 
 export default function AppLayout() {

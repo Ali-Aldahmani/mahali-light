@@ -51,6 +51,8 @@ const billPaymentsRouter = require('./routes/billPayments');
 const expensesRouter = require('./routes/expenses');
 const expenseCategoriesRouter = require('./routes/expenseCategories');
 const financeRouter = require('./routes/finance');
+const analyticsRouter = require('./routes/analytics');
+const forecastRouter = require('./routes/forecast');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
@@ -60,6 +62,7 @@ const { startWarrantyExpiryJob } = require('./jobs/warrantyExpiry');
 const { startAttendanceSweepJob } = require('./jobs/attendanceSweep');
 const { startBillStatusSweepJob } = require('./jobs/billStatusSweep');
 const { startScheduledReportJob } = require('./services/scheduledReportService');
+const { startForecastJob } = require('./services/forecastService');
 
 async function bootstrap() {
   await runMigrations();
@@ -132,6 +135,8 @@ async function bootstrap() {
   app.use('/api/expenses', expensesRouter);
   app.use('/api/expense-categories', expenseCategoriesRouter);
   app.use('/api/finance', financeRouter);
+  app.use('/api/analytics', analyticsRouter);
+  app.use('/api/forecast', forecastRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -144,6 +149,7 @@ async function bootstrap() {
   startAttendanceSweepJob(io);
   startBillStatusSweepJob(io);
   startScheduledReportJob(io);
+  startForecastJob();
 
   const port = Number(process.env.PORT || 3000);
   server.listen(port, '0.0.0.0', () => {
