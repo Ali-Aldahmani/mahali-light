@@ -13,6 +13,7 @@ const ALLOWED_TX_TYPES = new Set([
   'supplier_payment',
   'customer_payment',
   'expense',
+  'bill_payment',
   'manual_in',
   'manual_out',
   'opening',

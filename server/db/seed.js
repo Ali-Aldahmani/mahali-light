@@ -67,6 +67,7 @@ const ALL_PERMISSIONS = [
   ['bills.view', 'View Bills', 'bills'],
   ['bills.pay', 'Pay Bills', 'bills'],
   ['bills.manage', 'Manage Bills', 'bills'],
+  ['bills.notifications', 'Receive Bill Reminders', 'bills'],
   ['finance.view_dashboard', 'View Finance Dashboard', 'finance'],
   ['finance.view_pl', 'View P&L Report', 'finance'],
   ['finance.view_balance_sheet', 'View Balance Sheet', 'finance'],

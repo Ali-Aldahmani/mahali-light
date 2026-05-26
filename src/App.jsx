@@ -39,6 +39,8 @@ import TreasuryPage from './pages/treasury/TreasuryPage.jsx';
 import AttendancePage from './pages/attendance/AttendancePage.jsx';
 import LeaveBalancesPage from './pages/attendance/LeaveBalancesPage.jsx';
 import HolidaysPage from './pages/attendance/HolidaysPage.jsx';
+import ExpensesPage from './pages/expenses/ExpensesPage.jsx';
+import BillDetailPage from './pages/expenses/BillDetailPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -370,6 +372,23 @@ export default function App() {
             element={
               <ProtectedRoute permission="attendance.view_own">
                 <HolidaysPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/expenses"
+            element={
+              <ProtectedRoute permission="bills.view">
+                <ExpensesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/expenses/bills/:id"
+            element={
+              <ProtectedRoute permission="bills.view">
+                <BillDetailPage />
               </ProtectedRoute>
             }
           />

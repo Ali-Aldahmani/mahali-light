@@ -22,6 +22,7 @@ import { Link } from 'react-router-dom';
 import PageHeader from '../components/ui/PageHeader.jsx';
 import { useAuthStore } from '../store/authStore.js';
 import PermissionGate from '../components/ui/PermissionGate.jsx';
+import UpcomingBillsWidget from '../components/ui/UpcomingBillsWidget.jsx';
 
 function StatCard({ icon: Icon, label, value, to }) {
   const body = (
@@ -156,6 +157,14 @@ export default function DashboardPage() {
             to="/attendance"
           />
         </PermissionGate>
+        <PermissionGate permission="bills.view">
+          <StatCard
+            icon={Receipt}
+            label="Bills & expenses"
+            value="Recurring + one-time"
+            to="/expenses"
+          />
+        </PermissionGate>
         <PermissionGate permission="user.edit">
           <StatCard icon={UserCog} label="Users" value="Manage accounts" to="/users" />
         </PermissionGate>
@@ -177,13 +186,21 @@ export default function DashboardPage() {
         </PermissionGate>
       </div>
 
+      <PermissionGate permission="bills.view">
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-1">
+            <UpcomingBillsWidget />
+          </div>
+        </div>
+      </PermissionGate>
+
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          POS, invoicing, warranties, returns, treasury and attendance are all
-          live — open <strong>POS</strong> to ring up a sale, head to
+          POS, invoicing, warranties, returns, treasury, attendance and bills
+          are all live — open <strong>POS</strong> to ring up a sale, head to
           <strong> Treasury</strong> for the cash drawer and banks, or jump to
-          <strong> Attendance</strong> to see today's roster and manage leaves.
+          <strong> Bills &amp; expenses</strong> to track recurring spend.
           Finance and reporting are next.
         </p>
       </div>

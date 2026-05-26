@@ -12,6 +12,7 @@ import { useWarrantyStore } from '../../store/warrantyStore.js';
 import { useReturnStore } from '../../store/returnStore.js';
 import { useTreasuryStore } from '../../store/treasuryStore.js';
 import { useAttendanceStore } from '../../store/attendanceStore.js';
+import { useBillStore } from '../../store/billStore.js';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
@@ -29,6 +30,8 @@ import {
   onAttendanceEvent,
   onLeaveEvent,
   onCorrectionEvent,
+  onBillEvent,
+  onExpenseEvent,
 } from '../../store/socketStore.js';
 
 const TITLES = {
@@ -63,6 +66,8 @@ const TITLES = {
   '/attendance': 'Attendance',
   '/attendance/leave-balances': 'Leave balances',
   '/attendance/holidays': 'Holidays',
+  '/expenses': 'Bills & expenses',
+  '/expenses/bills': 'Bill',
 };
 
 export default function AppLayout() {
@@ -87,6 +92,8 @@ export default function AppLayout() {
   const refreshAttendanceToday = useAttendanceStore((s) => s.refreshToday);
   const refreshAttendancePending = useAttendanceStore((s) => s.refreshPending);
   const applyAttendanceEvent = useAttendanceStore((s) => s.applyAttendanceEvent);
+  const refreshUpcomingBills = useBillStore((s) => s.refreshUpcoming);
+  const refreshExpenseSummary = useBillStore((s) => s.refreshExpenseSummary);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -139,6 +146,12 @@ export default function AppLayout() {
       refreshAttendanceToday?.();
       refreshAttendancePending?.();
     }
+    const hasBillView =
+      permissions.includes('bills.view') || permissions.includes('*');
+    if (hasBillView) {
+      refreshUpcomingBills?.();
+      refreshExpenseSummary?.();
+    }
 
     // Keep sidebar badges in sync with realtime events. Throttle the
     // heavyweight inventory refresh so a busy POS session doesn't hammer it.
@@ -183,6 +196,8 @@ export default function AppLayout() {
     });
     const unsubN = onLeaveEvent(() => refreshAttendancePending?.());
     const unsubO = onCorrectionEvent(() => refreshAttendancePending?.());
+    const unsubP = onBillEvent(() => refreshUpcomingBills?.());
+    const unsubQ = onExpenseEvent(() => refreshExpenseSummary?.());
 
     return () => {
       unsubA();
@@ -200,6 +215,8 @@ export default function AppLayout() {
       unsubM();
       unsubN();
       unsubO();
+      unsubP();
+      unsubQ();
       if (throttleTimer) clearTimeout(throttleTimer);
       disconnect();
     };

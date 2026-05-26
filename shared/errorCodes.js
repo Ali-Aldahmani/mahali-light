@@ -67,6 +67,15 @@ const ERROR_CODES = {
   BIZ_BANK_HAS_BALANCE: 'BIZ_BANK_HAS_BALANCE',
   BIZ_NO_DEFAULT_BANK: 'BIZ_NO_DEFAULT_BANK',
 
+  // Phase 12 — Bills & Expenses
+  BIZ_BILL_NOT_DUE: 'BIZ_BILL_NOT_DUE',
+  BIZ_BILL_ALREADY_PAID: 'BIZ_BILL_ALREADY_PAID',
+  BIZ_BILL_PAUSED: 'BIZ_BILL_PAUSED',
+  BIZ_BILL_CANCELLED: 'BIZ_BILL_CANCELLED',
+  BIZ_CATEGORY_IN_USE: 'BIZ_CATEGORY_IN_USE',
+  BIZ_EXPENSE_LOCKED: 'BIZ_EXPENSE_LOCKED',
+  BIZ_AMOUNT_REQUIRED: 'BIZ_AMOUNT_REQUIRED',
+
   // Phase 11 — Attendance & Leaves
   BIZ_CORRECTION_TOO_OLD: 'BIZ_CORRECTION_TOO_OLD',
   BIZ_INSUFFICIENT_LEAVE_BALANCE: 'BIZ_INSUFFICIENT_LEAVE_BALANCE',
@@ -185,6 +194,20 @@ const ERROR_MESSAGES = {
     'This attendance record is locked and cannot be modified.',
   [ERROR_CODES.BIZ_HOLIDAY_DUPLICATE]:
     'A holiday already exists for that date.',
+  [ERROR_CODES.BIZ_BILL_NOT_DUE]:
+    'This bill payment is not due yet.',
+  [ERROR_CODES.BIZ_BILL_ALREADY_PAID]:
+    'This bill payment has already been paid.',
+  [ERROR_CODES.BIZ_BILL_PAUSED]:
+    'This bill is paused — resume it before making changes.',
+  [ERROR_CODES.BIZ_BILL_CANCELLED]:
+    'This bill has been cancelled.',
+  [ERROR_CODES.BIZ_CATEGORY_IN_USE]:
+    'This category is linked to bills or expenses and cannot be deleted.',
+  [ERROR_CODES.BIZ_EXPENSE_LOCKED]:
+    'Expenses can only be deleted on the same day they were created.',
+  [ERROR_CODES.BIZ_AMOUNT_REQUIRED]:
+    'Variable-amount bills require the actual paid amount.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };

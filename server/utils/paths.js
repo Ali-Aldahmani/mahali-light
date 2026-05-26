@@ -27,6 +27,28 @@ function ensureSupplierPaymentDir(paymentId) {
   return dir;
 }
 
+function ensureBillPaymentDir(billPaymentId) {
+  const dir = path.join(
+    getUploadsRoot(),
+    'receipts',
+    'bills',
+    billPaymentId,
+  );
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function ensureExpenseDir(expenseId) {
+  const dir = path.join(
+    getUploadsRoot(),
+    'receipts',
+    'expenses',
+    expenseId,
+  );
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 // PDF cache directories. Invoices and POs get their own subfolder so cleanup
 // jobs can target each independently. `kind` is e.g. 'invoices', 'purchase-orders', 'reports', 'receipts'.
 function ensurePdfDir(kind) {
@@ -63,6 +85,8 @@ module.exports = {
   ensureProductDir,
   ensurePurchaseOrderDir,
   ensureSupplierPaymentDir,
+  ensureBillPaymentDir,
+  ensureExpenseDir,
   ensurePdfDir,
   ensureStoreDir,
   toRelative,

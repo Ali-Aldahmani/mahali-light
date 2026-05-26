@@ -71,7 +71,12 @@ const PERMISSIONS = {
     correctionRequest: 'attendance.correction_request',
     correctionApprove: 'attendance.correction_approve',
   },
-  bills: { view: 'bills.view', pay: 'bills.pay', manage: 'bills.manage' },
+  bills: {
+    view: 'bills.view',
+    pay: 'bills.pay',
+    manage: 'bills.manage',
+    notifications: 'bills.notifications',
+  },
   finance: {
     dashboard: 'finance.view_dashboard',
     pl: 'finance.view_pl',
@@ -135,7 +140,7 @@ const ROLE_DEFAULTS = {
     'bank.view', 'bank.transact',
     'return.request', 'return.approve', 'return.process',
     'attendance.view_own', 'attendance.view_all', 'attendance.mark_manual', 'attendance.correction_approve',
-    'bills.view', 'bills.pay', 'bills.manage',
+    'bills.view', 'bills.pay', 'bills.manage', 'bills.notifications',
     'finance.view_dashboard', 'finance.view_pl', 'finance.view_cashflow', 'finance.view_vat',
     'report.sales', 'report.inventory', 'report.customers', 'report.suppliers', 'report.employees',
     'report.attendance', 'report.warranty', 'report.returns', 'report.bills', 'report.analytics',

@@ -34,6 +34,7 @@ import { useInvoiceStore } from '../../store/invoiceStore.js';
 import { useWarrantyStore } from '../../store/warrantyStore.js';
 import { useReturnStore } from '../../store/returnStore.js';
 import { useAttendanceStore } from '../../store/attendanceStore.js';
+import { useBillStore } from '../../store/billStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -154,6 +155,14 @@ const NAV = [
     icon: CalendarOff,
     permission: 'attendance.view_own',
   },
+  { section: 'Expenses' },
+  {
+    to: '/expenses',
+    label: 'Bills & expenses',
+    icon: Receipt,
+    permission: 'bills.view',
+    badge: 'billsAttention',
+  },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
@@ -201,6 +210,7 @@ export default function Sidebar() {
   const returnsPending = useReturnStore((s) => s.pendingCount);
   const pendingCorrections = useAttendanceStore((s) => s.pendingCorrections);
   const pendingLeaves = useAttendanceStore((s) => s.pendingLeaves);
+  const billsAttention = useBillStore((s) => s.attentionCount());
 
   function badgeFor(key) {
     if (key === 'inventory') {
@@ -232,6 +242,9 @@ export default function Sidebar() {
     if (key === 'attendancePending') {
       const total = (pendingCorrections?.length || 0) + (pendingLeaves?.length || 0);
       return total > 0 ? total : null;
+    }
+    if (key === 'billsAttention') {
+      return billsAttention > 0 ? billsAttention : null;
     }
     return null;
   }

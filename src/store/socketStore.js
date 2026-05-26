@@ -49,6 +49,8 @@ const attendanceBus = makeBus();
 const leaveBus = makeBus();
 const correctionBus = makeBus();
 const holidayBus = makeBus();
+const billBus = makeBus();
+const expenseBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
@@ -70,6 +72,8 @@ export const onAttendanceEvent = (cb) => attendanceBus.on(cb);
 export const onLeaveEvent = (cb) => leaveBus.on(cb);
 export const onCorrectionEvent = (cb) => correctionBus.on(cb);
 export const onHolidayEvent = (cb) => holidayBus.on(cb);
+export const onBillEvent = (cb) => billBus.on(cb);
+export const onExpenseEvent = (cb) => expenseBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -433,6 +437,36 @@ export const useSocketStore = create((set, get) => ({
     });
     socket.on('holiday_removed', (payload) => {
       holidayBus.emit({ ...payload, kind: 'removed' });
+    });
+
+    // Phase 12 — bills & expenses.
+    socket.on('bill_due_reminder', (payload) => {
+      billBus.emit({ ...payload, kind: 'reminder' });
+      const fmt =
+        Number(payload?.amount || 0) > 0
+          ? `AED ${Number(payload.amount).toFixed(2)}`
+          : 'variable amount';
+      if (payload.type === 'overdue') {
+        const days = Math.abs(payload.daysUntilDue || 0);
+        toast.error(
+          `${payload.billName} is overdue by ${days} day${days === 1 ? '' : 's'} (${fmt}).`,
+        );
+      } else if (payload.type === 'due_today') {
+        toast.warning(`${payload.billName} is due today (${fmt}).`);
+      } else {
+        toast.info(
+          `${payload.billName} is due in ${payload.daysUntilDue || 0} days (${fmt}).`,
+        );
+      }
+    });
+    socket.on('bill_paid', (payload) => {
+      billBus.emit({ ...payload, kind: 'paid' });
+      toast.success(
+        `${payload.billName} marked paid (AED ${Number(payload.amount || 0).toFixed(2)}).`,
+      );
+    });
+    socket.on('expense_recorded', (payload) => {
+      expenseBus.emit({ ...payload, kind: 'recorded' });
     });
 
     if (heartbeatTimer) clearInterval(heartbeatTimer);

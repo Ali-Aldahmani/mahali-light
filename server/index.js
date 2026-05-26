@@ -46,6 +46,10 @@ const leavesRouter = require('./routes/leaves');
 const leaveBalancesRouter = require('./routes/leaveBalances');
 const holidaysRouter = require('./routes/holidays');
 const reportsRouter = require('./routes/reports');
+const billsRouter = require('./routes/bills');
+const billPaymentsRouter = require('./routes/billPayments');
+const expensesRouter = require('./routes/expenses');
+const expenseCategoriesRouter = require('./routes/expenseCategories');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
@@ -53,6 +57,7 @@ const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
 const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
 const { startWarrantyExpiryJob } = require('./jobs/warrantyExpiry');
 const { startAttendanceSweepJob } = require('./jobs/attendanceSweep');
+const { startBillStatusSweepJob } = require('./jobs/billStatusSweep');
 
 async function bootstrap() {
   await runMigrations();
@@ -120,6 +125,10 @@ async function bootstrap() {
   app.use('/api/leave-balances', leaveBalancesRouter);
   app.use('/api/holidays', holidaysRouter);
   app.use('/api/reports', reportsRouter);
+  app.use('/api/bills', billsRouter);
+  app.use('/api/bill-payments', billPaymentsRouter);
+  app.use('/api/expenses', expensesRouter);
+  app.use('/api/expense-categories', expenseCategoriesRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -130,6 +139,7 @@ async function bootstrap() {
   startPdfCleanupJob();
   startWarrantyExpiryJob(io);
   startAttendanceSweepJob(io);
+  startBillStatusSweepJob(io);
 
   const port = Number(process.env.PORT || 3000);
   server.listen(port, '0.0.0.0', () => {

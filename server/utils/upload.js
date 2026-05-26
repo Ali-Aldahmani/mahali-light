@@ -7,6 +7,8 @@ const {
   ensureProductDir,
   ensurePurchaseOrderDir,
   ensureSupplierPaymentDir,
+  ensureBillPaymentDir,
+  ensureExpenseDir,
   toAbsolute,
   toRelative,
 } = require('./paths');
@@ -192,6 +194,16 @@ async function saveSupplierPaymentReceipt({ paymentId, file }) {
   return saveAttachment({ targetDir: dir, file });
 }
 
+async function saveBillPaymentReceipt({ billPaymentId, file }) {
+  const dir = ensureBillPaymentDir(billPaymentId);
+  return saveAttachment({ targetDir: dir, file });
+}
+
+async function saveExpenseReceipt({ expenseId, file }) {
+  const dir = ensureExpenseDir(expenseId);
+  return saveAttachment({ targetDir: dir, file });
+}
+
 function deleteAttachmentFile(relPath) {
   if (!relPath) return;
   const abs = toAbsolute(relPath);
@@ -212,5 +224,7 @@ module.exports = {
   saveAttachment,
   savePurchaseOrderAttachment,
   saveSupplierPaymentReceipt,
+  saveBillPaymentReceipt,
+  saveExpenseReceipt,
   deleteAttachmentFile,
 };
