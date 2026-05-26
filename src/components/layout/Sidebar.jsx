@@ -10,11 +10,14 @@ import {
   Truck,
   UsersRound,
   UserCog,
+  Users,
+  Wallet,
   Zap,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
 import { useSupplierStore } from '../../store/supplierStore.js';
+import { useCustomerStore } from '../../store/customerStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -44,6 +47,21 @@ const NAV = [
     icon: Truck,
     permission: 'supplier.view',
     badge: 'po',
+  },
+  { section: 'Sales' },
+  {
+    to: '/customers',
+    label: 'Customers',
+    icon: Users,
+    permission: 'customer.view',
+    badge: 'customers',
+  },
+  {
+    to: '/customers/outstanding',
+    label: 'Receivables',
+    icon: Wallet,
+    permission: 'customer.view_balance',
+    badge: 'receivables',
   },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
@@ -79,6 +97,7 @@ export default function Sidebar() {
   const pendingAdjustments = useInventoryStore((s) => s.pendingAdjustmentsCount);
   const pendingPaymentCount = useSupplierStore((s) => s.pendingPaymentCount);
   const overdueCount = useSupplierStore((s) => s.overdueCount);
+  const customersWithBalance = useCustomerStore((s) => s.customersWithBalance);
 
   function badgeFor(key) {
     if (key === 'inventory') {
@@ -91,6 +110,9 @@ export default function Sidebar() {
     if (key === 'po') {
       const total = (overdueCount || 0) + (pendingPaymentCount || 0);
       return total > 0 ? total : null;
+    }
+    if (key === 'customers' || key === 'receivables') {
+      return customersWithBalance > 0 ? customersWithBalance : null;
     }
     return null;
   }

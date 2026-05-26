@@ -6,9 +6,11 @@ import { useSocketStore } from '../../store/socketStore.js';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
 import { useSupplierStore } from '../../store/supplierStore.js';
+import { useCustomerStore } from '../../store/customerStore.js';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
+  onCustomerBalanceUpdate,
   onPurchaseOrderEvent,
   onReorderAlert,
   onStockUpdate,
@@ -30,6 +32,8 @@ const TITLES = {
   '/suppliers': 'Suppliers',
   '/purchase-orders': 'Purchase orders',
   '/purchase-orders/new': 'New purchase order',
+  '/customers': 'Customers',
+  '/customers/outstanding': 'Outstanding receivables',
 };
 
 export default function AppLayout() {
@@ -42,6 +46,7 @@ export default function AppLayout() {
   const refreshAlerts = useInventoryStore((s) => s.refreshAlerts);
   const refreshAdjustments = useInventoryStore((s) => s.refreshAdjustmentsBadge);
   const refreshSupplierSummary = useSupplierStore((s) => s.refreshSummary);
+  const refreshCustomerSummary = useCustomerStore((s) => s.refreshSummary);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -56,6 +61,11 @@ export default function AppLayout() {
       permissions.includes('supplier.view') || permissions.includes('*');
     if (hasSupplier) {
       refreshSupplierSummary?.();
+    }
+    const hasCustomer =
+      permissions.includes('customer.view') || permissions.includes('*');
+    if (hasCustomer) {
+      refreshCustomerSummary?.();
     }
 
     // Keep sidebar badges in sync with realtime events. Throttle the
@@ -73,6 +83,7 @@ export default function AppLayout() {
     const unsubC = onStockUpdate(throttledRefresh);
     const unsubD = onPurchaseOrderEvent(() => refreshSupplierSummary?.());
     const unsubE = onSupplierReturnEvent(() => refreshSupplierSummary?.());
+    const unsubF = onCustomerBalanceUpdate(() => refreshCustomerSummary?.());
 
     return () => {
       unsubA();
@@ -80,6 +91,7 @@ export default function AppLayout() {
       unsubC();
       unsubD();
       unsubE();
+      unsubF();
       if (throttleTimer) clearTimeout(throttleTimer);
       disconnect();
     };

@@ -29,6 +29,8 @@ const suppliersRouter = require('./routes/suppliers');
 const purchaseOrdersRouter = require('./routes/purchaseOrders');
 const supplierPaymentsRouter = require('./routes/supplierPayments');
 const supplierReturnsRouter = require('./routes/supplierReturns');
+const customersRouter = require('./routes/customers');
+const customerPaymentsRouter = require('./routes/customerPayments');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
@@ -79,6 +81,8 @@ async function bootstrap() {
   app.use('/api/purchase-orders', purchaseOrdersRouter);
   app.use('/api/supplier-payments', supplierPaymentsRouter);
   app.use('/api/supplier-returns', supplierReturnsRouter);
+  app.use('/api/customers', customersRouter);
+  app.use('/api/customer-payments', customerPaymentsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

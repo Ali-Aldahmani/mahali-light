@@ -18,6 +18,9 @@ import SupplierProfilePage from './pages/suppliers/SupplierProfilePage.jsx';
 import PurchaseOrdersPage from './pages/purchases/PurchaseOrdersPage.jsx';
 import NewPurchaseOrderPage from './pages/purchases/NewPurchaseOrderPage.jsx';
 import PurchaseOrderDetailPage from './pages/purchases/PurchaseOrderDetailPage.jsx';
+import CustomersPage from './pages/customers/CustomersPage.jsx';
+import CustomerProfilePage from './pages/customers/CustomerProfilePage.jsx';
+import OutstandingReceivablesPage from './pages/customers/OutstandingReceivablesPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -174,6 +177,31 @@ export default function App() {
             element={
               <ProtectedRoute permission="supplier.view">
                 <PurchaseOrderDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/customers"
+            element={
+              <ProtectedRoute permission="customer.view">
+                <CustomersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customers/outstanding"
+            element={
+              <ProtectedRoute permission="customer.view_balance">
+                <OutstandingReceivablesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customers/:id"
+            element={
+              <ProtectedRoute permission="customer.view">
+                <CustomerProfilePage />
               </ProtectedRoute>
             }
           />

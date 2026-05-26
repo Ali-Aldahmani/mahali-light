@@ -36,6 +36,7 @@ const adjustmentBus = makeBus();
 const countBus = makeBus();
 const poBus = makeBus();
 const supplierReturnBus = makeBus();
+const customerBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
@@ -44,6 +45,7 @@ export const onAdjustmentEvent = (cb) => adjustmentBus.on(cb);
 export const onCountEvent = (cb) => countBus.on(cb);
 export const onPurchaseOrderEvent = (cb) => poBus.on(cb);
 export const onSupplierReturnEvent = (cb) => supplierReturnBus.on(cb);
+export const onCustomerBalanceUpdate = (cb) => customerBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -191,6 +193,21 @@ export const useSocketStore = create((set, get) => ({
       toast.info(
         `Supplier return ${payload.returnNumber || ''} created.`,
       );
+    });
+
+    socket.on('customer_balance_updated', (payload) => {
+      customerBus.emit(payload);
+      if (payload.reversed) {
+        toast.warning(
+          `Customer payment of AED ${Math.abs(payload.deltaAmount || 0).toFixed(
+            2,
+          )} reversed for ${payload.customerName || 'customer'}.`,
+        );
+      } else if (payload.deltaAmount < 0) {
+        toast.success(
+          `Collected AED ${Math.abs(payload.deltaAmount).toFixed(2)} from ${payload.customerName || 'customer'}.`,
+        );
+      }
     });
 
     if (heartbeatTimer) clearInterval(heartbeatTimer);

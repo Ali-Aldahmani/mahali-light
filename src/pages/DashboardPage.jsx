@@ -7,7 +7,9 @@ import {
   Sliders,
   Truck,
   UserCog,
+  Users,
   UsersRound,
+  Wallet,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/ui/PageHeader.jsx';
@@ -38,7 +40,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title={`Welcome back, ${user?.username || 'user'}`}
-        subtitle="Phases 1–4 — Auth, Catalog, Inventory, and Procurement are live."
+        subtitle="Phases 1–5 — Auth, Catalog, Inventory, Procurement and Customers are live."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -75,6 +77,22 @@ export default function DashboardPage() {
             to="/purchase-orders"
           />
         </PermissionGate>
+        <PermissionGate permission="customer.view">
+          <StatCard
+            icon={Users}
+            label="Customers"
+            value="Profiles & credit"
+            to="/customers"
+          />
+        </PermissionGate>
+        <PermissionGate permission="customer.view_balance">
+          <StatCard
+            icon={Wallet}
+            label="Receivables"
+            value="Outstanding balances"
+            to="/customers/outstanding"
+          />
+        </PermissionGate>
         <PermissionGate permission="user.edit">
           <StatCard icon={UserCog} label="Users" value="Manage accounts" to="/users" />
         </PermissionGate>
@@ -99,9 +117,9 @@ export default function DashboardPage() {
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Subsequent phases will add the POS, customers, attendance, cash &amp;
-          bank, finance and reporting. Inventory and procurement are now the
-          foundation for those flows.
+          Subsequent phases add the POS, sales invoicing, warranties, returns,
+          attendance, cash &amp; bank, finance and reporting. Customer
+          profiles and credit collection are now wired in for those flows.
         </p>
       </div>
     </div>

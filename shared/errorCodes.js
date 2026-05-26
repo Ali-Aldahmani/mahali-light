@@ -29,6 +29,12 @@ const ERROR_CODES = {
   BIZ_INVALID_STATE: 'BIZ_INVALID_STATE',
   BIZ_PAYMENT_EXCEEDS_BALANCE: 'BIZ_PAYMENT_EXCEEDS_BALANCE',
   BIZ_RECEIVE_EXCEEDS_ORDER: 'BIZ_RECEIVE_EXCEEDS_ORDER',
+  BIZ_CREDIT_LIMIT_EXCEEDED: 'BIZ_CREDIT_LIMIT_EXCEEDED',
+  BIZ_OUTSTANDING_BALANCE: 'BIZ_OUTSTANDING_BALANCE',
+
+  // Field validations
+  VAL_DUPLICATE_PHONE: 'VAL_DUPLICATE_PHONE',
+  VAL_INVALID_TRN: 'VAL_INVALID_TRN',
 
   // Generic
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -59,6 +65,14 @@ const ERROR_MESSAGES = {
     'Payment amount cannot exceed the outstanding balance.',
   [ERROR_CODES.BIZ_RECEIVE_EXCEEDS_ORDER]:
     'Received quantity cannot exceed the ordered quantity.',
+  [ERROR_CODES.BIZ_CREDIT_LIMIT_EXCEEDED]:
+    'This sale would exceed the customer credit limit.',
+  [ERROR_CODES.BIZ_OUTSTANDING_BALANCE]:
+    'This customer still has an outstanding balance.',
+  [ERROR_CODES.VAL_DUPLICATE_PHONE]:
+    'A customer with this phone number already exists.',
+  [ERROR_CODES.VAL_INVALID_TRN]:
+    'TRN must be exactly 15 digits.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };
