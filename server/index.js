@@ -59,6 +59,7 @@ const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
 const { startWarrantyExpiryJob } = require('./jobs/warrantyExpiry');
 const { startAttendanceSweepJob } = require('./jobs/attendanceSweep');
 const { startBillStatusSweepJob } = require('./jobs/billStatusSweep');
+const { startScheduledReportJob } = require('./services/scheduledReportService');
 
 async function bootstrap() {
   await runMigrations();
@@ -142,6 +143,7 @@ async function bootstrap() {
   startWarrantyExpiryJob(io);
   startAttendanceSweepJob(io);
   startBillStatusSweepJob(io);
+  startScheduledReportJob(io);
 
   const port = Number(process.env.PORT || 3000);
   server.listen(port, '0.0.0.0', () => {

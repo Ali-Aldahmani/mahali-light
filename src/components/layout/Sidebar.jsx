@@ -29,6 +29,8 @@ import {
   Scale,
   BookOpen,
   CalendarRange,
+  BarChart3,
+  CalendarCheck2,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
@@ -172,6 +174,38 @@ const NAV = [
   { to: '/finance/journal',  label: 'Journal entries',   icon: BookOpen,      permission: 'finance.view_journal'    },
   { to: '/finance/accounts', label: 'Chart of accounts', icon: Scale,         permission: 'finance.view_journal'    },
   { to: '/finance/periods',  label: 'Periods',           icon: CalendarRange, permission: 'finance.view_journal'    },
+  { section: 'Reports' },
+  {
+    to: '/reports',
+    label: 'All reports',
+    icon: BarChart3,
+    anyPermissions: [
+      'report.financial',
+      'report.sales',
+      'report.inventory',
+      'report.suppliers',
+      'report.customers',
+      'report.employees',
+      'report.attendance',
+      'report.warranty',
+      'report.returns',
+      'report.bills',
+      'report.employee_performance_own',
+      'report.employee_performance_all',
+    ],
+  },
+  {
+    to: '/reports/net-profit',
+    label: 'Net profit',
+    icon: LineChart,
+    permission: 'report.financial',
+  },
+  {
+    to: '/reports/scheduled',
+    label: 'Scheduled reports',
+    icon: CalendarCheck2,
+    permission: 'report.schedule',
+  },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
@@ -184,6 +218,13 @@ const NAV = [
   },
 ];
 
+function itemAllowed(item, hasPermission) {
+  if (item.anyPermissions && item.anyPermissions.length) {
+    return item.anyPermissions.some((p) => hasPermission(p));
+  }
+  return !item.permission || hasPermission(item.permission);
+}
+
 function visibleItems(nav, hasPermission) {
   // Hide section headers that have no permitted items beneath them.
   const result = [];
@@ -194,11 +235,9 @@ function visibleItems(nav, hasPermission) {
       for (let j = i + 1; j < nav.length && !nav[j].section; j++) {
         next.push(nav[j]);
       }
-      const anyVisible = next.some(
-        (n) => !n.permission || hasPermission(n.permission),
-      );
+      const anyVisible = next.some((n) => itemAllowed(n, hasPermission));
       if (anyVisible) result.push(item);
-    } else if (!item.permission || hasPermission(item.permission)) {
+    } else if (itemAllowed(item, hasPermission)) {
       result.push(item);
     }
   }

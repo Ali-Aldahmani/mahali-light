@@ -288,6 +288,7 @@ async function renderPdf(html, options = {}) {
     const pdf = await page.pdf({
       format: options.format || 'A4',
       printBackground: true,
+      landscape: Boolean(options.landscape),
       margin: options.margin || {
         top: '0',
         bottom: '0',
@@ -755,6 +756,7 @@ module.exports = {
   generatePurchaseOrderPDF,
   generatePurchaseOrderPDFSafe,
   generateReportPDF,
+  renderPdf,
   invalidateInvoicePDF,
   invalidatePurchaseOrderPDF,
   cleanupOldPdfs,

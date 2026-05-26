@@ -72,6 +72,9 @@ const TITLES = {
   '/finance/journal': 'Journal entries',
   '/finance/accounts': 'Chart of accounts',
   '/finance/periods': 'Financial periods',
+  '/reports': 'Reports',
+  '/reports/net-profit': 'Net profit',
+  '/reports/scheduled': 'Scheduled reports',
 };
 
 export default function AppLayout() {

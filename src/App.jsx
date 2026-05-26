@@ -45,6 +45,10 @@ import FinancePage from './pages/finance/FinancePage.jsx';
 import JournalPage from './pages/finance/JournalPage.jsx';
 import AccountsPage from './pages/finance/AccountsPage.jsx';
 import PeriodsPage from './pages/finance/PeriodsPage.jsx';
+import ReportsHubPage from './pages/reports/ReportsHubPage.jsx';
+import ReportPage from './pages/reports/ReportPage.jsx';
+import NetProfitPage from './pages/reports/NetProfitPage.jsx';
+import ScheduledReportsPage from './pages/reports/ScheduledReportsPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -437,6 +441,18 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          <Route path="/reports" element={<ReportsHubPage />} />
+          <Route path="/reports/net-profit" element={<NetProfitPage />} />
+          <Route
+            path="/reports/scheduled"
+            element={
+              <ProtectedRoute permission="report.schedule">
+                <ScheduledReportsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/reports/:category/:type" element={<ReportPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
