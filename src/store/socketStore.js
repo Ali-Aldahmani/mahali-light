@@ -7,6 +7,22 @@ import { toast } from './toastStore.js';
 
 let heartbeatTimer = null;
 
+// Subscribers interested in product cache updates can register a callback.
+const productListeners = new Set();
+export function onProductUpdate(cb) {
+  productListeners.add(cb);
+  return () => productListeners.delete(cb);
+}
+function emitProductUpdate(payload) {
+  for (const cb of productListeners) {
+    try {
+      cb(payload);
+    } catch (_e) {
+      // ignore listener errors
+    }
+  }
+}
+
 export const useSocketStore = create((set, get) => ({
   socket: null,
   isConnected: false,
@@ -46,6 +62,10 @@ export const useSocketStore = create((set, get) => ({
     socket.on('force_logout', (payload) => {
       toast.error(`You were signed out: ${payload?.reason || 'forced by admin'}`);
       useAuthStore.getState().logoutLocal();
+    });
+
+    socket.on('product_updated', (payload) => {
+      emitProductUpdate(payload);
     });
 
     if (heartbeatTimer) clearInterval(heartbeatTimer);

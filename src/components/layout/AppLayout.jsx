@@ -10,6 +10,10 @@ const TITLES = {
   '/users': 'Users',
   '/employees': 'Employees',
   '/roles': 'Roles & Permissions',
+  '/products': 'Products',
+  '/products/new': 'New product',
+  '/categories': 'Categories',
+  '/attributes': 'Attributes',
 };
 
 export default function AppLayout() {
@@ -26,7 +30,10 @@ export default function AppLayout() {
   }, [token]);
 
   const title = useMemo(() => {
-    const match = Object.keys(TITLES).find((k) => location.pathname.startsWith(k));
+    // Pick the longest matching prefix so /products/new wins over /products.
+    const match = Object.keys(TITLES)
+      .filter((k) => location.pathname.startsWith(k))
+      .sort((a, b) => b.length - a.length)[0];
     return match ? TITLES[match] : '';
   }, [location.pathname]);
 

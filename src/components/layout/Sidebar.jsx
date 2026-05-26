@@ -1,14 +1,48 @@
 import { NavLink } from 'react-router-dom';
-import { Briefcase, LayoutDashboard, ShieldCheck, UsersRound, UserCog } from 'lucide-react';
+import {
+  FolderTree,
+  LayoutDashboard,
+  Package,
+  ShieldCheck,
+  Sliders,
+  UsersRound,
+  UserCog,
+} from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: null },
+  { section: 'Catalog' },
+  { to: '/products', label: 'Products', icon: Package, permission: 'product.view' },
+  { to: '/categories', label: 'Categories', icon: FolderTree, permission: 'product.view' },
+  { to: '/attributes', label: 'Attributes', icon: Sliders, permission: 'product.view' },
+  { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
   { to: '/roles', label: 'Roles & Permissions', icon: ShieldCheck, permission: 'user.edit' },
 ];
+
+function visibleItems(nav, hasPermission) {
+  // Hide section headers that have no permitted items beneath them.
+  const result = [];
+  for (let i = 0; i < nav.length; i++) {
+    const item = nav[i];
+    if (item.section) {
+      const next = [];
+      for (let j = i + 1; j < nav.length && !nav[j].section; j++) {
+        next.push(nav[j]);
+      }
+      const anyVisible = next.some(
+        (n) => !n.permission || hasPermission(n.permission),
+      );
+      if (anyVisible) result.push(item);
+    } else if (!item.permission || hasPermission(item.permission)) {
+      result.push(item);
+    }
+  }
+  return result;
+}
 
 export default function Sidebar() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
@@ -26,11 +60,22 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {NAV.filter((item) => !item.permission || hasPermission(item.permission)).map(
-          ({ to, label, icon: Icon }) => (
+        {visibleItems(NAV, hasPermission).map((item, idx) => {
+          if (item.section) {
+            return (
+              <p
+                key={`section-${idx}`}
+                className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-muted"
+              >
+                {item.section}
+              </p>
+            );
+          }
+          const Icon = item.icon;
+          return (
             <NavLink
-              key={to}
-              to={to}
+              key={item.to}
+              to={item.to}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition',
@@ -41,10 +86,10 @@ export default function Sidebar() {
               }
             >
               <Icon size={16} />
-              <span>{label}</span>
+              <span>{item.label}</span>
             </NavLink>
-          ),
-        )}
+          );
+        })}
       </nav>
 
       <div className="px-5 py-3 border-t border-border text-[11px] text-ink-muted">

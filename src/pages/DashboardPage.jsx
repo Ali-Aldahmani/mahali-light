@@ -1,4 +1,11 @@
-import { ShieldCheck, UserCog, UsersRound } from 'lucide-react';
+import {
+  FolderTree,
+  Package,
+  ShieldCheck,
+  Sliders,
+  UserCog,
+  UsersRound,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/ui/PageHeader.jsx';
 import { useAuthStore } from '../store/authStore.js';
@@ -31,7 +38,16 @@ export default function DashboardPage() {
         subtitle="Phase 1 — Auth & Users module is live."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <PermissionGate permission="product.view">
+          <StatCard icon={Package} label="Products" value="Catalog & variants" to="/products" />
+        </PermissionGate>
+        <PermissionGate permission="product.view">
+          <StatCard icon={FolderTree} label="Categories" value="Tree & attributes" to="/categories" />
+        </PermissionGate>
+        <PermissionGate permission="product.view">
+          <StatCard icon={Sliders} label="Attributes" value="Reusable specs" to="/attributes" />
+        </PermissionGate>
         <PermissionGate permission="user.edit">
           <StatCard icon={UserCog} label="Users" value="Manage accounts" to="/users" />
         </PermissionGate>
@@ -56,9 +72,9 @@ export default function DashboardPage() {
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Subsequent phases will add the POS, inventory, customers, suppliers, attendance,
-          finance and reporting modules. The authentication, presence and permissions layer
-          you see here is the foundation for everything that follows.
+          Subsequent phases will add the POS, inventory adjustments, customers, suppliers,
+          attendance, finance and reporting modules. The catalog and permissions layer
+          you see here is the foundation for all of them.
         </p>
       </div>
     </div>

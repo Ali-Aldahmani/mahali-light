@@ -9,30 +9,47 @@ const compression = require('compression');
 
 const { runMigrations } = require('./db/migrate');
 const { run: runSeed } = require('./db/seed');
+const { run: runSeedProducts } = require('./db/seedProducts');
 const { attachSocket } = require('./socket');
+const { getUploadsRoot } = require('./utils/paths');
 
 const authRouter = require('./routes/auth');
 const usersRouter = require('./routes/users');
 const employeesRouter = require('./routes/employees');
 const rolesRouter = require('./routes/roles');
 const presenceRouter = require('./routes/presence');
+const categoriesRouter = require('./routes/categories');
+const attributesRouter = require('./routes/attributes');
+const productsRouter = require('./routes/products');
+const variantsRouter = require('./routes/variants');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 
 async function bootstrap() {
   await runMigrations();
   await runSeed();
+  await runSeedProducts();
 
   const app = express();
   const server = http.createServer(app);
   const io = attachSocket(server);
   app.set('io', io);
 
-  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
   app.use(cors({ origin: true, credentials: true }));
   app.use(compression());
   app.use(express.json({ limit: '2mb' }));
   app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+  // Serve uploaded images.
+  app.use(
+    '/files',
+    express.static(getUploadsRoot(), {
+      maxAge: '7d',
+      etag: true,
+      index: false,
+    }),
+  );
 
   app.get('/api/health', (_req, res) => {
     res.json({ success: true, data: { status: 'ok', service: 'mahali-light', time: new Date().toISOString() } });
@@ -43,6 +60,10 @@ async function bootstrap() {
   app.use('/api/employees', employeesRouter);
   app.use('/api/roles', rolesRouter);
   app.use('/api/presence', presenceRouter);
+  app.use('/api/categories', categoriesRouter);
+  app.use('/api/attributes', attributesRouter);
+  app.use('/api/products', productsRouter);
+  app.use('/api/variants', variantsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

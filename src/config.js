@@ -5,7 +5,17 @@ const SERVER_IP =
 
 export const API_BASE = `http://${SERVER_IP}:3000/api`;
 export const SOCKET_URL = `http://${SERVER_IP}:3000`;
+export const FILES_BASE = `http://${SERVER_IP}:3000/files`;
 export const SERVER_HOST = SERVER_IP;
+
+// Convert a stored relative image path (e.g. "products/<id>/123.webp")
+// into an absolute URL that hits the static file server.
+export function fileUrl(relPath) {
+  if (!relPath) return null;
+  if (/^https?:\/\//.test(relPath)) return relPath;
+  const clean = relPath.startsWith('/') ? relPath.slice(1) : relPath;
+  return `${FILES_BASE}/${clean}`;
+}
 
 export const PC_IDENTIFIER =
   (typeof window !== 'undefined' && window.electron?.pcIdentifier) ||

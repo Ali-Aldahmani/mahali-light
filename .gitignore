@@ -6,3 +6,4 @@ dist-electron/
 *.log
 .DS_Store
 electron/config.local.json
+uploads/
