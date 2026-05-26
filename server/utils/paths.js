@@ -27,6 +27,22 @@ function ensureSupplierPaymentDir(paymentId) {
   return dir;
 }
 
+// PDF cache directories. Invoices and POs get their own subfolder so cleanup
+// jobs can target each independently. `kind` is e.g. 'invoices', 'purchase-orders', 'reports', 'receipts'.
+function ensurePdfDir(kind) {
+  const dir = path.join(getUploadsRoot(), 'pdfs', kind);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Store branding assets (logo, signatures). Lives outside the per-document
+// dirs so backups can include it without traversing every invoice folder.
+function ensureStoreDir() {
+  const dir = path.join(getUploadsRoot(), 'store');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 // Convert an absolute disk path to a forward-slash relative path stored in the DB.
 function toRelative(absPath) {
   const root = getUploadsRoot();
@@ -47,6 +63,8 @@ module.exports = {
   ensureProductDir,
   ensurePurchaseOrderDir,
   ensureSupplierPaymentDir,
+  ensurePdfDir,
+  ensureStoreDir,
   toRelative,
   toAbsolute,
 };

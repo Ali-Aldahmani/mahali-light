@@ -25,6 +25,7 @@ import POSPage from './pages/pos/POSPage.jsx';
 import InvoicesPage from './pages/invoices/InvoicesPage.jsx';
 import InvoiceDetailPage from './pages/invoices/InvoiceDetailPage.jsx';
 import InvoiceEditRequestsPage from './pages/invoices/InvoiceEditRequestsPage.jsx';
+import PrintSettingsPage from './pages/settings/PrintSettingsPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -239,6 +240,15 @@ export default function App() {
             element={
               <ProtectedRoute permission="invoice.view">
                 <InvoiceDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/settings/printers"
+            element={
+              <ProtectedRoute permission="settings.view">
+                <PrintSettingsPage />
               </ProtectedRoute>
             }
           />

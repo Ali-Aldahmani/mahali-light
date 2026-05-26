@@ -14,6 +14,8 @@ import Input from '../../components/ui/Input.jsx';
 import CustomerSelect from '../../components/ui/CustomerSelect.jsx';
 import InvoiceTotalsBlock from '../../components/ui/InvoiceTotalsBlock.jsx';
 import SplitPaymentBuilder from '../../components/ui/SplitPaymentBuilder.jsx';
+import PrintButton from '../../components/ui/PrintButton.jsx';
+import DownloadPDFButton from '../../components/ui/DownloadPDFButton.jsx';
 import POSProductCard from '../../components/pos/POSProductCard.jsx';
 import POSVariantSelector from '../../components/pos/POSVariantSelector.jsx';
 import CartItem from '../../components/pos/CartItem.jsx';
@@ -22,7 +24,8 @@ import { useBarcodeListener } from '../../hooks/useBarcodeListener.js';
 import { usePosStore } from '../../store/posStore.js';
 import { useInvoiceStore } from '../../store/invoiceStore.js';
 import { useSocketStore } from '../../store/socketStore.js';
-import { onStockUpdate } from '../../store/socketStore.js';
+import { onStockUpdate, onPrintRequest } from '../../store/socketStore.js';
+import { printReceipt } from '../../services/printService.js';
 import { toast } from '../../store/toastStore.js';
 import { searchProducts } from '../../services/productService.js';
 import { listCategoriesFlat } from '../../services/categoryService.js';
@@ -120,6 +123,20 @@ export default function POSPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-print receipt if the operator has enabled the option AND this PC
+  // matches the one that confirmed the sale. The server broadcasts
+  // `print_receipt_requested` after invoice confirmation when the setting is
+  // on, so we honour it here on the originating terminal only.
+  useEffect(() => {
+    return onPrintRequest((payload) => {
+      if (payload.kind !== 'receipt') return;
+      if (payload.pcIdentifier && pcIdentifier && payload.pcIdentifier !== pcIdentifier) {
+        return;
+      }
+      printReceipt(payload.invoiceId, { silent: true }).catch(() => {});
+    });
+  }, [pcIdentifier]);
 
   // Barcode scanner integration. On scan, look up the code via the search
   // endpoint and add the first match directly. We also clear the manual
@@ -633,10 +650,30 @@ function SuccessScreen({ success, onNewSale }) {
               : 'Fully paid'}
           </div>
 
-          <div className="mt-6 flex items-center justify-center gap-2">
-            <Button variant="secondary" disabled>
-              Print (Phase 7)
-            </Button>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <PrintButton
+              invoiceId={success.invoiceId}
+              invoiceNumber={success.invoiceNumber}
+              kind="receipt"
+              label="Print receipt"
+              variant="secondary"
+              size="md"
+            />
+            <PrintButton
+              invoiceId={success.invoiceId}
+              invoiceNumber={success.invoiceNumber}
+              kind="invoice"
+              label="Print invoice"
+              variant="secondary"
+              size="md"
+            />
+            <DownloadPDFButton
+              invoiceId={success.invoiceId}
+              invoiceNumber={success.invoiceNumber}
+              variant="secondary"
+              size="md"
+              label="PDF"
+            />
             <Button onClick={onNewSale}>New sale ({seconds})</Button>
           </div>
         </div>

@@ -39,6 +39,8 @@ const supplierReturnBus = makeBus();
 const customerBus = makeBus();
 const invoiceBus = makeBus();
 const invoiceEditRequestBus = makeBus();
+const pdfBus = makeBus();
+const printBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
@@ -50,6 +52,8 @@ export const onSupplierReturnEvent = (cb) => supplierReturnBus.on(cb);
 export const onCustomerBalanceUpdate = (cb) => customerBus.on(cb);
 export const onInvoiceEvent = (cb) => invoiceBus.on(cb);
 export const onInvoiceEditRequestEvent = (cb) => invoiceEditRequestBus.on(cb);
+export const onPdfReady = (cb) => pdfBus.on(cb);
+export const onPrintRequest = (cb) => printBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -233,6 +237,16 @@ export const useSocketStore = create((set, get) => ({
           );
         }
       }
+    });
+
+    socket.on('invoice_pdf_pending', (payload) => {
+      pdfBus.emit({ ...payload, kind: 'pending' });
+    });
+    socket.on('invoice_pdf_ready', (payload) => {
+      pdfBus.emit({ ...payload, kind: 'ready' });
+    });
+    socket.on('print_receipt_requested', (payload) => {
+      printBus.emit({ ...payload, kind: 'receipt' });
     });
 
     socket.on('customer_balance_updated', (payload) => {

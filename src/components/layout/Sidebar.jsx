@@ -6,6 +6,7 @@ import {
   FolderTree,
   LayoutDashboard,
   Package,
+  Printer,
   Receipt,
   ShieldCheck,
   ShoppingCart,
@@ -90,6 +91,12 @@ const NAV = [
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
   { to: '/roles', label: 'Roles & Permissions', icon: ShieldCheck, permission: 'user.edit' },
+  {
+    to: '/settings/printers',
+    label: 'Printers & branding',
+    icon: Printer,
+    permission: 'settings.view',
+  },
 ];
 
 function visibleItems(nav, hasPermission) {

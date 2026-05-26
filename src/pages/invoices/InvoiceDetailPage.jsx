@@ -4,9 +4,9 @@ import {
   ArrowLeft,
   Banknote,
   Check,
+  Eye,
   History,
   Pencil,
-  Printer,
   Receipt,
   Send,
   ShieldAlert,
@@ -25,6 +25,9 @@ import InvoiceStatusBadge from '../../components/ui/InvoiceStatusBadge.jsx';
 import PaymentStatusBadge from '../../components/ui/PaymentStatusBadge.jsx';
 import InvoiceTotalsBlock from '../../components/ui/InvoiceTotalsBlock.jsx';
 import PaymentMethodIcon from '../../components/ui/PaymentMethodIcon.jsx';
+import PrintButton from '../../components/ui/PrintButton.jsx';
+import DownloadPDFButton from '../../components/ui/DownloadPDFButton.jsx';
+import PrintPreviewModal from '../../components/ui/PrintPreviewModal.jsx';
 import { useAuthStore } from '../../store/authStore.js';
 import { toast } from '../../store/toastStore.js';
 import {
@@ -63,6 +66,7 @@ export default function InvoiceDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -137,9 +141,31 @@ export default function InvoiceDetailPage() {
         }
         action={
           <div className="flex items-center gap-2">
-            <Button variant="secondary" leftIcon={<Printer className="h-4 w-4" />} disabled>
-              Print
+            <Button
+              variant="secondary"
+              leftIcon={<Eye className="h-4 w-4" />}
+              onClick={() => setPreviewOpen(true)}
+            >
+              Preview
             </Button>
+            <PrintButton
+              invoiceId={inv.id}
+              invoiceNumber={inv.invoiceNumber}
+              kind="invoice"
+              variant="secondary"
+            />
+            <PrintButton
+              invoiceId={inv.id}
+              invoiceNumber={inv.invoiceNumber}
+              kind="receipt"
+              variant="secondary"
+              label="Print receipt"
+            />
+            <DownloadPDFButton
+              invoiceId={inv.id}
+              invoiceNumber={inv.invoiceNumber}
+              variant="secondary"
+            />
             {!isLocked && canEditRequest && inv.status === 'confirmed' && (
               <Button
                 variant="secondary"
@@ -251,6 +277,14 @@ export default function InvoiceDetailPage() {
         description="Stock will be returned and any credit charge reversed. This cannot be undone."
         confirmLabel="Cancel invoice"
         variant="danger"
+      />
+
+      <PrintPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        invoiceId={inv.id}
+        invoiceNumber={inv.invoiceNumber}
+        kind="invoice"
       />
     </div>
   );

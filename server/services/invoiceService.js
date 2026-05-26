@@ -4,6 +4,19 @@ const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
 const { assertWithinCreditLimit } = require('./customerService');
 const { logActivity } = require('../utils/activityLog');
+const { getStoreSettings } = require('../config/storeSettings');
+
+// Lazy-require to avoid circular deps and to keep puppeteer cold-start cost
+// off the boot path. Returns null if PDF generation is unavailable.
+function safeLoadPdfService() {
+  try {
+    // eslint-disable-next-line global-require
+    return require('./pdfService');
+  } catch (err) {
+    console.warn('[invoiceService] pdfService unavailable:', err.message);
+    return null;
+  }
+}
 
 const DEFAULT_TAX_RATE = 5.0;
 
@@ -447,6 +460,9 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     };
     io.to('role:Manager').emit('invoice_confirmed', payload);
     io.to('role:Admin').emit('invoice_confirmed', payload);
+    // Broadcast to all clients so the cashier's own success screen knows the
+    // PDF will be ready shortly.
+    io.emit('invoice_pdf_pending', { invoiceId });
 
     if (result.creditUsed > 0 && result.invoice.customer_id) {
       const { rows: cRows } = await query(
@@ -467,6 +483,41 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
         io.to('role:Admin').emit('customer_balance_updated', creditPayload);
       }
     }
+  }
+
+  // Kick off a background PDF generation. Non-blocking — caller doesn't wait.
+  const pdf = safeLoadPdfService();
+  if (pdf) {
+    setImmediate(() => {
+      pdf
+        .generateInvoicePDFSafe(invoiceId)
+        .then((res) => {
+          if (res && io) {
+            io.emit('invoice_pdf_ready', {
+              invoiceId,
+              pdfPath: res.path,
+              at: new Date().toISOString(),
+            });
+            // If the store has auto-print receipts enabled, notify clients so
+            // the cashier's terminal can fire the receipt print silently.
+            const settings = getStoreSettings();
+            if (settings.print?.autoPrintReceiptOnConfirm) {
+              io.emit('print_receipt_requested', {
+                invoiceId,
+                invoiceNumber: result.invoice.invoice_number,
+                pcIdentifier: result.invoice.pc_identifier,
+                at: new Date().toISOString(),
+              });
+            }
+          }
+        })
+        .catch((err) =>
+          console.warn(
+            '[invoiceService] background invoice PDF failed:',
+            err.message,
+          ),
+        );
+    });
   }
 
   return result;
@@ -594,6 +645,15 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     };
     io.to('role:Manager').emit('invoice_cancelled', payload);
     io.to('role:Admin').emit('invoice_cancelled', payload);
+  }
+
+  // Regenerate PDF so the CANCELLED watermark appears. Best-effort, async.
+  const pdf = safeLoadPdfService();
+  if (pdf) {
+    setImmediate(async () => {
+      await pdf.invalidateInvoicePDF(invoiceId);
+      await pdf.generateInvoicePDFSafe(invoiceId, { force: true });
+    });
   }
 
   return result;
@@ -775,6 +835,16 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
       at: new Date().toISOString(),
     });
   }
+
+  // The invoice has changed — invalidate and regenerate its cached PDF.
+  const pdf = safeLoadPdfService();
+  if (pdf) {
+    setImmediate(async () => {
+      await pdf.invalidateInvoicePDF(result.request.invoice_id);
+      await pdf.generateInvoicePDFSafe(result.request.invoice_id, { force: true });
+    });
+  }
+
   return result;
 }
 

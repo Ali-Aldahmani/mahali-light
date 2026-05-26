@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{PO_NUMBER}}</title>
+    <style>
+      :root {
+        --accent: #f97316;
+        --accent-light: #fff0e6;
+        --ink: #111827;
+        --ink-muted: #6b7280;
+        --border: #e5e7eb;
+        --surface-2: #f0f1f5;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; padding: 0; color: var(--ink);
+        font-family: 'Inter', system-ui, sans-serif;
+        font-size: 12px; line-height: 1.4;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .wrap { padding: 24px 28px; position: relative; }
+
+      .header {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        gap: 16px;
+        border-bottom: 2px solid var(--accent);
+        padding-bottom: 14px; margin-bottom: 16px;
+      }
+      .brand { display: flex; gap: 14px; align-items: center; }
+      .logo { max-width: 120px; max-height: 60px; object-fit: contain; }
+      .logo-fallback {
+        width: 60px; height: 60px; border-radius: 8px;
+        background: var(--accent-light); color: var(--accent);
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 700; font-size: 22px;
+      }
+      .brand .name { font-size: 16px; font-weight: 700; }
+      .brand .meta { color: var(--ink-muted); font-size: 11px; margin-top: 2px; line-height: 1.5; }
+      .doc-type { text-align: right; }
+      .doc-type .label {
+        font-size: 22px; font-weight: 800; color: var(--accent);
+        letter-spacing: 1px;
+      }
+      .doc-type .number { margin-top: 4px; font-family: 'Menlo','Consolas',monospace; }
+
+      .grid-meta {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;
+      }
+      .card { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; }
+      .card h4 {
+        margin: 0 0 6px; font-size: 10px;
+        text-transform: uppercase; letter-spacing: 0.5px;
+        color: var(--ink-muted); font-weight: 600;
+      }
+      .card .line { margin: 2px 0; font-size: 12px; }
+      .card .strong { font-weight: 600; }
+
+      table.items { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      table.items thead th {
+        background: var(--accent); color: #fff;
+        text-align: left; font-size: 11px; font-weight: 600; padding: 8px 10px;
+      }
+      table.items thead th.right { text-align: right; }
+      table.items tbody td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      table.items tbody tr:nth-child(even) td { background: rgba(240,241,245,0.5); }
+      table.items td.right { text-align: right; }
+      table.items td.idx { width: 28px; color: var(--ink-muted); }
+      table.items .name { font-weight: 500; }
+      table.items .sku { color: var(--ink-muted); font-size: 10px; font-family: 'Menlo','Consolas',monospace; }
+
+      .totals { display: flex; justify-content: flex-end; margin-top: 14px; }
+      .totals table { border-collapse: collapse; width: 280px; }
+      .totals td { padding: 5px 10px; font-size: 12px; }
+      .totals td.label { text-align: right; color: var(--ink-muted); }
+      .totals td.value { text-align: right; font-weight: 500; }
+      .totals tr.grand-total td {
+        background: var(--accent); color: #fff; font-weight: 700; font-size: 13px;
+        padding: 8px 10px;
+      }
+      .totals tr.grand-total td.label { color: #fff; }
+
+      .payments {
+        margin-top: 18px; padding: 12px 14px;
+        background: #fff; border: 1px solid var(--border); border-radius: 10px;
+      }
+      .payments h4 { margin: 0 0 6px; font-size: 11px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+      .payments .row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+      .payments .totals-row { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); font-weight: 600; }
+
+      .footer {
+        margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border);
+        font-size: 11px; color: var(--ink-muted);
+      }
+      .footer .note { margin-bottom: 6px; color: var(--ink); font-weight: 500; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="header">
+        <div class="brand">
+          {{LOGO_BLOCK}}
+          <div>
+            <div class="name">{{STORE_NAME}}</div>
+            <div class="meta">
+              {{STORE_ADDRESS}}<br />
+              Tel: {{STORE_PHONE}}<br />
+              TRN: {{STORE_TRN}}
+            </div>
+          </div>
+        </div>
+        <div class="doc-type">
+          <div class="label">PURCHASE ORDER</div>
+          <div class="number">{{PO_NUMBER}}</div>
+        </div>
+      </div>
+
+      <div class="grid-meta">
+        <div class="card">
+          <h4>Order details</h4>
+          <div class="line"><span class="strong">Date:</span> {{ORDER_DATE}}</div>
+          <div class="line"><span class="strong">Expected:</span> {{EXPECTED_DATE}}</div>
+          <div class="line"><span class="strong">Status:</span> {{STATUS}}</div>
+          <div class="line"><span class="strong">Created by:</span> {{CREATED_BY}}</div>
+        </div>
+        <div class="card">
+          <h4>Supplier</h4>
+          <div class="line strong">{{SUPPLIER_NAME}}</div>
+          {{SUPPLIER_BLOCK}}
+          <div class="line"><span class="strong">Payment terms:</span> {{PAYMENT_TERMS}}</div>
+        </div>
+      </div>
+
+      <table class="items">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Product</th>
+            <th class="right">Qty</th>
+            <th>Unit</th>
+            <th class="right">Cost</th>
+            <th class="right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ITEM_ROWS}}
+        </tbody>
+      </table>
+
+      <div class="totals">
+        <table>
+          <tr>
+            <td class="label">Subtotal</td>
+            <td class="value">{{SUBTOTAL}}</td>
+          </tr>
+          <tr class="grand-total">
+            <td class="label">TOTAL</td>
+            <td class="value">{{TOTAL}}</td>
+          </tr>
+        </table>
+      </div>
+
+      {{PAYMENTS_BLOCK}}
+
+      <div class="footer">
+        <div class="note">{{FOOTER_NOTE}}</div>
+      </div>
+    </div>
+  </body>
+</html>

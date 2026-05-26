@@ -1,6 +1,7 @@
 const express = require('express');
 const pos = require('../controllers/purchaseOrdersController');
 const payments = require('../controllers/supplierPaymentsController');
+const pdf = require('../controllers/pdfController');
 const { requireAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { uploadDocSingle } = require('../utils/upload');
@@ -46,6 +47,14 @@ router.post(
   '/:id/payments',
   requirePermission('supplier.purchase_order.pay'),
   payments.createForPo,
+);
+
+// PDF endpoints — reuse supplier.view + supplier.purchase_order.create for regen.
+router.get('/:id/pdf', requirePermission('supplier.view'), pdf.getPurchaseOrderPdf);
+router.post(
+  '/:id/pdf/regenerate',
+  requirePermission('supplier.purchase_order.create'),
+  pdf.regeneratePurchaseOrderPdf,
 );
 
 module.exports = router;

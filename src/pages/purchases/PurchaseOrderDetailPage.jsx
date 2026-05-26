@@ -14,6 +14,9 @@ import Button from '../../components/ui/Button.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import POStatusBadge from '../../components/ui/POStatusBadge.jsx';
 import PaymentStatusBadge from '../../components/ui/PaymentStatusBadge.jsx';
+import DownloadPDFButton from '../../components/ui/DownloadPDFButton.jsx';
+import PrintPreviewModal from '../../components/ui/PrintPreviewModal.jsx';
+import { Eye } from 'lucide-react';
 import POItemsTable from '../../components/ui/POItemsTable.jsx';
 import PaymentHistoryTable from '../../components/ui/PaymentHistoryTable.jsx';
 import AttachmentCard from '../../components/ui/AttachmentCard.jsx';
@@ -57,6 +60,7 @@ export default function PurchaseOrderDetailPage() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmDeletePayment, setConfirmDeletePayment] = useState(null);
 
   async function load() {
@@ -204,6 +208,20 @@ export default function PurchaseOrderDetailPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <POStatusBadge status={po.status} />
             <PaymentStatusBadge status={po.paymentStatus} />
+            <Button
+              variant="ghost"
+              leftIcon={<Eye className="h-4 w-4" />}
+              onClick={() => setPreviewOpen(true)}
+            >
+              Preview
+            </Button>
+            <DownloadPDFButton
+              purchaseOrderId={po.id}
+              purchaseOrderNumber={po.poNumber}
+              variant="ghost"
+              permission="supplier.view"
+              label="PDF"
+            />
             {isDraft && canCreatePo && (
               <Button
                 variant="secondary"
@@ -388,6 +406,13 @@ export default function PurchaseOrderDetailPage() {
         description="Only same-day payments can be reversed. The PO totals will be updated."
         confirmLabel="Reverse"
         variant="danger"
+      />
+
+      <PrintPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        purchaseOrderId={po.id}
+        purchaseOrderNumber={po.poNumber}
       />
     </div>
   );

@@ -40,6 +40,7 @@ const TITLES = {
   '/pos': 'POS',
   '/invoices': 'Invoices',
   '/invoices/edit-requests': 'Edit requests',
+  '/settings/printers': 'Printers & branding',
 };
 
 export default function AppLayout() {

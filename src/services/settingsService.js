@@ -1,13 +1,23 @@
-import { apiGet, apiPut } from './http.js';
+import { apiGet, apiPut, apiDelete } from './http.js';
+import http from './http.js';
 
-export function listSettings() {
-  return apiGet('/settings');
+export function getStoreSettings() {
+  return apiGet('/settings/store');
 }
 
-export function getSetting(key) {
-  return apiGet(`/settings/${encodeURIComponent(key)}`);
+export function updateStoreSettings(patch) {
+  return apiPut('/settings/store', patch);
 }
 
-export function updateSetting(key, value) {
-  return apiPut(`/settings/${encodeURIComponent(key)}`, { value });
+export async function uploadStoreLogo(file) {
+  const form = new FormData();
+  form.append('logo', file);
+  const res = await http.post('/settings/logo', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data?.data;
+}
+
+export function removeStoreLogo() {
+  return apiDelete('/settings/logo');
 }

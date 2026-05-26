@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{INVOICE_NUMBER}}</title>
+    <style>
+      @page { size: {{PAGE_WIDTH_MM}}mm 297mm; margin: 0; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        width: {{PAGE_WIDTH_MM}}mm;
+        font-family: 'Inter', 'Noto Sans Arabic', system-ui, sans-serif;
+        color: #111;
+        font-size: 11px;
+        line-height: 1.35;
+      }
+      .wrap { padding: 6px 8px; }
+      .center { text-align: center; }
+      .right { text-align: right; }
+      .bold { font-weight: 700; }
+      .strong { font-weight: 600; }
+
+      .store-name { font-size: 14px; font-weight: 800; }
+      .store-meta { font-size: 10px; color: #444; }
+
+      hr.thin {
+        border: 0;
+        border-top: 1px dashed #888;
+        margin: 6px 0;
+      }
+
+      .meta { font-size: 10px; }
+      .row { display: flex; justify-content: space-between; }
+
+      table.items {
+        width: 100%; border-collapse: collapse; margin-top: 4px;
+      }
+      table.items td {
+        padding: 2px 0; vertical-align: top; font-size: 11px;
+      }
+      table.items td.name { padding-bottom: 0; }
+      table.items td.qty {
+        color: #444; font-size: 10px; padding-top: 0;
+      }
+      table.items td.total {
+        text-align: right; font-weight: 600;
+      }
+
+      .totals-row {
+        display: flex; justify-content: space-between; padding: 1px 0;
+      }
+      .total-line {
+        font-size: 13px; font-weight: 800; padding: 4px 0;
+        border-top: 1px solid #000; border-bottom: 1px solid #000;
+        margin: 4px 0;
+      }
+
+      .qr-wrap { margin: 8px auto; text-align: center; }
+      .qr-wrap img { width: 100px; height: 100px; }
+
+      .footer-note {
+        text-align: center; font-size: 11px; margin-top: 6px;
+      }
+
+      .cancelled {
+        text-align: center; font-size: 18px; font-weight: 900;
+        color: #dc2626; letter-spacing: 2px;
+        border: 2px solid #dc2626;
+        padding: 2px 6px;
+        margin: 6px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="center store-name">{{STORE_NAME}}</div>
+      <div class="center store-meta">{{STORE_PHONE}}</div>
+      <div class="center store-meta">TRN: {{STORE_TRN}}</div>
+
+      {{CANCELLED_BANNER}}
+
+      <hr class="thin" />
+
+      <div class="center bold">{{INVOICE_NUMBER}}</div>
+      <div class="center meta">{{INVOICE_DATE}}</div>
+      <div class="center meta">Cashier: {{CASHIER_NAME}}</div>
+      {{CUSTOMER_LINE}}
+
+      <hr class="thin" />
+
+      <table class="items">
+        {{ITEM_ROWS}}
+      </table>
+
+      <hr class="thin" />
+
+      <div class="totals-row"><span>Subtotal</span><span>{{SUBTOTAL}}</span></div>
+      {{DISCOUNT_ROW}}
+      <div class="totals-row"><span>VAT ({{VAT_RATE}}%)</span><span>{{VAT_AMOUNT}}</span></div>
+      <div class="total-line totals-row"><span>TOTAL</span><span>{{TOTAL}}</span></div>
+
+      {{PAYMENTS_BLOCK}}
+
+      <hr class="thin" />
+
+      <div class="footer-note">{{FOOTER_NOTE}}</div>
+
+      <div class="qr-wrap">
+        <img src="{{QR_DATA_URL}}" alt="QR" />
+      </div>
+
+      <div class="center meta">
+        {{TIMESTAMP}}
+      </div>
+    </div>
+  </body>
+</html>

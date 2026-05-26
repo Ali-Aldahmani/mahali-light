@@ -33,10 +33,12 @@ const customersRouter = require('./routes/customers');
 const customerPaymentsRouter = require('./routes/customerPayments');
 const invoicesRouter = require('./routes/invoices');
 const invoiceEditRequestsRouter = require('./routes/invoiceEditRequests');
+const printRouter = require('./routes/print');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
 const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
+const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
 
 async function bootstrap() {
   await runMigrations();
@@ -88,6 +90,7 @@ async function bootstrap() {
   app.use('/api/customer-payments', customerPaymentsRouter);
   app.use('/api/invoices', invoicesRouter);
   app.use('/api/invoice-edit-requests', invoiceEditRequestsRouter);
+  app.use('/api/print', printRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -95,6 +98,7 @@ async function bootstrap() {
   // Background jobs.
   startOverduePoJob(io);
   startStaleDraftInvoiceJob();
+  startPdfCleanupJob();
 
   const port = Number(process.env.PORT || 3000);
   server.listen(port, '0.0.0.0', () => {
