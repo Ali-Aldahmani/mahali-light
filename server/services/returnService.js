@@ -6,6 +6,7 @@ const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
+const notificationService = require('./notificationService');
 
 const RETURN_TYPES = new Set([
   'customer_refund',
@@ -503,6 +504,34 @@ async function createReturnRequest({
       io.to('role:Admin').emit('return_request_created', payload);
     }
 
+    try {
+      await notificationService.notifyManagersAndAdmins({
+        type: 'approval.return_pending',
+        category: 'approval',
+        severity: noInvoiceReturn ? 'warning' : 'info',
+        title: `Return request ${request.request_number}${noInvoiceReturn ? ' (no invoice)' : ''}`,
+        message: `Pending approval. Total value AED ${Number(totalValue || 0).toFixed(2)}.`,
+        referenceType: 'return_request',
+        referenceId: request.id,
+        actionUrl: `/returns/requests/${request.id}`,
+        createdBy: requestedBy,
+        skipForUserId: requestedBy,
+      });
+      if (noInvoiceReturn) {
+        await notificationService.notifyManagersAndAdmins({
+          type: 'return.no_invoice_flagged',
+          category: 'return',
+          severity: 'critical',
+          title: `No-invoice return flagged: ${request.request_number}`,
+          message: `Manual scrutiny required — return submitted without an original invoice.`,
+          referenceType: 'return_request',
+          referenceId: request.id,
+          actionUrl: `/returns/requests/${request.id}`,
+          createdBy: requestedBy,
+        });
+      }
+    } catch (_e) { /* best-effort */ }
+
     return { request, totalValue, itemCount: resolvedItems.length };
   });
 }
@@ -947,6 +976,20 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
           at: new Date().toISOString(),
         },
       );
+      if (result.request.requested_by) {
+        notificationService
+          .notifyUser(result.request.requested_by, {
+            type: 'return.request_approved',
+            category: 'return',
+            severity: 'info',
+            title: `Return approved`,
+            message: `Your return request was approved and executed.`,
+            referenceType: 'return_request',
+            referenceId: result.request.id,
+            actionUrl: `/returns/requests/${result.request.id}`,
+          })
+          .catch(() => {});
+      }
       io.emit('return_executed', {
         returnOrderId: result.order.id,
         returnOrderNumber: result.order.return_order_number,
@@ -1183,6 +1226,22 @@ async function rejectReturnRequest({
         rejectionReason: rejectionReason.trim(),
         at: new Date().toISOString(),
       });
+    }
+    if (row.requested_by) {
+      notificationService
+        .notifyUser(row.requested_by, {
+          type: 'return.request_rejected',
+          category: 'return',
+          severity: 'warning',
+          title: 'Return rejected',
+          message: rejectionReason.trim()
+            ? `Reason: ${rejectionReason.trim()}`
+            : 'Your return request was rejected.',
+          referenceType: 'return_request',
+          referenceId: requestId,
+          actionUrl: `/returns/requests/${requestId}`,
+        })
+        .catch(() => {});
     }
     return row;
   });

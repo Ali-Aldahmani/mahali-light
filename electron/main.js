@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -125,6 +125,44 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('config:get', () => loadConfig());
 ipcMain.handle('config:set', (_e, patch) => saveConfig(patch));
+
+// Phase 16 — native desktop notifications. Only surface a tray notification
+// when the window is NOT focused; otherwise the in-app panel + sound is the
+// canonical UX.
+ipcMain.handle('window:focused', () => {
+  try {
+    return mainWindow ? mainWindow.isFocused() : false;
+  } catch (_e) {
+    return false;
+  }
+});
+
+ipcMain.handle('notify:desktop', (_e, { title, body } = {}) => {
+  try {
+    if (!Notification.isSupported()) return { delivered: false };
+    if (mainWindow && mainWindow.isFocused()) return { delivered: false };
+    const notification = new Notification({
+      title: title || 'Mahali Light',
+      body: body || '',
+      silent: false,
+    });
+    notification.on('click', () => {
+      try {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      } catch (_err) {
+        /* ignore */
+      }
+    });
+    notification.show();
+    return { delivered: true };
+  } catch (err) {
+    return { delivered: false, error: err.message };
+  }
+});
 ipcMain.handle('system:info', () => ({
   hostname: os.hostname(),
   platform: process.platform,

@@ -91,6 +91,8 @@ const ALL_PERMISSIONS = [
   ['report.export_pdf', 'Export PDF', 'report'],
   ['report.export_csv', 'Export CSV', 'report'],
   ['report.export_excel', 'Export Excel', 'report'],
+  ['notification.broadcast', 'Send Broadcast Notification', 'notification'],
+  ['notification.manage', 'Manage Notifications (Admin)', 'notification'],
   ['analytics.view_dashboard', 'View Dashboard Analytics', 'analytics'],
   ['analytics.view', 'View Analytics Hub', 'analytics'],
   ['analytics.view_peaks', 'View Peak Analytics', 'analytics'],

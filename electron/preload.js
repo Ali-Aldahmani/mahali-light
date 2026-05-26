@@ -13,6 +13,10 @@ const api = {
   printInvoice: (payload) => ipcRenderer.invoke('print:invoice', payload),
   printReceipt: (payload) => ipcRenderer.invoke('print:receipt', payload),
   downloadPdf: (payload) => ipcRenderer.invoke('print:download', payload),
+
+  // Phase 16 — native desktop notifications.
+  notifyDesktop: (payload) => ipcRenderer.invoke('notify:desktop', payload),
+  isWindowFocused: () => ipcRenderer.invoke('window:focused'),
 };
 
 // The frontend reads `window.electron.serverIp` (used by src/config.js).

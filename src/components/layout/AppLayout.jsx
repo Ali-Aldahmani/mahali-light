@@ -13,6 +13,7 @@ import { useReturnStore } from '../../store/returnStore.js';
 import { useTreasuryStore } from '../../store/treasuryStore.js';
 import { useAttendanceStore } from '../../store/attendanceStore.js';
 import { useBillStore } from '../../store/billStore.js';
+import { useNotificationStore } from '../../store/notificationStore.js';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
@@ -76,6 +77,8 @@ const TITLES = {
   '/reports/net-profit': 'Net profit',
   '/reports/scheduled': 'Scheduled reports',
   '/analytics': 'Analytics',
+  '/approvals': 'Approvals',
+  '/settings/notifications': 'Notification preferences',
 };
 
 export default function AppLayout() {
@@ -102,6 +105,10 @@ export default function AppLayout() {
   const applyAttendanceEvent = useAttendanceStore((s) => s.applyAttendanceEvent);
   const refreshUpcomingBills = useBillStore((s) => s.refreshUpcoming);
   const refreshExpenseSummary = useBillStore((s) => s.refreshExpenseSummary);
+  const fetchUnreadCount = useNotificationStore((s) => s.fetchUnreadCount);
+  const fetchApprovalCount = useNotificationStore((s) => s.fetchApprovalCount);
+  const fetchPreferences = useNotificationStore((s) => s.fetchPreferences);
+  const resetNotifications = useNotificationStore((s) => s.reset);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -160,6 +167,20 @@ export default function AppLayout() {
       refreshUpcomingBills?.();
       refreshExpenseSummary?.();
     }
+
+    // Phase 16 — bootstrap notification state.
+    fetchPreferences?.();
+    fetchUnreadCount?.();
+    const isManagerOrAdmin =
+      permissions.includes('*') ||
+      ['Manager', 'Admin'].includes(useAuthStore.getState().user?.role);
+    if (isManagerOrAdmin) {
+      fetchApprovalCount?.();
+    }
+    // Periodic refresh of approval count (live updates also nudge it).
+    const approvalsTimer = isManagerOrAdmin
+      ? setInterval(() => fetchApprovalCount?.(), 60_000)
+      : null;
 
     // Keep sidebar badges in sync with realtime events. Throttle the
     // heavyweight inventory refresh so a busy POS session doesn't hammer it.
@@ -226,6 +247,8 @@ export default function AppLayout() {
       unsubP();
       unsubQ();
       if (throttleTimer) clearTimeout(throttleTimer);
+      if (approvalsTimer) clearInterval(approvalsTimer);
+      resetNotifications?.();
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

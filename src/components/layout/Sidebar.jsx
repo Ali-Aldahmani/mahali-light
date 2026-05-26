@@ -32,6 +32,7 @@ import {
   BarChart3,
   CalendarCheck2,
   Activity,
+  CheckSquare,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
@@ -42,6 +43,7 @@ import { useWarrantyStore } from '../../store/warrantyStore.js';
 import { useReturnStore } from '../../store/returnStore.js';
 import { useAttendanceStore } from '../../store/attendanceStore.js';
 import { useBillStore } from '../../store/billStore.js';
+import { useNotificationStore } from '../../store/notificationStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -218,6 +220,13 @@ const NAV = [
       'analytics.view_reorder',
     ],
   },
+  {
+    to: '/approvals',
+    label: 'Approvals',
+    icon: CheckSquare,
+    anyRoles: ['Admin', 'Manager'],
+    badge: 'approvals',
+  },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
@@ -230,14 +239,17 @@ const NAV = [
   },
 ];
 
-function itemAllowed(item, hasPermission) {
+function itemAllowed(item, hasPermission, role) {
+  if (item.anyRoles && item.anyRoles.length) {
+    if (!item.anyRoles.includes(role)) return false;
+  }
   if (item.anyPermissions && item.anyPermissions.length) {
     return item.anyPermissions.some((p) => hasPermission(p));
   }
   return !item.permission || hasPermission(item.permission);
 }
 
-function visibleItems(nav, hasPermission) {
+function visibleItems(nav, hasPermission, role) {
   // Hide section headers that have no permitted items beneath them.
   const result = [];
   for (let i = 0; i < nav.length; i++) {
@@ -247,9 +259,9 @@ function visibleItems(nav, hasPermission) {
       for (let j = i + 1; j < nav.length && !nav[j].section; j++) {
         next.push(nav[j]);
       }
-      const anyVisible = next.some((n) => itemAllowed(n, hasPermission));
+      const anyVisible = next.some((n) => itemAllowed(n, hasPermission, role));
       if (anyVisible) result.push(item);
-    } else if (itemAllowed(item, hasPermission)) {
+    } else if (itemAllowed(item, hasPermission, role)) {
       result.push(item);
     }
   }
@@ -258,6 +270,8 @@ function visibleItems(nav, hasPermission) {
 
 export default function Sidebar() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
+  const role = useAuthStore((s) => s.user?.role);
+  const approvalCount = useNotificationStore((s) => s.approvalCount);
   const lowStockCount = useInventoryStore((s) => s.lowStockCount);
   const pendingReorderAlerts = useInventoryStore((s) => s.pendingReorderAlerts);
   const pendingAdjustments = useInventoryStore((s) => s.pendingAdjustmentsCount);
@@ -306,6 +320,9 @@ export default function Sidebar() {
     if (key === 'billsAttention') {
       return billsAttention > 0 ? billsAttention : null;
     }
+    if (key === 'approvals') {
+      return approvalCount > 0 ? approvalCount : null;
+    }
     return null;
   }
 
@@ -322,7 +339,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {visibleItems(NAV, hasPermission).map((item, idx) => {
+        {visibleItems(NAV, hasPermission, role).map((item, idx) => {
           if (item.section) {
             return (
               <p

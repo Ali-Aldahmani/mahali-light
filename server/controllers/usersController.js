@@ -127,6 +127,16 @@ async function create(req, res, next) {
       [body.username, hash, body.roleId, body.employeeId || null, body.isActive ?? true],
     );
 
+    // Phase 16: seed default notification preferences for the new user.
+    try {
+      await query(
+        `INSERT INTO notification_preferences (user_id)
+         VALUES ($1)
+         ON CONFLICT (user_id) DO NOTHING`,
+        [rows[0].id],
+      );
+    } catch (_e) { /* best-effort */ }
+
     await logActivity({
       entityType: 'user',
       entityId: rows[0].id,
@@ -134,6 +144,22 @@ async function create(req, res, next) {
       performedBy: req.user.id,
       newValue: { username: body.username, roleId: body.roleId, employeeId: body.employeeId },
     });
+
+    try {
+      const notificationService = require('../services/notificationService');
+      await notificationService.notifyRoles(['Admin'], {
+        type: 'system.new_user_created',
+        category: 'system',
+        severity: 'info',
+        title: `New user created: ${body.username}`,
+        message: `Account provisioned by ${req.user.username}.`,
+        referenceType: 'user',
+        referenceId: rows[0].id,
+        actionUrl: `/users`,
+        createdBy: req.user.id,
+        skipForUserId: req.user.id,
+      });
+    } catch (_e) { /* best-effort */ }
 
     const { rows: full } = await query(`${USER_SELECT} WHERE u.id = $1`, [rows[0].id]);
     return created(res, shape(full[0]));

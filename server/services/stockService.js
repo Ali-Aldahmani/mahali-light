@@ -2,6 +2,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { checkReorderThreshold } = require('./reorderService');
 const journalService = require('./journalService');
+const notificationService = require('./notificationService');
 
 // Movement types that require an inventory-vs-equity journal entry. Sales +
 // purchases + quarantine moves are excluded — those flow through invoice /
@@ -297,10 +298,35 @@ async function applyStockMovement(params) {
     if (reorderResult?.created) {
       io.to('role:Manager').emit('reorder_alert_created', reorderResult.payload);
       io.to('role:Admin').emit('reorder_alert_created', reorderResult.payload);
+      emitLowStockNotification(reorderResult.payload).catch(() => {});
     }
   }
 
   return { ...result, reorderResult };
+}
+
+// Emits a stock.low_stock / stock.out_of_stock notification. Called from
+// both the inline emit path and the deferred-emit path. Uses a per-variant
+// dedupe key so rapid sales don't spam the notification panel.
+async function emitLowStockNotification(payload) {
+  if (!payload || !payload.variantId) return;
+  const isOut = Number(payload.currentStock || 0) <= 0;
+  const type = isOut ? 'stock.out_of_stock' : 'stock.low_stock';
+  await notificationService.notifyManagersAndAdmins({
+    type,
+    category: 'stock',
+    severity: isOut ? 'error' : 'warning',
+    title: isOut
+      ? `Out of stock: ${payload.productName || 'product'}`
+      : `Low stock: ${payload.productName || 'product'}`,
+    message: isOut
+      ? `Stock has dropped to zero.`
+      : `Stock at ${payload.currentStock} ${payload.unitLabel || ''} (threshold ${payload.threshold || ''}).`.trim(),
+    referenceType: 'product',
+    referenceId: payload.productId || null,
+    actionUrl: payload.productId ? `/products/${payload.productId}` : `/inventory`,
+    dedupeKey: `stock.alert.${payload.variantId}`,
+  });
 }
 
 /**
@@ -316,6 +342,7 @@ function emitDeferred(io, payloads = []) {
     } else if (p.event === 'reorder_alert_created') {
       io.to('role:Manager').emit('reorder_alert_created', p.payload);
       io.to('role:Admin').emit('reorder_alert_created', p.payload);
+      emitLowStockNotification(p.payload).catch(() => {});
     }
   }
 }

@@ -5,6 +5,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const { applyStockMovement } = require('../services/stockService');
 const { checkReorderThreshold } = require('../services/reorderService');
+const notificationService = require('../services/notificationService');
 
 const initSchema = z.object({
   countType: z.enum(['full', 'partial', 'category']),
@@ -466,6 +467,21 @@ async function submit(req, res, next) {
       io.to('role:Admin').emit('stock_count_submitted', payload);
     }
 
+    try {
+      await notificationService.notifyManagersAndAdmins({
+        type: 'stock.count_submitted',
+        category: 'approval',
+        severity: 'info',
+        title: 'Stock count submitted for review',
+        message: `${req.user.username} submitted a stock count with ${full[0].discrepancy_count || 0} discrepancies.`,
+        referenceType: 'stock_count',
+        referenceId: id,
+        actionUrl: `/inventory/counts/${id}`,
+        createdBy: req.user.id,
+        skipForUserId: req.user.id,
+      });
+    } catch (_e) { /* best-effort */ }
+
     return ok(res, shapeCount(full[0]));
   } catch (err) {
     next(err);
@@ -569,6 +585,20 @@ async function approve(req, res, next) {
       });
     }
 
+    try {
+      await notificationService.notifyUser(result.count.initiated_by, {
+        type: 'stock.count_approved',
+        category: 'stock',
+        severity: 'info',
+        title: 'Stock count approved',
+        message: `${req.user.username} approved your stock count.`,
+        referenceType: 'stock_count',
+        referenceId: id,
+        actionUrl: `/inventory/counts/${id}`,
+        createdBy: req.user.id,
+      });
+    } catch (_e) { /* best-effort */ }
+
     await logActivity({
       entityType: 'stock_count',
       entityId: id,
@@ -629,6 +659,22 @@ async function reject(req, res, next) {
         rejectionReason: body.rejectionReason,
       });
     }
+
+    try {
+      await notificationService.notifyUser(rows[0].initiated_by, {
+        type: 'stock.count_rejected',
+        category: 'stock',
+        severity: 'warning',
+        title: 'Stock count rejected',
+        message: body.rejectionReason
+          ? `Reason: ${body.rejectionReason}`
+          : 'Your stock count was rejected.',
+        referenceType: 'stock_count',
+        referenceId: id,
+        actionUrl: `/inventory/counts/${id}`,
+        createdBy: req.user.id,
+      });
+    } catch (_e) { /* best-effort */ }
 
     const { rows: full } = await query(`${COUNT_SQL} WHERE c.id = $1`, [id]);
     return ok(res, shapeCount(full[0]));

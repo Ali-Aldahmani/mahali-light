@@ -50,6 +50,8 @@ import ReportPage from './pages/reports/ReportPage.jsx';
 import NetProfitPage from './pages/reports/NetProfitPage.jsx';
 import ScheduledReportsPage from './pages/reports/ScheduledReportsPage.jsx';
 import AnalyticsPage from './pages/analytics/AnalyticsPage.jsx';
+import ApprovalsPage from './pages/approvals/ApprovalsPage.jsx';
+import NotificationPreferencesPage from './pages/settings/NotificationPreferencesPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -460,6 +462,24 @@ export default function App() {
             element={
               <ProtectedRoute permission="analytics.view">
                 <AnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/approvals"
+            element={
+              <ProtectedRoute>
+                <ApprovalsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/settings/notifications"
+            element={
+              <ProtectedRoute>
+                <NotificationPreferencesPage />
               </ProtectedRoute>
             }
           />

@@ -3,6 +3,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
+const notificationService = require('./notificationService');
 
 // Compute end date by adding `months` whole calendar months and clamping to
 // the last valid day of the resulting month (so 31 Jan + 1 month = 28 Feb).
@@ -444,6 +445,20 @@ async function createClaim({
       io.to('role:Manager').emit('warranty_claim_created', payload);
       io.to('role:Admin').emit('warranty_claim_created', payload);
     }
+    try {
+      await notificationService.notifyManagersAndAdmins({
+        type: 'warranty.claim_created',
+        category: 'warranty',
+        severity: 'info',
+        title: `Warranty claim: ${claimNumber}`,
+        message: `${w.product_name || 'Product'} — claim filed against warranty ${w.warranty_number}.`,
+        referenceType: 'warranty_claim',
+        referenceId: claim.id,
+        actionUrl: `/warranty-claims`,
+        createdBy,
+        skipForUserId: createdBy,
+      });
+    } catch (_e) { /* best-effort */ }
     return claim;
   });
 }
@@ -770,6 +785,26 @@ async function resolveWarrantyClaim({
         newWarrantyId: result.newWarrantyId,
         at: new Date().toISOString(),
       });
+    }
+    if (result.claim && result.claim.created_by) {
+      notificationService
+        .notifyUser(result.claim.created_by, {
+          type: 'warranty.claim_resolved',
+          category: 'warranty',
+          severity: resolution === 'rejected' ? 'warning' : 'info',
+          title: `Claim ${result.claim.claim_number} ${resolution}`,
+          message:
+            resolution === 'replaced'
+              ? 'A replacement has been issued.'
+              : resolution === 'repaired'
+                ? 'Item marked as repaired under warranty.'
+                : 'The claim was rejected.',
+          referenceType: 'warranty_claim',
+          referenceId: claimId,
+          actionUrl: `/warranty-claims`,
+          createdBy: managerId,
+        })
+        .catch(() => {});
     }
     return result;
   });

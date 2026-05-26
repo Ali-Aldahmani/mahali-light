@@ -8,6 +8,8 @@ import { useSocketStore } from '../../store/socketStore.js';
 import { logout as apiLogout } from '../../services/authService.js';
 import PresenceWidget from './PresenceWidget.jsx';
 import CashBalanceWidget from '../ui/CashBalanceWidget.jsx';
+import NotificationBell from '../notifications/NotificationBell.jsx';
+import NotificationPanel from '../notifications/NotificationPanel.jsx';
 
 export default function Header({ title }) {
   const user = useAuthStore((s) => s.user);
@@ -45,6 +47,8 @@ export default function Header({ title }) {
         </div>
 
         <CashBalanceWidget />
+
+        <NotificationBell />
 
         <PresenceWidget />
 
@@ -87,6 +91,7 @@ export default function Header({ title }) {
           )}
         </div>
       </div>
+      <NotificationPanel />
     </header>
   );
 }

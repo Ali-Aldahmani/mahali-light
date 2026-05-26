@@ -3,6 +3,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const notificationService = require('../services/notificationService');
 const {
   applyStockMovement,
   isVariantUnderActiveCount,
@@ -308,6 +309,22 @@ async function create(req, res, next) {
       io.to('role:Admin').emit('adjustment_request_created', payload);
     }
 
+    // Phase 16: persistent approval notification for managers/admins.
+    try {
+      await notificationService.notifyManagersAndAdmins({
+        type: 'approval.stock_adjustment_pending',
+        category: 'approval',
+        severity: 'info',
+        title: `Stock adjustment request: ${variant.product_name}`,
+        message: `${req.user.username} wants to adjust by ${difference > 0 ? '+' : ''}${difference} (${body.reason}).`,
+        referenceType: 'stock_adjustment_request',
+        referenceId: inserted[0].id,
+        actionUrl: `/inventory?tab=adjustments`,
+        createdBy: req.user.id,
+        skipForUserId: req.user.id,
+      });
+    } catch (_err) { /* best-effort */ }
+
     const { rows: full } = await query(`${LIST_SQL} WHERE a.id = $1`, [
       inserted[0].id,
     ]);
@@ -398,6 +415,20 @@ async function approve(req, res, next) {
       );
     }
 
+    try {
+      await notificationService.notifyUser(result.reqRow.requested_by, {
+        type: 'stock.adjustment_approved',
+        category: 'stock',
+        severity: 'info',
+        title: 'Adjustment approved',
+        message: `${req.user.username} approved your stock adjustment request.`,
+        referenceType: 'stock_adjustment_request',
+        referenceId: id,
+        actionUrl: `/inventory?tab=adjustments`,
+        createdBy: req.user.id,
+      });
+    } catch (_e) { /* best-effort */ }
+
     // Re-evaluate the reorder threshold now that the change is committed.
     try {
       const { checkReorderThreshold } = require('../services/reorderService');
@@ -472,6 +503,22 @@ async function reject(req, res, next) {
         rejectionReason: body.rejectionReason,
       });
     }
+
+    try {
+      await notificationService.notifyUser(rows[0].requested_by, {
+        type: 'stock.adjustment_rejected',
+        category: 'stock',
+        severity: 'warning',
+        title: 'Adjustment rejected',
+        message: body.rejectionReason
+          ? `Reason: ${body.rejectionReason}`
+          : 'Your stock adjustment request was rejected.',
+        referenceType: 'stock_adjustment_request',
+        referenceId: id,
+        actionUrl: `/inventory?tab=adjustments`,
+        createdBy: req.user.id,
+      });
+    } catch (_e) { /* best-effort */ }
 
     const { rows: full } = await query(`${LIST_SQL} WHERE a.id = $1`, [id]);
     return ok(res, shape(full[0]));

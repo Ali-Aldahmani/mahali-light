@@ -188,6 +188,7 @@ async function runSchedule(schedule, { io = null, actor = null } = {}) {
     // Notify recipients in real time. The email side is intentionally a TODO
     // — once SMTP is wired in we just attach the same file.
     if (io && Array.isArray(schedule.recipients)) {
+      const notificationService = require('./notificationService');
       for (const rec of schedule.recipients) {
         if (!rec.employee_id) continue;
         io.to(`user:${rec.employee_id}`).emit('scheduled_report_ready', {
@@ -195,6 +196,18 @@ async function runSchedule(schedule, { io = null, actor = null } = {}) {
           reportType: schedule.report_type,
           filename: exported.filename,
         });
+        notificationService
+          .notifyUser(rec.employee_id, {
+            type: 'report.scheduled_ready',
+            category: 'report',
+            severity: 'info',
+            title: `Report ready: ${schedule.report_type}`,
+            message: `${exported.filename} — generated automatically.`,
+            referenceType: 'scheduled_report',
+            referenceId: schedule.id,
+            actionUrl: `/reports/scheduled`,
+          })
+          .catch(() => {});
       }
     }
     return { ok: true, file: exported };

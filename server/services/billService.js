@@ -4,6 +4,7 @@ const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
+const notificationService = require('./notificationService');
 
 const FREQUENCIES = new Set(['monthly', 'quarterly', 'yearly']);
 const PAYMENT_METHODS = new Set(['cash', 'bank']);
@@ -558,6 +559,21 @@ async function payBillPayment({
     };
     io.to('role:Manager').emit('bill_paid', billPaidPayload);
     io.to('role:Admin').emit('bill_paid', billPaidPayload);
+
+    notificationService
+      .notifyManagersAndAdmins({
+        type: 'bill.paid',
+        category: 'bill',
+        severity: 'info',
+        title: `${result.billName} paid`,
+        message: `AED ${Number(amt || 0).toFixed(2)} via ${paymentMethod}.`,
+        referenceType: 'bill_payment',
+        referenceId: billPaymentId,
+        actionUrl: `/expenses?tab=bills`,
+        createdBy: userId,
+        skipForUserId: userId,
+      })
+      .catch(() => {});
 
     const balancePayload = {
       newBalance: result.treasury?.balanceAfter,

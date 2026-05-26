@@ -7,6 +7,7 @@ const {
   applyEditRequest,
   rejectEditRequest,
 } = require('../services/invoiceService');
+const notificationService = require('../services/notificationService');
 
 const createSchema = z.object({
   requestNote: z.string().min(1).max(2000),
@@ -158,6 +159,25 @@ async function create(req, res, next) {
       io.to('role:Manager').emit('edit_request_created', payload);
       io.to('role:Admin').emit('edit_request_created', payload);
     }
+
+    try {
+      const { rows: inv } = await query(
+        `SELECT invoice_number FROM invoices WHERE id = $1`,
+        [invoiceId],
+      );
+      await notificationService.notifyManagersAndAdmins({
+        type: 'approval.invoice_edit_pending',
+        category: 'approval',
+        severity: 'info',
+        title: `Invoice edit request: ${inv[0]?.invoice_number || invoiceId}`,
+        message: `${req.user.username} wants to edit invoice ${inv[0]?.invoice_number || ''}. Note: ${body.requestNote}`,
+        referenceType: 'invoice_edit_request',
+        referenceId: rows[0].id,
+        actionUrl: `/invoices/edit-requests`,
+        createdBy: req.user.id,
+        skipForUserId: req.user.id,
+      });
+    } catch (_e) { /* best-effort */ }
 
     const { rows: full } = await query(
       `${EDIT_REQUEST_SELECT} WHERE r.id = $1`,

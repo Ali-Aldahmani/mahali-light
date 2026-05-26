@@ -5,6 +5,7 @@ import { useAuthStore } from './authStore.js';
 import { usePresenceStore } from './presenceStore.js';
 import { toast } from './toastStore.js';
 import { handleStockUpdate, syncOnReconnect } from '../services/stockCacheService.js';
+import { useNotificationStore } from './notificationStore.js';
 
 let heartbeatTimer = null;
 
@@ -467,6 +468,25 @@ export const useSocketStore = create((set, get) => ({
     });
     socket.on('expense_recorded', (payload) => {
       expenseBus.emit({ ...payload, kind: 'recorded' });
+    });
+
+    // Phase 16 — notifications channel.
+    socket.on('notification_new', (payload) => {
+      const notification = payload?.notification;
+      if (!notification) return;
+      useNotificationStore.getState().addNotification(notification);
+      if (typeof payload.unread_count === 'number') {
+        useNotificationStore.getState().setUnreadCount(payload.unread_count);
+      }
+      if (notification.category === 'approval') {
+        useNotificationStore.getState().fetchApprovalCount();
+      }
+    });
+
+    socket.on('notification_read_ack', (payload) => {
+      if (typeof payload?.unread_count === 'number') {
+        useNotificationStore.getState().setUnreadCount(payload.unread_count);
+      }
     });
 
     if (heartbeatTimer) clearInterval(heartbeatTimer);

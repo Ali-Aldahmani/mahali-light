@@ -2,6 +2,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const attendanceService = require('./attendanceService');
+const notificationService = require('./notificationService');
 
 const UAE_WEEKEND = new Set([5, 6]); // Fri / Sat
 const LEAVE_TYPES = new Set(['annual', 'sick', 'unpaid', 'emergency']);
@@ -280,6 +281,21 @@ async function submitLeave({
       io.to('role:Admin').emit('leave_request_created', payload);
     }
 
+    try {
+      await notificationService.notifyManagersAndAdmins({
+        type: 'approval.leave_pending',
+        category: 'approval',
+        severity: 'info',
+        title: `Leave request: ${employee.name}`,
+        message: `${leaveType} (${totalDays} day${totalDays === 1 ? '' : 's'}), ${start} → ${end}.`,
+        referenceType: 'leave',
+        referenceId: leave.id,
+        actionUrl: `/attendance?tab=leaves`,
+        createdBy: leave.requested_by,
+        skipForUserId: leave.requested_by,
+      });
+    } catch (_e) { /* best-effort */ }
+
     return shapeLeave({ ...leave, employee_name: employee.name });
   });
 }
@@ -365,6 +381,22 @@ async function approveLeave({ leaveId, managerId, io = null }) {
       }
     }
 
+    if (leave.requested_by) {
+      try {
+        await notificationService.notifyUser(leave.requested_by, {
+          type: 'attendance.leave_reviewed',
+          category: 'attendance',
+          severity: 'info',
+          title: 'Leave approved',
+          message: `Your ${leave.leave_type} leave (${leave.total_days}d) was approved.`,
+          referenceType: 'leave',
+          referenceId: leaveId,
+          actionUrl: `/attendance?tab=leaves`,
+          createdBy: managerId,
+        });
+      } catch (_e) { /* best-effort */ }
+    }
+
     return shapeLeave({ ...leave, status: 'approved', reviewed_by: managerId });
   });
 }
@@ -424,6 +456,22 @@ async function rejectLeave({ leaveId, managerId, reason, io = null }) {
       if (leave.requested_by) {
         io.to(`user:${leave.requested_by}`).emit('leave_request_reviewed', payload);
       }
+    }
+
+    if (leave.requested_by) {
+      try {
+        await notificationService.notifyUser(leave.requested_by, {
+          type: 'attendance.leave_reviewed',
+          category: 'attendance',
+          severity: 'warning',
+          title: 'Leave rejected',
+          message: `Reason: ${reason.trim()}`,
+          referenceType: 'leave',
+          referenceId: leaveId,
+          actionUrl: `/attendance?tab=leaves`,
+          createdBy: managerId,
+        });
+      } catch (_e) { /* best-effort */ }
     }
 
     return shapeLeave({

@@ -1,6 +1,7 @@
 const { query, withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const notificationService = require('./notificationService');
 
 // UAE Friday/Saturday weekend. Sunday is the first working day.
 // JS getDay(): 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
@@ -147,6 +148,22 @@ async function checkIn({ employeeId, method = 'app_login', userId = null, io = n
       };
       io.to('role:Manager').emit('attendance_checked_in', payload);
       io.to('role:Admin').emit('attendance_checked_in', payload);
+    }
+
+    if (status === 'late') {
+      try {
+        await notificationService.notifyManagersAndAdmins({
+          type: 'attendance.late_checkin',
+          category: 'attendance',
+          severity: 'warning',
+          title: `${employee.name} checked in late`,
+          message: `${lateMinutes} minute${lateMinutes === 1 ? '' : 's'} late.`,
+          referenceType: 'attendance',
+          referenceId: rows[0].id,
+          actionUrl: `/attendance`,
+          dedupeKey: `attendance.late.${employee.id}.${date}`,
+        });
+      } catch (_e) { /* best-effort */ }
     }
 
     return shapeAttendance({ ...rows[0], employee_name: employee.name });
@@ -441,6 +458,21 @@ async function submitCorrection({
       io.to('role:Admin').emit('correction_request_created', payload);
     }
 
+    try {
+      await notificationService.notifyManagersAndAdmins({
+        type: 'approval.attendance_correction_pending',
+        category: 'approval',
+        severity: 'info',
+        title: `Correction request: ${att.employee_name}`,
+        message: `${reason} on ${dateOnly(att.date)}.`,
+        referenceType: 'attendance_correction',
+        referenceId: rows[0].id,
+        actionUrl: `/attendance?tab=corrections`,
+        createdBy: requestedBy,
+        skipForUserId: requestedBy,
+      });
+    } catch (_e) { /* best-effort */ }
+
     return rows[0];
   });
 }
@@ -528,6 +560,25 @@ async function reviewCorrection({
       if (corr.requested_by) {
         io.to(`user:${corr.requested_by}`).emit('correction_request_reviewed', payload);
       }
+    }
+
+    if (corr.requested_by) {
+      try {
+        await notificationService.notifyUser(corr.requested_by, {
+          type: 'attendance.correction_reviewed',
+          category: 'attendance',
+          severity: decision === 'rejected' ? 'warning' : 'info',
+          title: decision === 'approved' ? 'Correction approved' : 'Correction rejected',
+          message:
+            decision === 'rejected' && rejectionReason
+              ? `Reason: ${rejectionReason}`
+              : `Your attendance correction was ${decision}.`,
+          referenceType: 'attendance_correction',
+          referenceId: correctionId,
+          actionUrl: `/attendance?tab=corrections`,
+          createdBy: reviewerId,
+        });
+      } catch (_e) { /* best-effort */ }
     }
 
     return { ...corr, status: decision, rejection_reason: rejectionReason };
@@ -622,6 +673,21 @@ async function markAbsentForDay({ date = null, io = null } = {}) {
         markedAbsent: absentRows.length,
         autoClosed: openRows.length,
       });
+    }
+
+    if (absentRows.length > 0) {
+      try {
+        await notificationService.notifyManagersAndAdmins({
+          type: 'attendance.absent_marked',
+          category: 'attendance',
+          severity: 'warning',
+          title: `${absentRows.length} employee${absentRows.length === 1 ? '' : 's'} absent today`,
+          message: `Day ${day} closed. Auto-checked-out ${openRows.length} open session${openRows.length === 1 ? '' : 's'}.`,
+          referenceType: 'attendance_day',
+          actionUrl: `/attendance`,
+          dedupeKey: `attendance.absent_marked.${day}`,
+        });
+      } catch (_e) { /* best-effort */ }
     }
 
     return {

@@ -12,6 +12,7 @@ const {
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
+const notificationService = require('./notificationService');
 
 // Lazy-require to avoid circular deps and to keep puppeteer cold-start cost
 // off the boot path. Returns null if PDF generation is unavailable.
@@ -779,6 +780,21 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     io.to('role:Admin').emit('invoice_cancelled', payload);
   }
 
+  try {
+    await notificationService.notifyManagersAndAdmins({
+      type: 'invoice.cancelled',
+      category: 'invoice',
+      severity: 'warning',
+      title: `Invoice cancelled: ${result.invoice.invoice_number}`,
+      message: `${reason ? `Reason: ${reason}` : 'No reason provided.'}`,
+      referenceType: 'invoice',
+      referenceId: invoiceId,
+      actionUrl: `/invoices/${invoiceId}`,
+      createdBy: employeeId,
+      skipForUserId: employeeId,
+    });
+  } catch (_e) { /* best-effort */ }
+
   // Void any warranties tied to this invoice.
   try {
     await voidWarrantiesForInvoice(invoiceId, {
@@ -979,6 +995,22 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
     });
   }
 
+  if (result.request.requested_by) {
+    try {
+      await notificationService.notifyUser(result.request.requested_by, {
+        type: 'invoice.edit_approved',
+        category: 'invoice',
+        severity: 'info',
+        title: `Invoice edit approved`,
+        message: `Your invoice edit request was approved.`,
+        referenceType: 'invoice',
+        referenceId: result.request.invoice_id,
+        actionUrl: `/invoices/${result.request.invoice_id}`,
+        createdBy: managerId,
+      });
+    } catch (_e) { /* best-effort */ }
+  }
+
   // The invoice has changed — invalidate and regenerate its cached PDF.
   const pdf = safeLoadPdfService();
   if (pdf) {
@@ -1059,6 +1091,22 @@ async function rejectEditRequest({ requestId, managerId, reason, io = null }) {
       reason: reason || null,
       at: new Date().toISOString(),
     });
+  }
+
+  if (rows[0].requested_by) {
+    try {
+      await notificationService.notifyUser(rows[0].requested_by, {
+        type: 'invoice.edit_rejected',
+        category: 'invoice',
+        severity: 'warning',
+        title: 'Invoice edit rejected',
+        message: reason ? `Reason: ${reason}` : 'Your invoice edit request was rejected.',
+        referenceType: 'invoice',
+        referenceId: rows[0].invoice_id,
+        actionUrl: `/invoices/${rows[0].invoice_id}`,
+        createdBy: managerId,
+      });
+    } catch (_e) { /* best-effort */ }
   }
 }
 

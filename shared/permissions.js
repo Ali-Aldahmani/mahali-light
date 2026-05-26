@@ -129,6 +129,10 @@ const PERMISSIONS = {
     create: 'warranty.create',
     claim: 'warranty.claim',
   },
+  notification: {
+    broadcast: 'notification.broadcast',
+    manage: 'notification.manage',
+  },
 };
 
 // Default permission set per system role used by the seeder.
@@ -163,6 +167,7 @@ const ROLE_DEFAULTS = {
     'settings.view',
     'warranty.view', 'warranty.create', 'warranty.claim',
     'user.force_logout',
+    'notification.broadcast',
   ],
   Cashier: [
     'invoice.view', 'invoice.create', 'invoice.edit_request', 'invoice.print', 'invoice.download',
