@@ -67,6 +67,15 @@ const ERROR_CODES = {
   BIZ_BANK_HAS_BALANCE: 'BIZ_BANK_HAS_BALANCE',
   BIZ_NO_DEFAULT_BANK: 'BIZ_NO_DEFAULT_BANK',
 
+  // Phase 11 — Attendance & Leaves
+  BIZ_CORRECTION_TOO_OLD: 'BIZ_CORRECTION_TOO_OLD',
+  BIZ_INSUFFICIENT_LEAVE_BALANCE: 'BIZ_INSUFFICIENT_LEAVE_BALANCE',
+  BIZ_LEAVE_OVERLAP: 'BIZ_LEAVE_OVERLAP',
+  BIZ_LEAVE_INVALID_RANGE: 'BIZ_LEAVE_INVALID_RANGE',
+  BIZ_LEAVE_NOT_PENDING: 'BIZ_LEAVE_NOT_PENDING',
+  BIZ_ATTENDANCE_LOCKED: 'BIZ_ATTENDANCE_LOCKED',
+  BIZ_HOLIDAY_DUPLICATE: 'BIZ_HOLIDAY_DUPLICATE',
+
   // Field validations
   VAL_DUPLICATE_PHONE: 'VAL_DUPLICATE_PHONE',
   VAL_INVALID_TRN: 'VAL_INVALID_TRN',
@@ -162,6 +171,20 @@ const ERROR_MESSAGES = {
     'Cannot deactivate a bank account that still has a balance.',
   [ERROR_CODES.BIZ_NO_DEFAULT_BANK]:
     'No default bank account is configured.',
+  [ERROR_CODES.BIZ_CORRECTION_TOO_OLD]:
+    'Attendance corrections are only allowed for the last 30 days.',
+  [ERROR_CODES.BIZ_INSUFFICIENT_LEAVE_BALANCE]:
+    'Not enough leave balance for the requested days.',
+  [ERROR_CODES.BIZ_LEAVE_OVERLAP]:
+    'This leave overlaps with another approved or pending leave.',
+  [ERROR_CODES.BIZ_LEAVE_INVALID_RANGE]:
+    'End date must be on or after the start date.',
+  [ERROR_CODES.BIZ_LEAVE_NOT_PENDING]:
+    'Only pending leave requests can be changed.',
+  [ERROR_CODES.BIZ_ATTENDANCE_LOCKED]:
+    'This attendance record is locked and cannot be modified.',
+  [ERROR_CODES.BIZ_HOLIDAY_DUPLICATE]:
+    'A holiday already exists for that date.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };

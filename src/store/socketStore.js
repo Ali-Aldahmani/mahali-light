@@ -45,6 +45,10 @@ const warrantyBus = makeBus();
 const warrantyClaimBus = makeBus();
 const returnBus = makeBus();
 const treasuryBus = makeBus();
+const attendanceBus = makeBus();
+const leaveBus = makeBus();
+const correctionBus = makeBus();
+const holidayBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
@@ -62,6 +66,10 @@ export const onWarrantyEvent = (cb) => warrantyBus.on(cb);
 export const onWarrantyClaimEvent = (cb) => warrantyClaimBus.on(cb);
 export const onReturnEvent = (cb) => returnBus.on(cb);
 export const onTreasuryEvent = (cb) => treasuryBus.on(cb);
+export const onAttendanceEvent = (cb) => attendanceBus.on(cb);
+export const onLeaveEvent = (cb) => leaveBus.on(cb);
+export const onCorrectionEvent = (cb) => correctionBus.on(cb);
+export const onHolidayEvent = (cb) => holidayBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -358,6 +366,73 @@ export const useSocketStore = create((set, get) => ({
           `Collected AED ${Math.abs(payload.deltaAmount).toFixed(2)} from ${payload.customerName || 'customer'}.`,
         );
       }
+    });
+
+    // Phase 11 — attendance + leaves + corrections + holidays.
+    socket.on('attendance_checked_in', (payload) => {
+      attendanceBus.emit({ ...payload, kind: 'checked_in' });
+    });
+    socket.on('attendance_checked_out', (payload) => {
+      attendanceBus.emit({ ...payload, kind: 'checked_out' });
+    });
+    socket.on('attendance_day_finalized', (payload) => {
+      attendanceBus.emit({ ...payload, kind: 'day_finalized' });
+      toast.info(
+        `Day finalized — ${payload.markedAbsent || 0} absentee(s), ${payload.autoClosed || 0} auto-closed.`,
+      );
+    });
+
+    socket.on('leave_request_created', (payload) => {
+      leaveBus.emit({ ...payload, kind: 'created' });
+      toast.info(
+        `Leave request from ${payload.employeeName || 'employee'} (${payload.leaveType}, ${payload.totalDays}d).`,
+      );
+    });
+    socket.on('leave_request_reviewed', (payload) => {
+      leaveBus.emit({ ...payload, kind: 'reviewed' });
+      const myEmployeeId = useAuthStore.getState().user?.employeeId;
+      if (myEmployeeId && payload.employeeId === myEmployeeId) {
+        if (payload.status === 'approved') {
+          toast.success('Your leave request was approved.');
+        } else if (payload.status === 'rejected') {
+          toast.error(
+            `Your leave request was rejected${
+              payload.rejectionReason ? ': ' + payload.rejectionReason : '.'
+            }`,
+          );
+        } else if (payload.status === 'cancelled') {
+          toast.info('Your leave request was cancelled.');
+        }
+      }
+    });
+
+    socket.on('correction_request_created', (payload) => {
+      correctionBus.emit({ ...payload, kind: 'created' });
+      toast.info(
+        `Correction request from ${payload.employeeName || 'employee'} (${payload.date}).`,
+      );
+    });
+    socket.on('correction_request_reviewed', (payload) => {
+      correctionBus.emit({ ...payload, kind: 'reviewed' });
+      const myEmployeeId = useAuthStore.getState().user?.employeeId;
+      if (myEmployeeId && payload.employeeId === myEmployeeId) {
+        if (payload.status === 'approved') {
+          toast.success('Your attendance correction was approved.');
+        } else if (payload.status === 'rejected') {
+          toast.error(
+            `Your attendance correction was rejected${
+              payload.rejectionReason ? ': ' + payload.rejectionReason : '.'
+            }`,
+          );
+        }
+      }
+    });
+
+    socket.on('holiday_added', (payload) => {
+      holidayBus.emit({ ...payload, kind: 'added' });
+    });
+    socket.on('holiday_removed', (payload) => {
+      holidayBus.emit({ ...payload, kind: 'removed' });
     });
 
     if (heartbeatTimer) clearInterval(heartbeatTimer);

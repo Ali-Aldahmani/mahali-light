@@ -11,6 +11,7 @@ import { useInvoiceStore } from '../../store/invoiceStore.js';
 import { useWarrantyStore } from '../../store/warrantyStore.js';
 import { useReturnStore } from '../../store/returnStore.js';
 import { useTreasuryStore } from '../../store/treasuryStore.js';
+import { useAttendanceStore } from '../../store/attendanceStore.js';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
@@ -25,6 +26,9 @@ import {
   onWarrantyClaimEvent,
   onReturnEvent,
   onTreasuryEvent,
+  onAttendanceEvent,
+  onLeaveEvent,
+  onCorrectionEvent,
 } from '../../store/socketStore.js';
 
 const TITLES = {
@@ -56,6 +60,9 @@ const TITLES = {
   '/returns/requests': 'Return request',
   '/returns/orders': 'Return order',
   '/treasury': 'Treasury',
+  '/attendance': 'Attendance',
+  '/attendance/leave-balances': 'Leave balances',
+  '/attendance/holidays': 'Holidays',
 };
 
 export default function AppLayout() {
@@ -77,6 +84,9 @@ export default function AppLayout() {
   const refreshReturnSummary = useReturnStore((s) => s.refresh);
   const refreshTreasury = useTreasuryStore((s) => s.refresh);
   const refreshTreasuryDrawer = useTreasuryStore((s) => s.refreshDrawer);
+  const refreshAttendanceToday = useAttendanceStore((s) => s.refreshToday);
+  const refreshAttendancePending = useAttendanceStore((s) => s.refreshPending);
+  const applyAttendanceEvent = useAttendanceStore((s) => s.applyAttendanceEvent);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -123,6 +133,12 @@ export default function AppLayout() {
     if (hasCashView) {
       refreshTreasury?.();
     }
+    const hasAttendanceViewAll =
+      permissions.includes('attendance.view_all') || permissions.includes('*');
+    if (hasAttendanceViewAll) {
+      refreshAttendanceToday?.();
+      refreshAttendancePending?.();
+    }
 
     // Keep sidebar badges in sync with realtime events. Throttle the
     // heavyweight inventory refresh so a busy POS session doesn't hammer it.
@@ -158,6 +174,15 @@ export default function AppLayout() {
     const unsubH = onInvoiceEditRequestEvent(() =>
       refreshEditRequestsCount?.(),
     );
+    const unsubM = onAttendanceEvent((p) => {
+      if (p.kind === 'checked_in' || p.kind === 'checked_out') {
+        applyAttendanceEvent?.(p);
+      } else if (p.kind === 'day_finalized') {
+        refreshAttendanceToday?.();
+      }
+    });
+    const unsubN = onLeaveEvent(() => refreshAttendancePending?.());
+    const unsubO = onCorrectionEvent(() => refreshAttendancePending?.());
 
     return () => {
       unsubA();
@@ -172,6 +197,9 @@ export default function AppLayout() {
       unsubJ();
       unsubK();
       unsubL();
+      unsubM();
+      unsubN();
+      unsubO();
       if (throttleTimer) clearTimeout(throttleTimer);
       disconnect();
     };

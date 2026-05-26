@@ -1,9 +1,11 @@
 const { Server } = require('socket.io');
 const { verifyToken } = require('../middleware/auth');
 const { query } = require('../db/postgres');
+const attendanceService = require('../services/attendanceService');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
+const TIMEOUT_LOGOUT_MS = 30 * 60 * 1000;
 
 function attachSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -80,6 +82,59 @@ function attachSocket(httpServer) {
       }
     });
   });
+
+  // Idle-timeout sweeper — sessions inactive past TIMEOUT_LOGOUT_MS get a
+  // hard logout AND an attendance check-out with method='timeout'. This is
+  // the safety net for users who close their app without signing out.
+  setInterval(async () => {
+    try {
+      const cutoffMin = Math.floor(TIMEOUT_LOGOUT_MS / 60000);
+      const { rows } = await query(
+        `SELECT s.id, s.user_id, s.pc_identifier, u.employee_id
+           FROM user_sessions s
+           JOIN users u ON u.id = s.user_id
+          WHERE s.logout_at IS NULL
+            AND s.last_activity_at < NOW() - ($1 || ' minutes')::interval`,
+        [String(cutoffMin)],
+      );
+      for (const r of rows) {
+        await query(
+          `UPDATE user_sessions
+              SET logout_at = NOW(),
+                  logout_type = 'timeout',
+                  status = 'offline'
+            WHERE id = $1`,
+          [r.id],
+        );
+        if (r.employee_id) {
+          // Only close attendance if this was the last live session for
+          // the employee — multi-PC users stay checked in.
+          const { rows: liveRows } = await query(
+            `SELECT 1 FROM user_sessions s
+               JOIN users u ON u.id = s.user_id
+              WHERE u.employee_id = $1 AND s.logout_at IS NULL
+              LIMIT 1`,
+            [r.employee_id],
+          );
+          if (!liveRows.length) {
+            await attendanceService.checkOutSafe({
+              employeeId: r.employee_id,
+              method: 'timeout',
+              userId: r.user_id,
+              io,
+            });
+          }
+        }
+        io.emit('user_offline', {
+          userId: r.user_id,
+          pcIdentifier: r.pc_identifier,
+          logoutType: 'timeout',
+        });
+      }
+    } catch (err) {
+      // ignore — best-effort
+    }
+  }, IDLE_CHECK_INTERVAL_MS);
 
   // Periodic idle sweeper.
   setInterval(async () => {

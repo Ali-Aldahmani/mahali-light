@@ -5,6 +5,7 @@ const { signToken, loadUserContext } = require('../middleware/auth');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { ok } = require('../utils/response');
 const { logActivity } = require('../utils/activityLog');
+const attendanceService = require('../services/attendanceService');
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_WINDOW_MINUTES = 15;
@@ -122,14 +123,19 @@ async function login(req, res, next) {
 
     await recordAttempt({ username, ipAddress, pcIdentifier, success: true });
 
-    // Attendance auto-check-in placeholder — full attendance module in Phase 11.
-    await logActivity({
-      entityType: 'attendance',
-      entityId: user.employee_id,
-      action: 'auto_check_in',
-      performedBy: user.id,
-      notes: `Auto check-in from PC ${pcIdentifier}`,
-    });
+    // Attendance auto check-in (Phase 11). Idempotent — only opens a record
+    // if one doesn't already exist for the employee today, so multi-PC
+    // logins don't clobber the original check-in time. Errors are swallowed
+    // so they can never block authentication.
+    const io = req.app.get('io');
+    if (user.employee_id) {
+      await attendanceService.checkInSafe({
+        employeeId: user.employee_id,
+        method: 'app_login',
+        userId: user.id,
+        io,
+      });
+    }
 
     await logActivity({
       entityType: 'user',
@@ -140,7 +146,6 @@ async function login(req, res, next) {
     });
 
     // Broadcast presence over websocket.
-    const io = req.app.get('io');
     if (io) {
       io.emit('user_online', {
         userId: user.id,
@@ -173,6 +178,31 @@ async function logout(req, res, next) {
     );
     const pcIdentifier = rows[0]?.pc_identifier;
 
+    const io = req.app.get('io');
+
+    // Attendance auto check-out — only fires if no other live session for
+    // the same employee. Multi-PC users stay checked in until the last
+    // device logs out / disconnects.
+    if (req.user.employee_id) {
+      const { rows: liveRows } = await query(
+        `SELECT 1 FROM user_sessions s
+           JOIN users u ON u.id = s.user_id
+          WHERE u.employee_id = $1
+            AND s.logout_at IS NULL
+            AND s.id <> $2
+          LIMIT 1`,
+        [req.user.employee_id, req.sessionId],
+      );
+      if (!liveRows.length) {
+        await attendanceService.checkOutSafe({
+          employeeId: req.user.employee_id,
+          method: 'app_logout',
+          userId: req.user.id,
+          io,
+        });
+      }
+    }
+
     await logActivity({
       entityType: 'user',
       entityId: req.user.id,
@@ -181,7 +211,6 @@ async function logout(req, res, next) {
       notes: `Manual logout (PC ${pcIdentifier || 'unknown'})`,
     });
 
-    const io = req.app.get('io');
     if (io) {
       io.emit('user_offline', {
         userId: req.user.id,

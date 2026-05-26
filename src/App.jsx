@@ -36,6 +36,9 @@ import NewReturnRequestPage from './pages/returns/NewReturnRequestPage.jsx';
 import ReturnRequestDetailPage from './pages/returns/ReturnRequestDetailPage.jsx';
 import ReturnOrderDetailPage from './pages/returns/ReturnOrderDetailPage.jsx';
 import TreasuryPage from './pages/treasury/TreasuryPage.jsx';
+import AttendancePage from './pages/attendance/AttendancePage.jsx';
+import LeaveBalancesPage from './pages/attendance/LeaveBalancesPage.jsx';
+import HolidaysPage from './pages/attendance/HolidaysPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -342,6 +345,31 @@ export default function App() {
             element={
               <ProtectedRoute permission="cash.view">
                 <TreasuryPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/attendance"
+            element={
+              <ProtectedRoute permission="attendance.view_own">
+                <AttendancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/leave-balances"
+            element={
+              <ProtectedRoute permission="attendance.view_all">
+                <LeaveBalancesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/holidays"
+            element={
+              <ProtectedRoute permission="attendance.view_own">
+                <HolidaysPage />
               </ProtectedRoute>
             }
           />

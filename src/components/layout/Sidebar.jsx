@@ -21,6 +21,9 @@ import {
   Users,
   Wallet,
   Banknote,
+  CalendarClock,
+  CalendarDays,
+  CalendarOff,
   Zap,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
@@ -30,6 +33,7 @@ import { useCustomerStore } from '../../store/customerStore.js';
 import { useInvoiceStore } from '../../store/invoiceStore.js';
 import { useWarrantyStore } from '../../store/warrantyStore.js';
 import { useReturnStore } from '../../store/returnStore.js';
+import { useAttendanceStore } from '../../store/attendanceStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -130,6 +134,26 @@ const NAV = [
     icon: Banknote,
     permission: 'cash.view',
   },
+  { section: 'Attendance' },
+  {
+    to: '/attendance',
+    label: 'Attendance',
+    icon: CalendarClock,
+    permission: 'attendance.view_own',
+    badge: 'attendancePending',
+  },
+  {
+    to: '/attendance/leave-balances',
+    label: 'Leave balances',
+    icon: CalendarDays,
+    permission: 'attendance.view_all',
+  },
+  {
+    to: '/attendance/holidays',
+    label: 'Holidays',
+    icon: CalendarOff,
+    permission: 'attendance.view_own',
+  },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
@@ -175,6 +199,8 @@ export default function Sidebar() {
   const expiringSoonCount = useWarrantyStore((s) => s.expiringSoonCount);
   const openClaimsCount = useWarrantyStore((s) => s.openClaimsCount);
   const returnsPending = useReturnStore((s) => s.pendingCount);
+  const pendingCorrections = useAttendanceStore((s) => s.pendingCorrections);
+  const pendingLeaves = useAttendanceStore((s) => s.pendingLeaves);
 
   function badgeFor(key) {
     if (key === 'inventory') {
@@ -202,6 +228,10 @@ export default function Sidebar() {
     }
     if (key === 'returnsPending') {
       return returnsPending > 0 ? returnsPending : null;
+    }
+    if (key === 'attendancePending') {
+      const total = (pendingCorrections?.length || 0) + (pendingLeaves?.length || 0);
+      return total > 0 ? total : null;
     }
     return null;
   }
