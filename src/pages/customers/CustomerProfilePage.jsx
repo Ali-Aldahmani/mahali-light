@@ -30,6 +30,7 @@ import CustomerAvatar from '../../components/ui/CustomerAvatar.jsx';
 import OutstandingBalanceCard from '../../components/ui/OutstandingBalanceCard.jsx';
 import PaymentMethodIcon from '../../components/ui/PaymentMethodIcon.jsx';
 import PaymentStatusBadge from '../../components/ui/PaymentStatusBadge.jsx';
+import WarrantyCard from '../../components/ui/WarrantyCard.jsx';
 import { useAuthStore } from '../../store/authStore.js';
 import { toast } from '../../store/toastStore.js';
 import {
@@ -635,12 +636,21 @@ function WarrantiesTab({ customerId }) {
       </div>
     );
   }
+  if (!rows.length) {
+    return (
+      <EmptyState
+        title="No warranties on file"
+        description="Warranties are created automatically the moment a sale is confirmed."
+        icon={<ShieldCheck className="h-6 w-6" />}
+      />
+    );
+  }
   return (
-    <EmptyState
-      title="Warranties available in Phase 8"
-      description="Warranty cards and claim history will appear here once warranties is enabled."
-      icon={<ShieldCheck className="h-6 w-6" />}
-    />
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {rows.map((w) => (
+        <WarrantyCard key={w.id} warranty={w} />
+      ))}
+    </div>
   );
 }
 

@@ -40,6 +40,14 @@ const ERROR_CODES = {
   BIZ_EDIT_REQUEST_REQUIRED: 'BIZ_EDIT_REQUEST_REQUIRED',
   BIZ_EDIT_REQUEST_ALREADY_REVIEWED: 'BIZ_EDIT_REQUEST_ALREADY_REVIEWED',
 
+  // Phase 8 — Warranties
+  BIZ_WARRANTY_EXPIRED: 'BIZ_WARRANTY_EXPIRED',
+  BIZ_WARRANTY_VOID: 'BIZ_WARRANTY_VOID',
+  BIZ_WARRANTY_NOT_ACTIVE: 'BIZ_WARRANTY_NOT_ACTIVE',
+  BIZ_DUPLICATE_SERIAL: 'BIZ_DUPLICATE_SERIAL',
+  BIZ_SERIAL_REQUIRED: 'BIZ_SERIAL_REQUIRED',
+  BIZ_CLAIM_ALREADY_RESOLVED: 'BIZ_CLAIM_ALREADY_RESOLVED',
+
   // Field validations
   VAL_DUPLICATE_PHONE: 'VAL_DUPLICATE_PHONE',
   VAL_INVALID_TRN: 'VAL_INVALID_TRN',
@@ -93,6 +101,18 @@ const ERROR_MESSAGES = {
     'A customer with this phone number already exists.',
   [ERROR_CODES.VAL_INVALID_TRN]:
     'TRN must be exactly 15 digits.',
+  [ERROR_CODES.BIZ_WARRANTY_EXPIRED]:
+    'This warranty has expired and can no longer be claimed.',
+  [ERROR_CODES.BIZ_WARRANTY_VOID]:
+    'This warranty has been voided.',
+  [ERROR_CODES.BIZ_WARRANTY_NOT_ACTIVE]:
+    'This warranty is not active.',
+  [ERROR_CODES.BIZ_DUPLICATE_SERIAL]:
+    'A different active warranty already exists for this serial number.',
+  [ERROR_CODES.BIZ_SERIAL_REQUIRED]:
+    'A serial number is required for this product.',
+  [ERROR_CODES.BIZ_CLAIM_ALREADY_RESOLVED]:
+    'This claim has already been resolved.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };

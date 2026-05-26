@@ -26,6 +26,11 @@ import InvoicesPage from './pages/invoices/InvoicesPage.jsx';
 import InvoiceDetailPage from './pages/invoices/InvoiceDetailPage.jsx';
 import InvoiceEditRequestsPage from './pages/invoices/InvoiceEditRequestsPage.jsx';
 import PrintSettingsPage from './pages/settings/PrintSettingsPage.jsx';
+import WarrantyLookupPage from './pages/warranties/WarrantyLookupPage.jsx';
+import WarrantiesPage from './pages/warranties/WarrantiesPage.jsx';
+import WarrantyDetailPage from './pages/warranties/WarrantyDetailPage.jsx';
+import WarrantyClaimsPage from './pages/warranties/WarrantyClaimsPage.jsx';
+import WarrantyClaimDetailPage from './pages/warranties/WarrantyClaimDetailPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -240,6 +245,47 @@ export default function App() {
             element={
               <ProtectedRoute permission="invoice.view">
                 <InvoiceDetailPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/warranties/lookup"
+            element={
+              <ProtectedRoute permission="warranty.view">
+                <WarrantyLookupPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/warranties"
+            element={
+              <ProtectedRoute permission="warranty.view">
+                <WarrantiesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/warranties/:id"
+            element={
+              <ProtectedRoute permission="warranty.view">
+                <WarrantyDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/warranty-claims"
+            element={
+              <ProtectedRoute permission="warranty.view">
+                <WarrantyClaimsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/warranty-claims/:id"
+            element={
+              <ProtectedRoute permission="warranty.view">
+                <WarrantyClaimDetailPage />
               </ProtectedRoute>
             }
           />

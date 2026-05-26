@@ -8,6 +8,7 @@ import { useInventoryStore } from '../../store/inventoryStore.js';
 import { useSupplierStore } from '../../store/supplierStore.js';
 import { useCustomerStore } from '../../store/customerStore.js';
 import { useInvoiceStore } from '../../store/invoiceStore.js';
+import { useWarrantyStore } from '../../store/warrantyStore.js';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
@@ -18,6 +19,8 @@ import {
   onReorderAlert,
   onStockUpdate,
   onSupplierReturnEvent,
+  onWarrantyEvent,
+  onWarrantyClaimEvent,
 } from '../../store/socketStore.js';
 
 const TITLES = {
@@ -41,6 +44,9 @@ const TITLES = {
   '/invoices': 'Invoices',
   '/invoices/edit-requests': 'Edit requests',
   '/settings/printers': 'Printers & branding',
+  '/warranties/lookup': 'Warranty lookup',
+  '/warranties': 'Warranties',
+  '/warranty-claims': 'Warranty claims',
 };
 
 export default function AppLayout() {
@@ -58,6 +64,7 @@ export default function AppLayout() {
   const refreshEditRequestsCount = useInvoiceStore(
     (s) => s.refreshEditRequestsCount,
   );
+  const refreshWarrantySummary = useWarrantyStore((s) => s.refresh);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -89,6 +96,11 @@ export default function AppLayout() {
     if (hasInvoiceApprove) {
       refreshEditRequestsCount?.();
     }
+    const hasWarranty =
+      permissions.includes('warranty.view') || permissions.includes('*');
+    if (hasWarranty) {
+      refreshWarrantySummary?.();
+    }
 
     // Keep sidebar badges in sync with realtime events. Throttle the
     // heavyweight inventory refresh so a busy POS session doesn't hammer it.
@@ -107,6 +119,8 @@ export default function AppLayout() {
     const unsubE = onSupplierReturnEvent(() => refreshSupplierSummary?.());
     const unsubF = onCustomerBalanceUpdate(() => refreshCustomerSummary?.());
     const unsubG = onInvoiceEvent(() => refreshInvoiceSummary?.());
+    const unsubI = onWarrantyEvent(() => refreshWarrantySummary?.());
+    const unsubJ = onWarrantyClaimEvent(() => refreshWarrantySummary?.());
     const unsubH = onInvoiceEditRequestEvent(() =>
       refreshEditRequestsCount?.(),
     );
@@ -120,6 +134,8 @@ export default function AppLayout() {
       unsubF();
       unsubG();
       unsubH();
+      unsubI();
+      unsubJ();
       if (throttleTimer) clearTimeout(throttleTimer);
       disconnect();
     };

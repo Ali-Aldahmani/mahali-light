@@ -742,9 +742,12 @@ async function search(req, res, next) {
     const { rows } = await query(
       `SELECT v.*, p.name AS product_name, p.brand, p.image_path AS product_image,
               p.sold_by, p.unit_label, p.has_variants, p.category_id,
-              p.is_active AS product_active
+              p.is_active AS product_active,
+              p.default_warranty_months,
+              c.requires_serial AS category_requires_serial
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
+         LEFT JOIN product_categories c ON c.id = p.category_id
         WHERE ${filters.join(' AND ')}
         ORDER BY p.name ASC, v.sku ASC
         LIMIT $${params.length}`,
@@ -794,6 +797,8 @@ async function search(req, res, next) {
           hasVariants: r.has_variants,
           imagePath: r.image_path || r.product_image,
           attributes: attrMap.get(r.id) || [],
+          requiresSerial: !!r.category_requires_serial,
+          defaultWarrantyMonths: Number(r.default_warranty_months || 0),
         };
         if (includeCost) out.costPrice = Number(r.cost_price);
         return out;

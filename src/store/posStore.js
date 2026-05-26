@@ -155,9 +155,29 @@ export const usePosStore = create((set, get) => ({
         quantity: qty,
         discountAmount: 0,
         discountPercent: 0,
+        serialNumber: '',
+        serialValid: true,
+        serialError: null,
+        requiresSerial: !!variant.requiresSerial,
+        defaultWarrantyMonths: Number(variant.defaultWarrantyMonths || 0),
       };
       return { cart: [...state.cart, item] };
     });
+  },
+
+  setSerial(variantId, serial, { valid = true, error = null } = {}) {
+    set((state) => ({
+      cart: state.cart.map((i) =>
+        i.variantId === variantId
+          ? {
+              ...i,
+              serialNumber: serial || '',
+              serialValid: !!valid,
+              serialError: error || null,
+            }
+          : i,
+      ),
+    }));
   },
 
   updateQty(variantId, qty) {

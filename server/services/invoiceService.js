@@ -5,6 +5,10 @@ const { applyStockMovement } = require('./stockService');
 const { assertWithinCreditLimit } = require('./customerService');
 const { logActivity } = require('../utils/activityLog');
 const { getStoreSettings } = require('../config/storeSettings');
+const {
+  createWarrantiesFromInvoice,
+  voidWarrantiesForInvoice,
+} = require('./warrantyService');
 
 // Lazy-require to avoid circular deps and to keep puppeteer cold-start cost
 // off the boot path. Returns null if PDF generation is unavailable.
@@ -151,12 +155,18 @@ async function replaceItems(client, invoiceId, items) {
     };
     const figures = computeLineFigures(item);
 
+    const serial =
+      raw.serial_number && String(raw.serial_number).trim()
+        ? String(raw.serial_number).trim()
+        : null;
+
     await client.query(
       `INSERT INTO invoice_items (
         invoice_id, product_id, variant_id, product_name, variant_attributes,
         sku, unit_label, quantity, unit_price, cost_price_at_time,
-        discount_percent, discount_amount, line_subtotal, line_total, position
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        discount_percent, discount_amount, line_subtotal, line_total, position,
+        serial_number
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [
         invoiceId,
         v.product_id,
@@ -173,6 +183,7 @@ async function replaceItems(client, invoiceId, items) {
         figures.lineSubtotal,
         figures.lineTotal,
         position++,
+        serial,
       ],
     );
   }
@@ -485,6 +496,24 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     }
   }
 
+  // Create customer warranties for items whose product has a default
+  // warranty duration. Runs *after* commit so a warranty error never blocks
+  // the sale; if it fails we log and move on — staff can create the
+  // warranties manually from the warranty page.
+  let createdWarranties = [];
+  try {
+    createdWarranties = await createWarrantiesFromInvoice(invoiceId, {
+      actorId: employeeId,
+      io,
+    });
+  } catch (err) {
+    console.warn(
+      '[invoiceService] auto-warranty creation failed:',
+      err.code || err.message,
+    );
+  }
+  result.warranties = createdWarranties;
+
   // Kick off a background PDF generation. Non-blocking — caller doesn't wait.
   const pdf = safeLoadPdfService();
   if (pdf) {
@@ -645,6 +674,17 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     };
     io.to('role:Manager').emit('invoice_cancelled', payload);
     io.to('role:Admin').emit('invoice_cancelled', payload);
+  }
+
+  // Void any warranties tied to this invoice.
+  try {
+    await voidWarrantiesForInvoice(invoiceId, {
+      actorId: employeeId,
+      reason: reason || 'Invoice cancelled',
+      io,
+    });
+  } catch (err) {
+    console.warn('[invoiceService] voiding warranties failed:', err.message);
   }
 
   // Regenerate PDF so the CANCELLED watermark appears. Best-effort, async.

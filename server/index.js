@@ -34,11 +34,14 @@ const customerPaymentsRouter = require('./routes/customerPayments');
 const invoicesRouter = require('./routes/invoices');
 const invoiceEditRequestsRouter = require('./routes/invoiceEditRequests');
 const printRouter = require('./routes/print');
+const warrantiesRouter = require('./routes/warranties');
+const warrantyClaimsRouter = require('./routes/warrantyClaims');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errors');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
 const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
 const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
+const { startWarrantyExpiryJob } = require('./jobs/warrantyExpiry');
 
 async function bootstrap() {
   await runMigrations();
@@ -91,6 +94,8 @@ async function bootstrap() {
   app.use('/api/invoices', invoicesRouter);
   app.use('/api/invoice-edit-requests', invoiceEditRequestsRouter);
   app.use('/api/print', printRouter);
+  app.use('/api/warranties', warrantiesRouter);
+  app.use('/api/warranty-claims', warrantyClaimsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -99,6 +104,7 @@ async function bootstrap() {
   startOverduePoJob(io);
   startStaleDraftInvoiceJob();
   startPdfCleanupJob();
+  startWarrantyExpiryJob(io);
 
   const port = Number(process.env.PORT || 3000);
   server.listen(port, '0.0.0.0', () => {

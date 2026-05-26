@@ -41,6 +41,8 @@ const invoiceBus = makeBus();
 const invoiceEditRequestBus = makeBus();
 const pdfBus = makeBus();
 const printBus = makeBus();
+const warrantyBus = makeBus();
+const warrantyClaimBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
@@ -54,6 +56,8 @@ export const onInvoiceEvent = (cb) => invoiceBus.on(cb);
 export const onInvoiceEditRequestEvent = (cb) => invoiceEditRequestBus.on(cb);
 export const onPdfReady = (cb) => pdfBus.on(cb);
 export const onPrintRequest = (cb) => printBus.on(cb);
+export const onWarrantyEvent = (cb) => warrantyBus.on(cb);
+export const onWarrantyClaimEvent = (cb) => warrantyClaimBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -237,6 +241,43 @@ export const useSocketStore = create((set, get) => ({
           );
         }
       }
+    });
+
+    socket.on('warranty_created', (payload) => {
+      warrantyBus.emit({ ...payload, kind: 'created' });
+    });
+    socket.on('warranty_created_batch', (payload) => {
+      warrantyBus.emit({ ...payload, kind: 'batch_created' });
+    });
+    socket.on('warranty_voided', (payload) => {
+      warrantyBus.emit({ ...payload, kind: 'voided' });
+    });
+    socket.on('warranty_voided_batch', (payload) => {
+      warrantyBus.emit({ ...payload, kind: 'batch_voided' });
+    });
+    socket.on('warranty_expired_batch', (payload) => {
+      warrantyBus.emit({ ...payload, kind: 'batch_expired' });
+    });
+    socket.on('warranty_expiring_soon', (payload) => {
+      warrantyBus.emit({ ...payload, kind: 'expiring_soon' });
+      if (payload?.count > 0) {
+        toast.warning(
+          `${payload.count} warrantie${payload.count === 1 ? '' : 's'} expiring in the next ${payload.withinDays || 30} days.`,
+        );
+      }
+    });
+
+    socket.on('warranty_claim_created', (payload) => {
+      warrantyClaimBus.emit({ ...payload, kind: 'created' });
+      toast.info(
+        `New warranty claim ${payload.claimNumber || ''}${payload.productName ? ` on ${payload.productName}` : ''}.`,
+      );
+    });
+    socket.on('warranty_claim_resolved', (payload) => {
+      warrantyClaimBus.emit({ ...payload, kind: 'resolved' });
+    });
+    socket.on('warranty_claim_updated', (payload) => {
+      warrantyClaimBus.emit({ ...payload, kind: 'updated' });
     });
 
     socket.on('invoice_pdf_pending', (payload) => {

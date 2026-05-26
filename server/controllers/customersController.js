@@ -604,9 +604,39 @@ async function listReturns(_req, res, _next) {
   return ok(res, []);
 }
 
-async function listWarranties(_req, res, _next) {
-  // Phase 8 will populate this; we return an empty array gracefully.
-  return ok(res, []);
+async function listWarranties(req, res, next) {
+  try {
+    const customerId = req.params.id;
+    // Surface every warranty linked to this customer, regardless of status.
+    const { rows } = await query(
+      `SELECT w.*,
+              p.name AS product_name,
+              p.image_path AS product_image_path,
+              v.sku AS variant_sku,
+              i.invoice_number AS invoice_number,
+              c.name AS customer_name,
+              c.phone AS customer_phone,
+              s.name AS supplier_name,
+              u.username AS created_by_username
+         FROM warranties w
+         LEFT JOIN products p ON p.id = w.product_id
+         LEFT JOIN product_variants v ON v.id = w.variant_id
+         LEFT JOIN invoices i ON i.id = w.invoice_id
+         LEFT JOIN customers c ON c.id = w.customer_id
+         LEFT JOIN suppliers s ON s.id = w.supplier_id
+         LEFT JOIN users u ON u.id = w.created_by
+        WHERE w.customer_id = $1
+        ORDER BY w.end_date DESC NULLS LAST, w.created_at DESC`,
+      [customerId],
+    );
+    const { shapeWarranty } = require('../services/warrantyService');
+    return ok(
+      res,
+      rows.map((r) => shapeWarranty(r)),
+    );
+  } catch (err) {
+    next(err);
+  }
 }
 
 async function listTimeline(req, res, next) {

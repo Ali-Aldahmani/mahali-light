@@ -48,7 +48,13 @@ import {
 import {
   onInvoiceEvent,
   onInvoiceEditRequestEvent,
+  onWarrantyEvent,
 } from '../../store/socketStore.js';
+import { listWarranties } from '../../services/warrantyService.js';
+import WarrantyStatusBadge from '../../components/ui/WarrantyStatusBadge.jsx';
+import DaysRemainingBadge from '../../components/ui/DaysRemainingBadge.jsx';
+import { Link } from 'react-router-dom';
+import { Shield } from 'lucide-react';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams();
@@ -67,11 +73,23 @@ export default function InvoiceDetailPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [warranties, setWarranties] = useState([]);
+
+  async function loadWarranties() {
+    try {
+      const res = await listWarranties({ invoice_id: id, limit: 100 });
+      setWarranties(res?.data || []);
+    } catch (_e) {
+      // Permissions or transient errors should not block the invoice page.
+      setWarranties([]);
+    }
+  }
 
   async function load() {
     setLoading(true);
     try {
       setData(await getInvoice(id));
+      await loadWarranties();
     } catch (err) {
       toast.error(err?.message || 'Invoice not found.');
       navigate('/invoices');
@@ -92,9 +110,13 @@ export default function InvoiceDetailPage() {
     const unsubB = onInvoiceEditRequestEvent((evt) => {
       if (evt?.invoiceId === id) load();
     });
+    const unsubC = onWarrantyEvent((evt) => {
+      if (evt?.invoiceId === id) loadWarranties();
+    });
     return () => {
       unsubA();
       unsubB();
+      unsubC();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -235,6 +257,8 @@ export default function InvoiceDetailPage() {
           onChanged={load}
         />
       )}
+
+      <InvoiceWarrantiesSection warranties={warranties} />
 
       <HistorySection rows={data.history} />
 
@@ -992,5 +1016,57 @@ function AddPaymentSlideOver({ open, onClose, invoice, onAdded }) {
         </div>
       </div>
     </SlideOver>
+  );
+}
+
+// ============== Warranties section =====================================
+
+function InvoiceWarrantiesSection({ warranties }) {
+  if (!warranties || warranties.length === 0) return null;
+  return (
+    <div className="card p-5 mt-6">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <Shield className="h-4 w-4 text-accent" />
+          Warranties ({warranties.length})
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {warranties.map((w) => (
+          <Link
+            key={w.id}
+            to={`/warranties/${w.id}`}
+            className="rounded-input border border-border bg-surface hover:border-accent p-3 flex flex-col gap-1 transition-colors"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-xs text-ink-muted">
+                {w.warrantyNumber}
+              </span>
+              <WarrantyStatusBadge
+                status={w.status}
+                expiringSoon={w.expiringSoon}
+                size="sm"
+              />
+            </div>
+            <div className="text-sm font-medium text-ink truncate">
+              {w.productName}
+            </div>
+            {w.serialNumber && (
+              <div className="text-xs text-ink-muted font-mono">
+                SN: {w.serialNumber}
+              </div>
+            )}
+            <div className="flex items-center justify-between text-xs text-ink-muted mt-1">
+              <span>
+                {formatDate(w.startDate)} → {formatDate(w.endDate)}
+              </span>
+              {w.status === 'active' && (
+                <DaysRemainingBadge daysRemaining={w.daysRemaining} size="sm" />
+              )}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
   );
 }

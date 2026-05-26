@@ -4,6 +4,8 @@ import {
   FolderTree,
   Package,
   Receipt,
+  Shield,
+  ShieldAlert,
   ShieldCheck,
   ShoppingCart,
   Sliders,
@@ -109,6 +111,22 @@ export default function DashboardPage() {
             label="Receivables"
             value="Outstanding balances"
             to="/customers/outstanding"
+          />
+        </PermissionGate>
+        <PermissionGate permission="warranty.view">
+          <StatCard
+            icon={Shield}
+            label="Warranty lookup"
+            value="Find by serial / customer"
+            to="/warranties/lookup"
+          />
+        </PermissionGate>
+        <PermissionGate permission="warranty.view">
+          <StatCard
+            icon={ShieldAlert}
+            label="Warranty claims"
+            value="Open & in progress"
+            to="/warranty-claims"
           />
         </PermissionGate>
         <PermissionGate permission="user.edit">

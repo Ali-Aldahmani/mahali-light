@@ -80,6 +80,7 @@ function shapeItem(row, { includeCost = false } = {}) {
     lineSubtotal: Number(row.line_subtotal),
     lineTotal: Number(row.line_total),
     position: row.position,
+    serialNumber: row.serial_number || null,
   };
   if (includeCost) out.costPriceAtTime = Number(row.cost_price_at_time);
   return out;
@@ -308,6 +309,7 @@ const itemSchema = z.object({
   unitPrice: z.number().nonnegative().optional(),
   discountAmount: z.number().nonnegative().optional(),
   discountPercent: z.number().min(0).max(100).optional(),
+  serialNumber: z.string().max(100).optional().nullable(),
 });
 
 const createSchema = z.object({
@@ -356,6 +358,7 @@ async function create(req, res, next) {
             unit_price: i.unitPrice,
             discount_amount: i.discountAmount,
             discount_percent: i.discountPercent,
+            serial_number: i.serialNumber,
           })),
         );
       }
@@ -444,6 +447,7 @@ async function updateItems(req, res, next) {
           unit_price: i.unitPrice,
           discount_amount: i.discountAmount,
           discount_percent: i.discountPercent,
+          serial_number: i.serialNumber,
         })),
       );
 
@@ -492,11 +496,24 @@ async function confirm(req, res, next) {
       [id],
     );
     const includeCost = canSeeCost(req);
+    const warranties = (result.warranties || []).map((w) => ({
+      id: w.id,
+      warrantyNumber: w.warranty_number,
+      productId: w.product_id,
+      variantId: w.variant_id,
+      invoiceItemId: w.invoice_item_id,
+      serialNumber: w.serial_number,
+      startDate: w.start_date,
+      endDate: w.end_date,
+      durationMonths: w.duration_months,
+      status: w.status,
+    }));
     return ok(res, {
       invoice: shapeInvoice(rows[0]),
       items: itemRows.map((r) => shapeItem(r, { includeCost })),
       payments: paymentRows.map(shapePayment),
       totals: result.totals,
+      warranties,
     });
   } catch (err) {
     next(err);

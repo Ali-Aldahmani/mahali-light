@@ -19,6 +19,7 @@ import DownloadPDFButton from '../../components/ui/DownloadPDFButton.jsx';
 import POSProductCard from '../../components/pos/POSProductCard.jsx';
 import POSVariantSelector from '../../components/pos/POSVariantSelector.jsx';
 import CartItem from '../../components/pos/CartItem.jsx';
+import SerialNumberInput from '../../components/ui/SerialNumberInput.jsx';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
 import { useBarcodeListener } from '../../hooks/useBarcodeListener.js';
 import { usePosStore } from '../../store/posStore.js';
@@ -48,6 +49,7 @@ export default function POSPage() {
   const addToCart = usePosStore((s) => s.addToCart);
   const updateQty = usePosStore((s) => s.updateQty);
   const setLineDiscount = usePosStore((s) => s.setLineDiscount);
+  const setSerial = usePosStore((s) => s.setSerial);
   const removeFromCart = usePosStore((s) => s.removeFromCart);
   const setInvoiceDiscount = usePosStore((s) => s.setInvoiceDiscount);
   const addPayment = usePosStore((s) => s.addPayment);
@@ -193,6 +195,17 @@ export default function POSPage() {
         return;
       }
     }
+    // Serial-number guard: serialised products must have a valid serial.
+    const missingSerial = cart.find(
+      (it) => it.requiresSerial && (!it.serialNumber || !it.serialValid),
+    );
+    if (missingSerial) {
+      toast.error(
+        missingSerial.serialError ||
+          `Enter a serial number for ${missingSerial.productName}.`,
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const created = await createInvoice({
@@ -205,6 +218,7 @@ export default function POSPage() {
           quantity: Number(it.quantity),
           unitPrice: Number(it.unitPrice),
           discountAmount: Number(it.lineDiscount || 0),
+          serialNumber: it.serialNumber || null,
         })),
       });
       const invoiceId = created.id;
@@ -226,6 +240,7 @@ export default function POSPage() {
         amountPaid: confirmed.invoice.amountPaid,
         balanceDue: confirmed.invoice.balanceDue,
         customerName: selectedCustomer?.name || null,
+        warranties: confirmed.warranties || [],
       });
       setConfirmOpen(false);
       clearCart();
@@ -268,6 +283,9 @@ export default function POSPage() {
         onCustomerChange={setCustomer}
         onQtyChange={updateQty}
         onDiscountChange={setLineDiscount}
+        onSerialChange={(variantId, value, status) =>
+          setSerial(variantId, value, status)
+        }
         onRemove={removeFromCart}
         onInvoiceDiscountChange={setInvoiceDiscount}
         onClearCart={clearCart}
@@ -418,6 +436,7 @@ function CartPanel({
   onCustomerChange,
   onQtyChange,
   onDiscountChange,
+  onSerialChange,
   onRemove,
   onInvoiceDiscountChange,
   onClearCart,
@@ -460,13 +479,24 @@ function CartPanel({
           </div>
         ) : (
           cart.map((it) => (
-            <CartItem
-              key={it.variantId}
-              item={it}
-              onQtyChange={(q) => onQtyChange(it.variantId, q)}
-              onDiscountChange={(d) => onDiscountChange(it.variantId, d)}
-              onRemove={() => onRemove(it.variantId)}
-            />
+            <div key={it.variantId} className="space-y-1.5">
+              <CartItem
+                item={it}
+                onQtyChange={(q) => onQtyChange(it.variantId, q)}
+                onDiscountChange={(d) => onDiscountChange(it.variantId, d)}
+                onRemove={() => onRemove(it.variantId)}
+              />
+              {it.requiresSerial && (
+                <SerialNumberInput
+                  value={it.serialNumber || ''}
+                  productId={it.productId}
+                  productName={it.productName}
+                  required
+                  onChange={(v, status) => onSerialChange(it.variantId, v, status)}
+                  className="px-1"
+                />
+              )}
+            </div>
           ))
         )}
       </div>
@@ -649,6 +679,14 @@ function SuccessScreen({ success, onNewSale }) {
               ? `Balance ${formatCurrency(success.balanceDue)} on credit`
               : 'Fully paid'}
           </div>
+
+          {success.warranties && success.warranties.length > 0 && (
+            <div className="mt-4 rounded-card border border-success/30 bg-success-light/40 p-3 text-success text-sm font-medium flex items-center justify-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              {success.warranties.length} warrant
+              {success.warranties.length === 1 ? 'y' : 'ies'} created
+            </div>
+          )}
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
             <PrintButton

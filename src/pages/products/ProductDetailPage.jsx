@@ -32,6 +32,7 @@ import {
 } from '../../services/productService.js';
 import { deleteVariant } from '../../services/variantService.js';
 import { getCategoryAttributes } from '../../services/categoryService.js';
+import { getProductWarrantyStats } from '../../services/warrantyService.js';
 import { useProductStore } from '../../store/productStore.js';
 import { useAuthStore } from '../../store/authStore.js';
 import { onProductUpdate } from '../../store/socketStore.js';
@@ -437,16 +438,91 @@ function OverviewTab({
         )}
       </div>
 
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold text-ink mb-3">Image</h3>
-        <ImageUpload
-          label={null}
-          value={product.imagePath}
-          onUpload={canEdit ? onUploadImage : undefined}
-          onRemove={canEdit ? onRemoveImage : undefined}
-          disabled={!canEdit}
+      <div className="card p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-ink mb-3">Image</h3>
+          <ImageUpload
+            label={null}
+            value={product.imagePath}
+            onUpload={canEdit ? onUploadImage : undefined}
+            onRemove={canEdit ? onRemoveImage : undefined}
+            disabled={!canEdit}
+          />
+        </div>
+        <ProductWarrantyStats productId={product.id} />
+      </div>
+    </div>
+  );
+}
+
+function ProductWarrantyStats({ productId }) {
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    getProductWarrantyStats(productId)
+      .then((s) => {
+        if (!cancelled) setStats(s);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
+  if (!stats) return null;
+  const claimRateTone =
+    stats.claimRatePct >= 10
+      ? 'text-error'
+      : stats.claimRatePct >= 5
+        ? 'text-warning'
+        : 'text-success';
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-ink mb-3">Warranty insights</h3>
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <WarrantyStat label="Active warranties" value={stats.activeCount} />
+        <WarrantyStat label="Total claims" value={stats.totalClaims} />
+        <WarrantyStat label="Open claims" value={stats.openClaims} tone="warning" />
+        <WarrantyStat
+          label="Claim rate"
+          value={`${stats.claimRatePct}%`}
+          tone={
+            stats.claimRatePct >= 10
+              ? 'error'
+              : stats.claimRatePct >= 5
+                ? 'warning'
+                : 'success'
+          }
         />
       </div>
+      {stats.mostRecentReason && (
+        <div className="mt-3 text-xs text-ink-muted">
+          <div className="uppercase tracking-wider text-[10px] mb-0.5">
+            Last reported issue
+          </div>
+          <div className={`line-clamp-2 ${claimRateTone}`}>
+            {stats.mostRecentReason}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WarrantyStat({ label, value, tone = 'neutral' }) {
+  const toneClass =
+    tone === 'success'
+      ? 'text-success'
+      : tone === 'warning'
+        ? 'text-warning'
+        : tone === 'error'
+          ? 'text-error'
+          : 'text-ink';
+  return (
+    <div className="rounded-input border border-border bg-surface-2 p-3">
+      <div className="text-[11px] uppercase tracking-wider text-ink-muted">
+        {label}
+      </div>
+      <div className={`text-lg font-semibold ${toneClass}`}>{value || 0}</div>
     </div>
   );
 }

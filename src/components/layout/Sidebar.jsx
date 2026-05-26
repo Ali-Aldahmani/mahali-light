@@ -8,9 +8,12 @@ import {
   Package,
   Printer,
   Receipt,
+  Shield,
+  ShieldAlert,
   ShieldCheck,
   ShoppingCart,
   Sliders,
+  Search as SearchIcon,
   Truck,
   UsersRound,
   UserCog,
@@ -23,6 +26,7 @@ import { useInventoryStore } from '../../store/inventoryStore.js';
 import { useSupplierStore } from '../../store/supplierStore.js';
 import { useCustomerStore } from '../../store/customerStore.js';
 import { useInvoiceStore } from '../../store/invoiceStore.js';
+import { useWarrantyStore } from '../../store/warrantyStore.js';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
@@ -87,6 +91,27 @@ const NAV = [
     permission: 'customer.view_balance',
     badge: 'receivables',
   },
+  { section: 'Warranties' },
+  {
+    to: '/warranties/lookup',
+    label: 'Warranty lookup',
+    icon: SearchIcon,
+    permission: 'warranty.view',
+  },
+  {
+    to: '/warranties',
+    label: 'Warranties',
+    icon: Shield,
+    permission: 'warranty.view',
+    badge: 'warrantiesExpiring',
+  },
+  {
+    to: '/warranty-claims',
+    label: 'Claims',
+    icon: ShieldAlert,
+    permission: 'warranty.view',
+    badge: 'warrantyClaims',
+  },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
@@ -129,6 +154,8 @@ export default function Sidebar() {
   const overdueCount = useSupplierStore((s) => s.overdueCount);
   const customersWithBalance = useCustomerStore((s) => s.customersWithBalance);
   const pendingEditRequests = useInvoiceStore((s) => s.pendingEditRequests);
+  const expiringSoonCount = useWarrantyStore((s) => s.expiringSoonCount);
+  const openClaimsCount = useWarrantyStore((s) => s.openClaimsCount);
 
   function badgeFor(key) {
     if (key === 'inventory') {
@@ -147,6 +174,12 @@ export default function Sidebar() {
     }
     if (key === 'editRequests') {
       return pendingEditRequests > 0 ? pendingEditRequests : null;
+    }
+    if (key === 'warrantiesExpiring') {
+      return expiringSoonCount > 0 ? expiringSoonCount : null;
+    }
+    if (key === 'warrantyClaims') {
+      return openClaimsCount > 0 ? openClaimsCount : null;
     }
     return null;
   }
