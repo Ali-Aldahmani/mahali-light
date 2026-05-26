@@ -9,6 +9,8 @@ const {
   createWarrantiesFromInvoice,
   voidWarrantiesForInvoice,
 } = require('./warrantyService');
+const cashService = require('./cashService');
+const bankService = require('./bankService');
 
 // Lazy-require to avoid circular deps and to keep puppeteer cold-start cost
 // off the boot path. Returns null if PDF generation is unavailable.
@@ -406,6 +408,39 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       );
     }
 
+    // Treasury bookkeeping: every cash/bank payment recorded against this
+    // draft now flows into the matching ledger. Credit payments are handled
+    // separately above (they don't touch cash/bank).
+    const treasuryPostings = [];
+    for (const pm of payments) {
+      const amt = money(pm.amount);
+      if (amt <= 0) continue;
+      if (pm.method === 'cash') {
+        const posted = await cashService.recordCashIn({
+          client,
+          transactionType: 'sale',
+          amount: amt,
+          referenceType: 'invoice',
+          referenceId: invoiceId,
+          employeeId,
+          notes: `Sale ${invoice.invoice_number}`,
+        });
+        treasuryPostings.push({ method: 'cash', ...posted });
+      } else if (pm.method === 'bank') {
+        const posted = await bankService.recordBankIn({
+          client,
+          bankAccountId: pm.bank_account_id || null,
+          transactionType: 'sale',
+          amount: amt,
+          referenceType: 'invoice',
+          referenceId: invoiceId,
+          employeeId,
+          description: `Sale ${invoice.invoice_number}`,
+        });
+        treasuryPostings.push({ method: 'bank', ...posted });
+      }
+    }
+
     const totals = await recalculateAndPersistTotals(client, invoiceId);
 
     await client.query(
@@ -441,6 +476,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       totals,
       creditUsed,
       stockEmits,
+      treasuryPostings,
     };
   });
 
@@ -492,6 +528,35 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
         };
         io.to('role:Manager').emit('customer_balance_updated', creditPayload);
         io.to('role:Admin').emit('customer_balance_updated', creditPayload);
+      }
+    }
+
+    // Treasury balance deltas — emitted to Manager + Admin so the dashboards
+    // can refresh without polling.
+    for (const tp of result.treasuryPostings || []) {
+      const at = new Date().toISOString();
+      if (tp.method === 'cash') {
+        const p = {
+          newBalance: tp.balanceAfter,
+          delta: tp.delta,
+          transactionType: 'sale',
+          changedBy: employeeId,
+          at,
+        };
+        io.to('role:Manager').emit('cash_balance_updated', p);
+        io.to('role:Admin').emit('cash_balance_updated', p);
+      } else if (tp.method === 'bank') {
+        const p = {
+          bankAccountId: tp.accountId,
+          bankName: tp.bankName,
+          newBalance: tp.balanceAfter,
+          delta: tp.delta,
+          transactionType: 'sale',
+          changedBy: employeeId,
+          at,
+        };
+        io.to('role:Manager').emit('bank_balance_updated', p);
+        io.to('role:Admin').emit('bank_balance_updated', p);
       }
     }
   }

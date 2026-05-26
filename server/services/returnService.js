@@ -3,6 +3,8 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
+const cashService = require('./cashService');
+const bankService = require('./bankService');
 
 const RETURN_TYPES = new Set([
   'customer_refund',
@@ -770,8 +772,54 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
               [amount, request.customer_id],
             );
           }
-          // cash / bank refunds are accounted for outside this phase
-          // (cash drawer + bank transaction in Phase 10).
+          // Cash / bank refunds now book through the treasury services.
+          if (p.method === 'cash') {
+            const posted = await cashService.recordCashOut({
+              client,
+              transactionType: 'refund',
+              amount,
+              referenceType: 'return_order',
+              referenceId: orderId,
+              employeeId: managerId,
+              notes: `Refund for ${orderNumber}`,
+            });
+            executionEvents.push({
+              event: 'cash_balance_updated',
+              payload: {
+                newBalance: posted.balanceAfter,
+                delta: posted.delta,
+                transactionType: 'refund',
+                changedBy: managerId,
+                at: new Date().toISOString(),
+              },
+              audience: ['role:Manager', 'role:Admin'],
+            });
+          } else if (p.method === 'bank') {
+            const posted = await bankService.recordBankOut({
+              client,
+              bankAccountId: p.bankAccountId || null,
+              transactionType: 'refund',
+              amount,
+              referenceType: 'return_order',
+              referenceId: orderId,
+              employeeId: managerId,
+              description: `Refund for ${orderNumber}`,
+              allowOverdraft: true,
+            });
+            executionEvents.push({
+              event: 'bank_balance_updated',
+              payload: {
+                bankAccountId: posted.accountId,
+                bankName: posted.bankName,
+                newBalance: posted.balanceAfter,
+                delta: posted.delta,
+                transactionType: 'refund',
+                changedBy: managerId,
+                at: new Date().toISOString(),
+              },
+              audience: ['role:Manager', 'role:Admin'],
+            });
+          }
         }
       }
     }
@@ -894,7 +942,12 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
         at: new Date().toISOString(),
       });
       for (const ev of result.executionEvents) {
-        if (ev) io.emit(ev.event, ev.payload);
+        if (!ev) continue;
+        if (ev.audience && ev.audience.length) {
+          for (const room of ev.audience) io.to(room).emit(ev.event, ev.payload);
+        } else {
+          io.emit(ev.event, ev.payload);
+        }
       }
     }
     return result;

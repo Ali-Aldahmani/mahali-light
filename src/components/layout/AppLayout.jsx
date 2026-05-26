@@ -10,6 +10,7 @@ import { useCustomerStore } from '../../store/customerStore.js';
 import { useInvoiceStore } from '../../store/invoiceStore.js';
 import { useWarrantyStore } from '../../store/warrantyStore.js';
 import { useReturnStore } from '../../store/returnStore.js';
+import { useTreasuryStore } from '../../store/treasuryStore.js';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
@@ -23,6 +24,7 @@ import {
   onWarrantyEvent,
   onWarrantyClaimEvent,
   onReturnEvent,
+  onTreasuryEvent,
 } from '../../store/socketStore.js';
 
 const TITLES = {
@@ -53,6 +55,7 @@ const TITLES = {
   '/returns/new': 'New return request',
   '/returns/requests': 'Return request',
   '/returns/orders': 'Return order',
+  '/treasury': 'Treasury',
 };
 
 export default function AppLayout() {
@@ -72,6 +75,8 @@ export default function AppLayout() {
   );
   const refreshWarrantySummary = useWarrantyStore((s) => s.refresh);
   const refreshReturnSummary = useReturnStore((s) => s.refresh);
+  const refreshTreasury = useTreasuryStore((s) => s.refresh);
+  const refreshTreasuryDrawer = useTreasuryStore((s) => s.refreshDrawer);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -113,6 +118,11 @@ export default function AppLayout() {
     if (hasReturn) {
       refreshReturnSummary?.();
     }
+    const hasCashView =
+      permissions.includes('cash.view') || permissions.includes('*');
+    if (hasCashView) {
+      refreshTreasury?.();
+    }
 
     // Keep sidebar badges in sync with realtime events. Throttle the
     // heavyweight inventory refresh so a busy POS session doesn't hammer it.
@@ -134,6 +144,17 @@ export default function AppLayout() {
     const unsubI = onWarrantyEvent(() => refreshWarrantySummary?.());
     const unsubJ = onWarrantyClaimEvent(() => refreshWarrantySummary?.());
     const unsubK = onReturnEvent(() => refreshReturnSummary?.());
+    const unsubL = onTreasuryEvent((p) => {
+      if (
+        p.kind === 'drawer_opened' ||
+        p.kind === 'drawer_closed'
+      ) {
+        refreshTreasuryDrawer?.();
+      } else if (p.kind === 'cash_balance' || p.kind === 'bank_balance') {
+        // Lightweight: store handles deltas itself; only refresh occasionally.
+        if (hasCashView) refreshTreasuryDrawer?.();
+      }
+    });
     const unsubH = onInvoiceEditRequestEvent(() =>
       refreshEditRequestsCount?.(),
     );
@@ -150,6 +171,7 @@ export default function AppLayout() {
       unsubI();
       unsubJ();
       unsubK();
+      unsubL();
       if (throttleTimer) clearTimeout(throttleTimer);
       disconnect();
     };

@@ -20,6 +20,7 @@ import {
   UserCog,
   Users,
   Wallet,
+  Banknote,
   Zap,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
@@ -121,6 +122,13 @@ const NAV = [
     icon: RotateCcw,
     permission: 'return.request',
     badge: 'returnsPending',
+  },
+  { section: 'Treasury' },
+  {
+    to: '/treasury',
+    label: 'Treasury',
+    icon: Banknote,
+    permission: 'cash.view',
   },
   { section: 'Administration' },
   { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },

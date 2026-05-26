@@ -35,6 +35,7 @@ import ReturnsPage from './pages/returns/ReturnsPage.jsx';
 import NewReturnRequestPage from './pages/returns/NewReturnRequestPage.jsx';
 import ReturnRequestDetailPage from './pages/returns/ReturnRequestDetailPage.jsx';
 import ReturnOrderDetailPage from './pages/returns/ReturnOrderDetailPage.jsx';
+import TreasuryPage from './pages/treasury/TreasuryPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -332,6 +333,15 @@ export default function App() {
             element={
               <ProtectedRoute permission="settings.view">
                 <PrintSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/treasury"
+            element={
+              <ProtectedRoute permission="cash.view">
+                <TreasuryPage />
               </ProtectedRoute>
             }
           />

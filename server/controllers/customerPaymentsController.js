@@ -60,7 +60,7 @@ async function createForCustomer(req, res, next) {
     const { id: customerId } = req.params;
     const body = createSchema.parse(req.body || {});
 
-    const { payment, customer } = await collectPayment({
+    const { payment, customer, treasury } = await collectPayment({
       customerId,
       amount: body.amount,
       method: body.paymentMethod,
@@ -93,6 +93,32 @@ async function createForCustomer(req, res, next) {
       };
       io.to('role:Manager').emit('customer_balance_updated', payload);
       io.to('role:Admin').emit('customer_balance_updated', payload);
+      if (treasury) {
+        const at = new Date().toISOString();
+        if (treasury.method === 'cash') {
+          const p = {
+            newBalance: treasury.balanceAfter,
+            delta: treasury.delta,
+            transactionType: 'customer_payment',
+            changedBy: req.user.id,
+            at,
+          };
+          io.to('role:Manager').emit('cash_balance_updated', p);
+          io.to('role:Admin').emit('cash_balance_updated', p);
+        } else if (treasury.method === 'bank_transfer') {
+          const p = {
+            bankAccountId: treasury.accountId,
+            bankName: treasury.bankName,
+            newBalance: treasury.balanceAfter,
+            delta: treasury.delta,
+            transactionType: 'customer_payment',
+            changedBy: req.user.id,
+            at,
+          };
+          io.to('role:Manager').emit('bank_balance_updated', p);
+          io.to('role:Admin').emit('bank_balance_updated', p);
+        }
+      }
     }
 
     const { rows } = await query(`${PAYMENT_SELECT} WHERE p.id = $1`, [
@@ -122,7 +148,7 @@ async function remove(req, res, next) {
       });
     }
 
-    const { payment, customer } = await voidPayment({ paymentId: id });
+    const { payment, customer, treasury } = await voidPayment({ paymentId: id });
 
     await logActivity({
       entityType: 'customer',
@@ -148,6 +174,32 @@ async function remove(req, res, next) {
       };
       io.to('role:Manager').emit('customer_balance_updated', payload);
       io.to('role:Admin').emit('customer_balance_updated', payload);
+      if (treasury) {
+        const at = new Date().toISOString();
+        if (treasury.method === 'cash') {
+          const p = {
+            newBalance: treasury.balanceAfter,
+            delta: treasury.delta,
+            transactionType: 'customer_payment',
+            changedBy: req.user.id,
+            at,
+          };
+          io.to('role:Manager').emit('cash_balance_updated', p);
+          io.to('role:Admin').emit('cash_balance_updated', p);
+        } else if (treasury.method === 'bank_transfer') {
+          const p = {
+            bankAccountId: treasury.accountId,
+            bankName: treasury.bankName,
+            newBalance: treasury.balanceAfter,
+            delta: treasury.delta,
+            transactionType: 'customer_payment',
+            changedBy: req.user.id,
+            at,
+          };
+          io.to('role:Manager').emit('bank_balance_updated', p);
+          io.to('role:Admin').emit('bank_balance_updated', p);
+        }
+      }
     }
 
     return ok(res, {

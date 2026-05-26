@@ -15,6 +15,7 @@ import {
   Users,
   UsersRound,
   Wallet,
+  Banknote,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/ui/PageHeader.jsx';
@@ -138,6 +139,14 @@ export default function DashboardPage() {
             to="/returns"
           />
         </PermissionGate>
+        <PermissionGate permission="cash.view">
+          <StatCard
+            icon={Banknote}
+            label="Treasury"
+            value="Cash & bank"
+            to="/treasury"
+          />
+        </PermissionGate>
         <PermissionGate permission="user.edit">
           <StatCard icon={UserCog} label="Users" value="Manage accounts" to="/users" />
         </PermissionGate>
@@ -162,11 +171,11 @@ export default function DashboardPage() {
       <div className="mt-8 card p-6">
         <h2 className="text-base font-semibold text-ink">Coming next</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          POS, invoicing, warranties and returns are live — open <strong>POS</strong> to
-          ring up a sale, head to <strong>Returns</strong> for refunds &amp;
-          replacements, or open <strong>Warranties</strong> to track customer
-          coverage. Subsequent phases add attendance, cash &amp; bank, finance
-          and reporting.
+          POS, invoicing, warranties, returns and treasury are all live — open
+          <strong> POS</strong> to ring up a sale, head to <strong>Treasury</strong>
+          to manage the cash drawer and banks, or open <strong>Returns</strong>
+          for refunds &amp; replacements. Subsequent phases add attendance,
+          finance and reporting.
         </p>
       </div>
     </div>

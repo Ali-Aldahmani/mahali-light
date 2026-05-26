@@ -44,6 +44,7 @@ const printBus = makeBus();
 const warrantyBus = makeBus();
 const warrantyClaimBus = makeBus();
 const returnBus = makeBus();
+const treasuryBus = makeBus();
 
 export const onProductUpdate = (cb) => productBus.on(cb);
 export const onStockUpdate = (cb) => stockBus.on(cb);
@@ -60,6 +61,7 @@ export const onPrintRequest = (cb) => printBus.on(cb);
 export const onWarrantyEvent = (cb) => warrantyBus.on(cb);
 export const onWarrantyClaimEvent = (cb) => warrantyClaimBus.on(cb);
 export const onReturnEvent = (cb) => returnBus.on(cb);
+export const onTreasuryEvent = (cb) => treasuryBus.on(cb);
 
 export const useSocketStore = create((set, get) => ({
   socket: null,
@@ -317,6 +319,30 @@ export const useSocketStore = create((set, get) => ({
     });
     socket.on('print_receipt_requested', (payload) => {
       printBus.emit({ ...payload, kind: 'receipt' });
+    });
+
+    socket.on('cash_balance_updated', (payload) => {
+      treasuryBus.emit({ ...payload, kind: 'cash_balance' });
+    });
+    socket.on('bank_balance_updated', (payload) => {
+      treasuryBus.emit({ ...payload, kind: 'bank_balance' });
+    });
+    socket.on('drawer_opened', (payload) => {
+      treasuryBus.emit({ ...payload, kind: 'drawer_opened' });
+      toast.success(
+        `Cash drawer opened (AED ${Number(payload.openingBalance || 0).toFixed(2)}).`,
+      );
+    });
+    socket.on('drawer_closed', (payload) => {
+      treasuryBus.emit({ ...payload, kind: 'drawer_closed' });
+      const disc = Number(payload.discrepancy || 0);
+      if (Math.abs(disc) < 0.01) {
+        toast.success('Cash drawer closed (no discrepancy).');
+      } else {
+        toast.warning(
+          `Drawer closed with discrepancy AED ${disc.toFixed(2)}.`,
+        );
+      }
     });
 
     socket.on('customer_balance_updated', (payload) => {

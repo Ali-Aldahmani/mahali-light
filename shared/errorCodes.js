@@ -57,6 +57,16 @@ const ERROR_CODES = {
   BIZ_NO_INVOICE_NEEDS_APPROVAL: 'BIZ_NO_INVOICE_NEEDS_APPROVAL',
   BIZ_REFUND_PLAN_MISMATCH: 'BIZ_REFUND_PLAN_MISMATCH',
 
+  // Phase 10 — Treasury
+  BIZ_INSUFFICIENT_CASH: 'BIZ_INSUFFICIENT_CASH',
+  BIZ_INSUFFICIENT_BANK_BALANCE: 'BIZ_INSUFFICIENT_BANK_BALANCE',
+  BIZ_DRAWER_CLOSED: 'BIZ_DRAWER_CLOSED',
+  BIZ_DRAWER_ALREADY_OPEN: 'BIZ_DRAWER_ALREADY_OPEN',
+  BIZ_DISCREPANCY_NEEDS_APPROVAL: 'BIZ_DISCREPANCY_NEEDS_APPROVAL',
+  BIZ_TRANSFER_SAME_ACCOUNT: 'BIZ_TRANSFER_SAME_ACCOUNT',
+  BIZ_BANK_HAS_BALANCE: 'BIZ_BANK_HAS_BALANCE',
+  BIZ_NO_DEFAULT_BANK: 'BIZ_NO_DEFAULT_BANK',
+
   // Field validations
   VAL_DUPLICATE_PHONE: 'VAL_DUPLICATE_PHONE',
   VAL_INVALID_TRN: 'VAL_INVALID_TRN',
@@ -136,6 +146,22 @@ const ERROR_MESSAGES = {
     'No-invoice returns require manager approval to be filed.',
   [ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH]:
     'The refund payments do not match the total being returned.',
+  [ERROR_CODES.BIZ_INSUFFICIENT_CASH]:
+    'Not enough cash in the drawer for this transaction.',
+  [ERROR_CODES.BIZ_INSUFFICIENT_BANK_BALANCE]:
+    'Bank account does not have enough balance for this transaction.',
+  [ERROR_CODES.BIZ_DRAWER_CLOSED]:
+    'Cash drawer is closed. Open the drawer before recording cash transactions.',
+  [ERROR_CODES.BIZ_DRAWER_ALREADY_OPEN]:
+    'Cash drawer is already open. Close the current session first.',
+  [ERROR_CODES.BIZ_DISCREPANCY_NEEDS_APPROVAL]:
+    'Cash discrepancy exceeds the tolerance. Manager approval is required.',
+  [ERROR_CODES.BIZ_TRANSFER_SAME_ACCOUNT]:
+    'Cannot transfer to the same account.',
+  [ERROR_CODES.BIZ_BANK_HAS_BALANCE]:
+    'Cannot deactivate a bank account that still has a balance.',
+  [ERROR_CODES.BIZ_NO_DEFAULT_BANK]:
+    'No default bank account is configured.',
   [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on the server.',
   [ERROR_CODES.NETWORK_ERROR]: 'Network unavailable. Check your connection to the server.',
 };

@@ -1,5 +1,7 @@
 const { withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const cashService = require('./cashService');
+const bankService = require('./bankService');
 
 const VALID_METHODS = new Set(['cash', 'bank_transfer']);
 
@@ -97,6 +99,31 @@ async function collectPayment({
       [newBalance, customerId],
     );
 
+    // Treasury bookkeeping: cash → drawer, bank_transfer → bank account.
+    let treasury = null;
+    if (method === 'cash') {
+      treasury = await cashService.recordCashIn({
+        client,
+        transactionType: 'customer_payment',
+        amount: amt,
+        referenceType: 'customer_payment',
+        referenceId: payment.id,
+        employeeId,
+        notes: `Collection from ${customer.name}`,
+      });
+    } else if (method === 'bank_transfer') {
+      treasury = await bankService.recordBankIn({
+        client,
+        bankAccountId: bankAccountId || null,
+        transactionType: 'customer_payment',
+        amount: amt,
+        referenceType: 'customer_payment',
+        referenceId: payment.id,
+        employeeId,
+        description: `Collection from ${customer.name}`,
+      });
+    }
+
     return {
       payment,
       customer: {
@@ -104,6 +131,15 @@ async function collectPayment({
         name: customer.name,
         creditBalance: newBalance,
       },
+      treasury: treasury
+        ? {
+            method,
+            balanceAfter: treasury.balanceAfter,
+            delta: treasury.delta,
+            accountId: treasury.accountId || null,
+            bankName: treasury.bankName || null,
+          }
+        : null,
     };
   });
 }
@@ -161,8 +197,48 @@ async function voidPayment({ paymentId }) {
       [newBalance, customer.id],
     );
 
+    // Reverse the original treasury posting so the running balance is
+    // consistent. Cash payments must come back out of the drawer; bank
+    // transfers come back out of the bank account they landed in.
+    let treasury = null;
+    const amount = money(pm.amount);
+    if (amount > 0) {
+      if (pm.payment_method === 'cash') {
+        treasury = await cashService.recordCashOut({
+          client,
+          transactionType: 'customer_payment',
+          amount,
+          referenceType: 'customer_payment',
+          referenceId: paymentId,
+          employeeId: pm.employee_id,
+          notes: 'Reversal of customer payment',
+        });
+      } else if (pm.payment_method === 'bank_transfer') {
+        treasury = await bankService.recordBankOut({
+          client,
+          bankAccountId: pm.bank_account_id || null,
+          transactionType: 'customer_payment',
+          amount,
+          referenceType: 'customer_payment',
+          referenceId: paymentId,
+          employeeId: pm.employee_id,
+          description: 'Reversal of customer payment',
+          allowOverdraft: true,
+        });
+      }
+    }
+
     return {
       payment: pm,
+      treasury: treasury
+        ? {
+            method: pm.payment_method,
+            balanceAfter: treasury.balanceAfter,
+            delta: treasury.delta,
+            accountId: treasury.accountId || null,
+            bankName: treasury.bankName || null,
+          }
+        : null,
       customer: {
         id: customer.id,
         name: customer.name,

@@ -9,6 +9,8 @@ const {
 const {
   assertWithinCreditLimit,
 } = require('../services/customerService');
+const cashService = require('../services/cashService');
+const bankService = require('../services/bankService');
 
 const createSchema = z.object({
   method: z.enum(['cash', 'bank', 'credit']),
@@ -113,6 +115,35 @@ async function create(req, res, next) {
         );
       }
 
+      // Treasury: book the cash / bank movement immediately for confirmed
+      // invoices. Drafts only post once the invoice is confirmed (handled in
+      // invoiceService.confirmInvoice).
+      let treasury = null;
+      if (inv.status === 'confirmed') {
+        if (body.method === 'cash') {
+          treasury = await cashService.recordCashIn({
+            client,
+            transactionType: 'sale',
+            amount: body.amount,
+            referenceType: 'invoice',
+            referenceId: invoiceId,
+            employeeId: req.user.id,
+            notes: `Payment for ${inv.invoice_number}`,
+          });
+        } else if (body.method === 'bank') {
+          treasury = await bankService.recordBankIn({
+            client,
+            bankAccountId: body.bankAccountId || null,
+            transactionType: 'sale',
+            amount: body.amount,
+            referenceType: 'invoice',
+            referenceId: invoiceId,
+            employeeId: req.user.id,
+            description: `Payment for ${inv.invoice_number}`,
+          });
+        }
+      }
+
       await recalculateAndPersistTotals(client, invoiceId);
 
       await client.query(
@@ -133,7 +164,7 @@ async function create(req, res, next) {
           WHERE p.id = $1`,
         [insertRows[0].id],
       );
-      return { payment: full[0], invoice: inv };
+      return { payment: full[0], invoice: inv, treasury };
     });
 
     await logActivity({
@@ -145,6 +176,32 @@ async function create(req, res, next) {
     });
 
     const io = req.app.get('io');
+    if (io && result.treasury) {
+      const at = new Date().toISOString();
+      if (body.method === 'cash') {
+        const payload = {
+          newBalance: result.treasury.balanceAfter,
+          delta: result.treasury.delta,
+          transactionType: 'sale',
+          changedBy: req.user.id,
+          at,
+        };
+        io.to('role:Manager').emit('cash_balance_updated', payload);
+        io.to('role:Admin').emit('cash_balance_updated', payload);
+      } else if (body.method === 'bank') {
+        const payload = {
+          bankAccountId: result.treasury.accountId,
+          bankName: result.treasury.bankName,
+          newBalance: result.treasury.balanceAfter,
+          delta: result.treasury.delta,
+          transactionType: 'sale',
+          changedBy: req.user.id,
+          at,
+        };
+        io.to('role:Manager').emit('bank_balance_updated', payload);
+        io.to('role:Admin').emit('bank_balance_updated', payload);
+      }
+    }
     if (io && result.invoice.customer_id && body.method === 'credit' && result.invoice.status === 'confirmed') {
       const { rows: cRows } = await query(
         `SELECT name, credit_balance FROM customers WHERE id = $1`,

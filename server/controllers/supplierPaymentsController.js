@@ -67,7 +67,7 @@ async function createForPo(req, res, next) {
     const { id: poId } = req.params;
     const body = createSchema.parse(req.body || {});
 
-    const { payment, po } = await addPayment({
+    const { payment, po, treasury } = await addPayment({
       poId,
       amount: body.amount,
       method: body.paymentMethod,
@@ -100,6 +100,32 @@ async function createForPo(req, res, next) {
       };
       io.to('role:Manager').emit('po_payment_added', payload);
       io.to('role:Admin').emit('po_payment_added', payload);
+      if (treasury) {
+        const at = new Date().toISOString();
+        if (treasury.method === 'cash') {
+          const p = {
+            newBalance: treasury.balanceAfter,
+            delta: treasury.delta,
+            transactionType: 'supplier_payment',
+            changedBy: req.user.id,
+            at,
+          };
+          io.to('role:Manager').emit('cash_balance_updated', p);
+          io.to('role:Admin').emit('cash_balance_updated', p);
+        } else if (treasury.method === 'bank_transfer') {
+          const p = {
+            bankAccountId: treasury.accountId,
+            bankName: treasury.bankName,
+            newBalance: treasury.balanceAfter,
+            delta: treasury.delta,
+            transactionType: 'supplier_payment',
+            changedBy: req.user.id,
+            at,
+          };
+          io.to('role:Manager').emit('bank_balance_updated', p);
+          io.to('role:Admin').emit('bank_balance_updated', p);
+        }
+      }
     }
 
     const { rows } = await query(`${PAYMENT_SELECT} WHERE p.id = $1`, [payment.id]);
@@ -129,7 +155,7 @@ async function remove(req, res, next) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
 
-    const { payment, po } = await deletePayment({ paymentId: id });
+    const { payment, po, treasury } = await deletePayment({ paymentId: id });
 
     if (existing[0].receipt_attachment) {
       deleteAttachmentFile(existing[0].receipt_attachment);
@@ -142,6 +168,34 @@ async function remove(req, res, next) {
       performedBy: req.user.id,
       notes: `Reversed ${Number(payment.amount).toFixed(2)} on PO ${po.po_number}`,
     });
+
+    const io = req.app.get('io');
+    if (io && treasury) {
+      const at = new Date().toISOString();
+      if (treasury.method === 'cash') {
+        const p = {
+          newBalance: treasury.balanceAfter,
+          delta: treasury.delta,
+          transactionType: 'supplier_payment',
+          changedBy: req.user.id,
+          at,
+        };
+        io.to('role:Manager').emit('cash_balance_updated', p);
+        io.to('role:Admin').emit('cash_balance_updated', p);
+      } else if (treasury.method === 'bank_transfer') {
+        const p = {
+          bankAccountId: treasury.accountId,
+          bankName: treasury.bankName,
+          newBalance: treasury.balanceAfter,
+          delta: treasury.delta,
+          transactionType: 'supplier_payment',
+          changedBy: req.user.id,
+          at,
+        };
+        io.to('role:Manager').emit('bank_balance_updated', p);
+        io.to('role:Admin').emit('bank_balance_updated', p);
+      }
+    }
 
     return ok(res, {
       id,

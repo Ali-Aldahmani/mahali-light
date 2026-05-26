@@ -1,5 +1,7 @@
 const { withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const cashService = require('./cashService');
+const bankService = require('./bankService');
 
 const VALID_METHODS = new Set(['cash', 'bank_transfer', 'cheque']);
 
@@ -109,7 +111,46 @@ async function addPayment({
       [poId],
     );
 
-    return { payment, po: refreshed[0] };
+    // Treasury bookkeeping. Cheques are tracked but don't move money until
+    // they clear, so we only post for cash + bank_transfer.
+    let treasury = null;
+    if (method === 'cash') {
+      treasury = await cashService.recordCashOut({
+        client,
+        transactionType: 'supplier_payment',
+        amount: amt,
+        referenceType: 'purchase_order',
+        referenceId: poId,
+        employeeId,
+        notes: `Payment to supplier on ${po.po_number || po.id}`,
+      });
+    } else if (method === 'bank_transfer') {
+      treasury = await bankService.recordBankOut({
+        client,
+        bankAccountId: bankAccountId || null,
+        transactionType: 'supplier_payment',
+        amount: amt,
+        referenceType: 'purchase_order',
+        referenceId: poId,
+        employeeId,
+        description: `Payment to supplier on ${po.po_number || po.id}`,
+        allowOverdraft: true,
+      });
+    }
+
+    return {
+      payment,
+      po: refreshed[0],
+      treasury: treasury
+        ? {
+            method,
+            balanceAfter: treasury.balanceAfter,
+            delta: treasury.delta,
+            accountId: treasury.accountId || null,
+            bankName: treasury.bankName || null,
+          }
+        : null,
+    };
   });
 }
 
@@ -167,7 +208,48 @@ async function deletePayment({ paymentId }) {
       `SELECT * FROM purchase_orders WHERE id = $1`,
       [po.id],
     );
-    return { payment: pm, po: refreshed[0] };
+
+    // Reverse the original treasury posting (cash + bank only).
+    let treasury = null;
+    const amount = money(pm.amount);
+    if (amount > 0) {
+      if (pm.payment_method === 'cash') {
+        treasury = await cashService.recordCashIn({
+          client,
+          transactionType: 'supplier_payment',
+          amount,
+          referenceType: 'purchase_order',
+          referenceId: po.id,
+          employeeId: pm.employee_id,
+          notes: `Reversal of supplier payment ${paymentId}`,
+        });
+      } else if (pm.payment_method === 'bank_transfer') {
+        treasury = await bankService.recordBankIn({
+          client,
+          bankAccountId: pm.bank_account_id || null,
+          transactionType: 'supplier_payment',
+          amount,
+          referenceType: 'purchase_order',
+          referenceId: po.id,
+          employeeId: pm.employee_id,
+          description: `Reversal of supplier payment`,
+        });
+      }
+    }
+
+    return {
+      payment: pm,
+      po: refreshed[0],
+      treasury: treasury
+        ? {
+            method: pm.payment_method,
+            balanceAfter: treasury.balanceAfter,
+            delta: treasury.delta,
+            accountId: treasury.accountId || null,
+            bankName: treasury.bankName || null,
+          }
+        : null,
+    };
   });
 }
 

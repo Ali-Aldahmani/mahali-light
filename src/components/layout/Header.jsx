@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/authStore.js';
 import { useSocketStore } from '../../store/socketStore.js';
 import { logout as apiLogout } from '../../services/authService.js';
 import PresenceWidget from './PresenceWidget.jsx';
+import CashBalanceWidget from '../ui/CashBalanceWidget.jsx';
 
 export default function Header({ title }) {
   const user = useAuthStore((s) => s.user);
@@ -42,6 +43,8 @@ export default function Header({ title }) {
           {isConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
           <span>{isConnected ? 'Live' : 'Offline'}</span>
         </div>
+
+        <CashBalanceWidget />
 
         <PresenceWidget />
 
