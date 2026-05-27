@@ -1,4 +1,11 @@
-const { app, BrowserWindow, ipcMain, dialog, Notification } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  Notification,
+  desktopCapturer,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -401,5 +408,22 @@ ipcMain.handle('backup:usb-list', async () => {
     return (drives || []).filter((d) => d.isRemovable && !d.isSystem);
   } catch (err) {
     return { error: err.message };
+  }
+});
+
+// Phase 18 — capture the POS window for bug reports (base64 PNG).
+ipcMain.handle('screenshot:capture', async () => {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: { width: 1280, height: 720 },
+    });
+    const appSource =
+      sources.find((s) => /mahali|pos|electron/i.test(s.name)) || sources[0];
+    if (!appSource?.thumbnail) return null;
+    return appSource.thumbnail.toPNG().toString('base64');
+  } catch (err) {
+    console.warn('[electron] screenshot:capture failed', err.message);
+    return null;
   }
 });

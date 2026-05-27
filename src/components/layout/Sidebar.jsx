@@ -34,6 +34,8 @@ import {
   Activity,
   CheckSquare,
   DatabaseBackup,
+  Bug,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
@@ -243,6 +245,18 @@ const NAV = [
     label: 'Backup & restore',
     icon: DatabaseBackup,
     permission: 'backup.view',
+  },
+  {
+    to: '/admin/bug-reports',
+    label: 'Bug reports',
+    icon: Bug,
+    permission: 'bug.view_all',
+  },
+  {
+    to: '/admin/error-logs',
+    label: 'Error logs',
+    icon: AlertCircle,
+    permission: 'errors.view_all',
   },
 ];
 

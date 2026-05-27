@@ -50,6 +50,18 @@ export default function ToastViewport() {
                   <p className="text-sm font-semibold text-ink leading-tight">{t.title}</p>
                 )}
                 <p className="text-sm text-ink-muted break-words">{t.message}</p>
+                {t.actionLabel && t.onAction && (
+                  <button
+                    type="button"
+                    className="mt-2 text-xs font-semibold text-accent hover:underline"
+                    onClick={() => {
+                      t.onAction?.();
+                      dismiss(t.id);
+                    }}
+                  >
+                    {t.actionLabel}
+                  </button>
+                )}
               </div>
               <button
                 type="button"

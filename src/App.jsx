@@ -53,6 +53,8 @@ import AnalyticsPage from './pages/analytics/AnalyticsPage.jsx';
 import ApprovalsPage from './pages/approvals/ApprovalsPage.jsx';
 import NotificationPreferencesPage from './pages/settings/NotificationPreferencesPage.jsx';
 import BackupSettingsPage from './pages/settings/BackupSettingsPage.jsx';
+import BugReportsAdminPage from './pages/admin/BugReportsAdminPage.jsx';
+import ErrorLogsAdminPage from './pages/admin/ErrorLogsAdminPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -490,6 +492,24 @@ export default function App() {
             element={
               <ProtectedRoute permission="backup.view">
                 <BackupSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/bug-reports"
+            element={
+              <ProtectedRoute permission="bug.view_all">
+                <BugReportsAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/error-logs"
+            element={
+              <ProtectedRoute permission="errors.view_all">
+                <ErrorLogsAdminPage />
               </ProtectedRoute>
             }
           />

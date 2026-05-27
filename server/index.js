@@ -55,8 +55,14 @@ const analyticsRouter = require('./routes/analytics');
 const forecastRouter = require('./routes/forecast');
 const notificationsRouter = require('./routes/notifications');
 const backupRouter = require('./routes/backup');
+const errorLogsRouter = require('./routes/errorLogs');
+const bugReportsRouter = require('./routes/bugReports');
 
-const { notFoundHandler, errorHandler } = require('./middleware/errors');
+const {
+  notFoundHandler,
+  errorHandler,
+  registerProcessHandlers,
+} = require('./middleware/errors');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
 const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
 const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
@@ -71,6 +77,7 @@ const { startBackupScheduler } = require('./backup/scheduler');
 const maintenanceMode = require('./backup/maintenanceMode');
 
 async function bootstrap() {
+  registerProcessHandlers();
   await runMigrations();
   await runSeed();
   await runSeedProducts();
@@ -150,6 +157,8 @@ async function bootstrap() {
   app.use('/api/forecast', forecastRouter);
   app.use('/api/notifications', notificationsRouter);
   app.use('/api/backup', backupRouter);
+  app.use('/api/error-logs', errorLogsRouter);
+  app.use('/api/bug-reports', bugReportsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

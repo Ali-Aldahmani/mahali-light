@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { Bug, ChevronDown, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { useUiErrorStore } from '../../store/uiErrorStore.js';
 import Avatar from '../ui/Avatar.jsx';
 import { RoleBadge } from '../ui/Badge.jsx';
 import { useAuthStore } from '../../store/authStore.js';
@@ -17,6 +18,7 @@ export default function Header({ title }) {
   const disconnect = useSocketStore((s) => s.disconnect);
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const openBugReport = useUiErrorStore((s) => s.openBugReport);
 
   async function handleLogout() {
     try {
@@ -78,6 +80,17 @@ export default function Header({ title }) {
                     <RoleBadge role={user?.role} size="sm" />
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    openBugReport();
+                  }}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-ink hover:bg-surface-2"
+                >
+                  <Bug size={15} />
+                  Report a bug
+                </button>
                 <button
                   type="button"
                   onClick={handleLogout}

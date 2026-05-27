@@ -1,56 +1,86 @@
-const { AppError, ERROR_CODES, ERROR_MESSAGES } = require('../../shared/errorCodes');
-const { query } = require('../db/postgres');
+const {
+  AppError,
+  ERROR_CODES,
+} = require('../../shared/errorCodes');
+const errorLogService = require('../services/errorLogService');
 
-// Standard error response shape:
-//   { success: false, error: { code, message, details } }
 function notFoundHandler(req, res) {
   return res.status(404).json({
     success: false,
     error: {
       code: ERROR_CODES.RESOURCE_NOT_FOUND,
       message: `Route not found: ${req.method} ${req.originalUrl}`,
+      details: null,
+      field: null,
     },
   });
 }
 
-// eslint-disable-next-line no-unused-vars
-function errorHandler(err, req, res, _next) {
-  let code = ERROR_CODES.INTERNAL_ERROR;
-  let status = 500;
-  let message = ERROR_MESSAGES[code];
-  let details = null;
+function headerPc(req) {
+  return (
+    req.headers['x-pc-identifier'] ||
+    req.headers['x-pc-id'] ||
+    null
+  );
+}
 
-  if (err instanceof AppError) {
-    code = err.code;
-    status = err.status || 400;
-    message = err.message || ERROR_MESSAGES[code] || 'Error';
-    details = err.details || null;
-  } else if (err && err.code === '23505') {
-    // Postgres unique violation
-    code = ERROR_CODES.RESOURCE_CONFLICT;
-    status = 409;
-    message = ERROR_MESSAGES[code];
-    details = { constraint: err.constraint };
-  } else if (err && err.type === 'entity.parse.failed') {
-    code = ERROR_CODES.VALIDATION_FAILED;
-    status = 400;
-    message = 'Malformed JSON body';
-  }
+// eslint-disable-next-line no-unused-vars
+async function errorHandler(err, req, res, _next) {
+  const classified = errorLogService.classifyError(err);
+  const { code, message, status, details, field, severity, stack } = classified;
+
+  // Persist every API error (append-only).
+  await errorLogService.logError({
+    code,
+    message,
+    details,
+    severity,
+    source: 'api',
+    userId: req.user?.id || null,
+    pcIdentifier: headerPc(req),
+    endpoint: req.originalUrl || req.path,
+    method: req.method,
+    stackTrace: stack,
+  });
 
   if (status >= 500) {
     console.error('[error]', err);
-    // Persist server errors to activity_log for ops triage. Best-effort only.
-    query(
-      `INSERT INTO activity_log (entity_type, action, performed_by, notes)
-       VALUES ($1,$2,$3,$4)`,
-      ['system', 'server.error', req.user ? req.user.id : null, err.stack || err.message || 'unknown'],
-    ).catch(() => {});
   }
 
-  res.status(status).json({
+  res.status(status || 500).json({
     success: false,
-    error: { code, message, details },
+    error: {
+      code,
+      message,
+      details: details || null,
+      field: field || null,
+    },
   });
 }
 
-module.exports = { notFoundHandler, errorHandler };
+function registerProcessHandlers() {
+  const log = (code, err, source) => {
+    errorLogService
+      .logError({
+        code,
+        message: err?.message || String(err),
+        severity: 'critical',
+        source,
+        stackTrace: err?.stack,
+      })
+      .catch(() => {});
+  };
+
+  process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException]', err);
+    log(ERROR_CODES.INTERNAL_ERROR, err, 'scheduler');
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('[unhandledRejection]', reason);
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    log(ERROR_CODES.INTERNAL_ERROR, err, 'scheduler');
+  });
+}
+
+module.exports = { notFoundHandler, errorHandler, registerProcessHandlers };

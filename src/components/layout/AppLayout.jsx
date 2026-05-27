@@ -16,6 +16,8 @@ import { useBillStore } from '../../store/billStore.js';
 import { useNotificationStore } from '../../store/notificationStore.js';
 import { useBackupStore } from '../../store/backupStore.js';
 import RestoreOverlay from '../backup/RestoreOverlay.jsx';
+import ErrorBoundary from '../ErrorBoundary.jsx';
+import GlobalErrorShell from '../errors/GlobalErrorShell.jsx';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
@@ -82,6 +84,8 @@ const TITLES = {
   '/approvals': 'Approvals',
   '/settings/notifications': 'Notification preferences',
   '/settings/backup': 'Backup & restore',
+  '/admin/bug-reports': 'Bug reports',
+  '/admin/error-logs': 'Error logs',
 };
 
 export default function AppLayout() {
@@ -274,9 +278,13 @@ export default function AppLayout() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Header title={title} />
-        <main className="flex-1 overflow-y-auto px-8 py-6">
-          <Outlet />
-        </main>
+        <GlobalErrorShell>
+          <main className="flex-1 overflow-y-auto px-8 py-6">
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
+          </main>
+        </GlobalErrorShell>
       </div>
       <RestoreOverlay />
     </div>

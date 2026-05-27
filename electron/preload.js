@@ -21,6 +21,9 @@ const api = {
   // Phase 17 — backup helpers (download archive + list USB drives).
   backupDownload: (payload) => ipcRenderer.invoke('backup:download', payload),
   backupListUsb: () => ipcRenderer.invoke('backup:usb-list'),
+
+  // Phase 18 — screenshot for bug reports.
+  captureScreenshot: () => ipcRenderer.invoke('screenshot:capture'),
 };
 
 // The frontend reads `window.electron.serverIp` (used by src/config.js).

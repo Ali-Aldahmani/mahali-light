@@ -41,7 +41,17 @@ export default function LoginPage() {
     try {
       await loginRequest({ username: username.trim(), password });
       toast.success('Signed in successfully');
-      navigate(location.state?.from || '/dashboard', { replace: true });
+      let dest = location.state?.from || '/dashboard';
+      try {
+        const saved = sessionStorage.getItem('mahali.returnRoute');
+        if (saved) {
+          dest = saved;
+          sessionStorage.removeItem('mahali.returnRoute');
+        }
+      } catch (_e) {
+        /* ignore */
+      }
+      navigate(dest, { replace: true });
     } catch (err) {
       const code = err?.code;
       if (code === 'AUTH_INVALID_CREDENTIALS') {
