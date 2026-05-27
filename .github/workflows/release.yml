@@ -1,0 +1,94 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  build-windows:
+    name: Build Windows Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_APP_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version || github.sha }}
+
+      - name: Build Electron Windows installer
+        run: npm run build:electron
+        env:
+          NODE_ENV: production
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: List release folder
+        run: dir release
+        shell: cmd
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BytecraPOS-Windows-${{ github.sha }}
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml
+          retention-days: 30
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Bytecra POS ${{ github.ref_name }}
+          body: |
+            ## Bytecra POS ${{ github.ref_name }}
+
+            ### Installation
+            1. Download the `.exe` file below
+            2. Run as Administrator
+            3. Follow the setup wizard
+            4. On first PC: select **SERVER** mode
+            5. On other PCs: select **CLIENT** mode and enter the server IP
+
+            ### What's new
+            See auto-generated release notes and commit history.
+
+            ### System requirements
+            - Windows 10 or later (64-bit)
+            - 4 GB RAM minimum
+            - PostgreSQL 15 (server PC only)
+            - LAN connection between PCs
+
+            ---
+            **Publisher:** Ali Aldahmani · **Bytecra**
+          files: |
+            release/*.exe
+            release/latest.yml
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

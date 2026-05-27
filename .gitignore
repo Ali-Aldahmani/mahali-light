@@ -1,9 +1,46 @@
+# Dependencies
 node_modules/
+server/node_modules/
+
+# Build output
 dist/
+release/
+build/
+.vite/
+out/
 dist-electron/
+
+# Environment
 .env
 .env.local
-*.log
-.DS_Store
+.env.production
+server/.env
+
+# Electron local config
 electron/config.local.json
+
+# Database dumps
+*.dump
+*.sql.bak
+
+# User data (never commit)
 uploads/
+backups/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Temp
+tmp/
+temp/
+*.tmp

@@ -1,21 +1,30 @@
 {
   "name": "mahali-light",
   "version": "1.0.0",
-  "description": "Mahali Light — Multi-PC Electron POS for an electrical retail store (UAE).",
+  "description": "Bytecra POS — Multi-PC Electron POS for electrical retail (UAE).",
   "main": "electron/main.js",
-  "author": "Mahali",
+  "author": {
+    "name": "Ali Aldahmani",
+    "email": "hello@bytecra.com"
+  },
+  "homepage": "https://bytecra.com",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n vite,server,electron -c blue,green,magenta \"npm:dev:vite\" \"npm:dev:server\" \"npm:dev:electron\"",
+    "dev:frontend": "vite",
     "dev:vite": "vite",
     "dev:server": "nodemon --watch server --watch shared server/index.js",
     "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
     "build": "vite build",
     "build:server": "node -e \"console.log('Server runs from source; no bundle step required.')\"",
-    "build:electron": "npm run build && electron-builder",
-    "build:all": "npm run build && electron-builder",
+    "build:electron": "electron-builder --win --x64 --publish never",
+    "build:electron:dir": "electron-builder --win --x64 --dir --publish never",
+    "build:all": "npm run build && npm run build:electron",
+    "lint": "eslint src electron shared --ext .js,.jsx",
+    "lint:fix": "eslint src electron shared --ext .js,.jsx --fix",
     "preview": "vite preview",
+    "test": "echo \"No tests yet\" && exit 0",
     "server": "node server/index.js",
     "migrate": "node server/db/migrate.js",
     "seed": "node server/db/seed.js"
@@ -23,32 +32,46 @@
   "build": {
     "appId": "com.bytecra.pos",
     "productName": "Bytecra POS",
+    "copyright": "Copyright © 2026 Bytecra. All rights reserved.",
     "directories": {
-      "output": "dist-electron"
+      "output": "release",
+      "buildResources": "assets"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
       "server/**/*",
       "shared/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.map",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,test,tests,__tests__}"
+    ],
+    "extraResources": [
+      { "from": "assets", "to": "assets" },
+      { "from": "server", "to": "server" }
     ],
     "win": {
-      "target": "nsis"
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.png",
+      "artifactName": "BytecraPOS-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.png",
+      "uninstallerIcon": "assets/icon.png",
+      "installerHeaderIcon": "assets/icon.png",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Bytecra POS",
+      "include": "assets/installer.nsh"
     },
-    "extraResources": [
-      { "from": "server", "to": "server" },
-      { "from": "assets", "to": "assets" }
-    ],
     "publish": [
       {
         "provider": "github",
-        "owner": "bytecra",
-        "repo": "mahali-light"
+        "owner": "Ali-Aldahmani",
+        "repo": "bytecra-pos"
       }
     ]
   },
@@ -94,6 +117,9 @@
     "electron": "^32.1.2",
     "electron-builder": "^25.1.8",
     "electron-updater": "^6.3.9",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^4.6.2",
     "nodemon": "^3.1.7",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",

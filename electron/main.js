@@ -9,6 +9,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
