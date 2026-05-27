@@ -93,7 +93,42 @@ async function bootstrap() {
   const io = attachSocket(server);
   app.set('io', io);
 
-  app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
+  // Security headers via helmet.
+  //
+  // CSP: this server sends only JSON responses and static binary files (images,
+  // PDFs). It never sends an HTML page to a browser directly, so most CSP
+  // directives are belt-and-suspenders — they protect any future HTML surface
+  // and signal correct intent to scanners. Key choices:
+  //   • scriptSrc 'none'   — server never serves JS to a browser.
+  //   • styleSrc  'none'   — server never serves CSS to a browser.
+  //   • imgSrc    'self' data: — static image files + data-URI thumbnails.
+  //   • objectSrc 'none'   — PDFs are downloaded, not embedded via <object>.
+  //   • frameAncestors 'none' — this API should never be iframed.
+  //
+  // CORP: 'cross-origin' is required because the Electron renderer loads from
+  // file:// (or a different LAN IP) and must fetch images and PDFs from this
+  // server. Restricting to same-origin would break image display in the app.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc:      ["'self'"],
+          scriptSrc:       ["'none'"],
+          styleSrc:        ["'none'"],
+          imgSrc:          ["'self'", 'data:'],
+          connectSrc:      ["'self'"],
+          fontSrc:         ["'none'"],
+          objectSrc:       ["'none'"],
+          mediaSrc:        ["'none'"],
+          frameSrc:        ["'none'"],
+          frameAncestors:  ["'none'"],
+          formAction:      ["'self'"],
+          baseUri:         ["'self'"],
+        },
+      },
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   // Explicit origin allow-list — replaces the previous `origin: true` wildcard
   // that reflected any Origin header back with credentials allowed.
   //

@@ -280,11 +280,33 @@ function renderInvoiceHtml({ invoice, items, payments }, settings) {
   });
 }
 
+// CSP injected into every Puppeteer page before rendering.
+//
+// The headless Chromium instance runs with --no-sandbox, so we apply a strict
+// Content-Security-Policy as the first meta tag in <head>. Even if a caller
+// ever passes un-escaped HTML to renderPdf (e.g. via generateReportPDF), the
+// policy blocks script execution and all external network requests inside the
+// renderer — limiting the worst-case impact to malformed layout, not RCE.
+//
+// Allowed by design:
+//   style-src  'unsafe-inline' — all template CSS is inline <style> blocks.
+//   img-src    data: blob:     — logos are inlined as base64 data URIs; QR
+//                                codes are generated as data: URLs by qrcode.
+//   font-src   data:           — embedded font faces (if any template uses them).
+const PUPPETEER_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:;";
+
+// Inserts the CSP meta tag as the first child of <head> so the parser applies
+// the policy before it processes any other element in the document.
+function injectCsp(html) {
+  return html.replace(/(<head[^>]*>)/i, `$1<meta http-equiv="Content-Security-Policy" content="${PUPPETEER_CSP}">`);
+}
+
 async function renderPdf(html, options = {}) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.setContent(injectCsp(html), { waitUntil: 'networkidle0', timeout: 30000 });
     const pdf = await page.pdf({
       format: options.format || 'A4',
       printBackground: true,
