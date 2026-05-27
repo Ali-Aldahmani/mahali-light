@@ -1,6 +1,12 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+
+// One-way hash applied to every JWT before it touches the database.
+// Storing only the hash means a full DB read gives an attacker no usable
+// tokens — the original JWT (needed to call the API) is never persisted.
+const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
@@ -66,11 +72,12 @@ function requireAuth() {
         );
       }
 
-      // Confirm session is still active.
+      // Confirm session is still active. Look up by hash — the plaintext
+      // token is never stored in the database (see migration 020_token_hash).
       const { rows: sess } = await query(
         `SELECT id, logout_at, status FROM user_sessions
-          WHERE token = $1 ORDER BY login_at DESC LIMIT 1`,
-        [token],
+          WHERE token_hash = $1 ORDER BY login_at DESC LIMIT 1`,
+        [hashToken(token)],
       );
       if (!sess.length || sess[0].logout_at) {
         return next(
@@ -106,4 +113,4 @@ function requireAuth() {
   };
 }
 
-module.exports = { requireAuth, signToken, verifyToken, loadUserContext };
+module.exports = { requireAuth, signToken, verifyToken, loadUserContext, hashToken };

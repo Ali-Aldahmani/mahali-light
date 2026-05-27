@@ -281,7 +281,7 @@ async function forceLogout(req, res, next) {
     const { id } = req.params;
 
     const { rows: sessions } = await query(
-      `SELECT id, pc_identifier, token FROM user_sessions
+      `SELECT id, pc_identifier FROM user_sessions
         WHERE user_id = $1 AND logout_at IS NULL`,
       [id],
     );
@@ -310,7 +310,7 @@ async function forceLogout(req, res, next) {
     const io = req.app.get('io');
     if (io) {
       for (const s of sessions) {
-        io.to(`token:${s.token}`).emit('force_logout', {
+        io.to(`session:${s.id}`).emit('force_logout', {
           reason: 'Forced by administrator',
           by: req.user.username,
         });

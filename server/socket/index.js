@@ -1,5 +1,5 @@
 const { Server } = require('socket.io');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, hashToken } = require('../middleware/auth');
 const { query } = require('../db/postgres');
 const attendanceService = require('../services/attendanceService');
 
@@ -27,9 +27,9 @@ function attachSocket(httpServer) {
            FROM user_sessions s
            JOIN users u ON u.id = s.user_id
            LEFT JOIN roles r ON r.id = u.role_id
-          WHERE s.token = $1 AND s.logout_at IS NULL
+          WHERE s.token_hash = $1 AND s.logout_at IS NULL
           ORDER BY s.login_at DESC LIMIT 1`,
-        [token],
+        [hashToken(token)],
       );
       if (!rows.length) return next(new Error('AUTH_SESSION_EXPIRED'));
 
@@ -38,7 +38,6 @@ function attachSocket(httpServer) {
       socket.data.role = rows[0].role_name;
       socket.data.sessionId = rows[0].session_id;
       socket.data.pcIdentifier = rows[0].pc_identifier;
-      socket.data.token = token;
 
       next();
     } catch (err) {
@@ -47,10 +46,12 @@ function attachSocket(httpServer) {
   });
 
   io.on('connection', (socket) => {
-    const { userId, username, role, pcIdentifier, sessionId, token } = socket.data;
+    const { userId, username, role, pcIdentifier, sessionId } = socket.data;
 
     socket.join(`user:${userId}`);
-    socket.join(`token:${token}`);
+    // Per-session room used for targeted force-logout. Named after the
+    // session UUID, not the token, so the room name reveals no credentials.
+    socket.join(`session:${sessionId}`);
     // Role-based room used by stock alerts, adjustment requests, etc.
     if (role) socket.join(`role:${role}`);
 

@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
-const { signToken, loadUserContext } = require('../middleware/auth');
+const { signToken, loadUserContext, hashToken } = require('../middleware/auth');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { ok } = require('../utils/response');
 const { logActivity } = require('../utils/activityLog');
@@ -106,9 +106,9 @@ async function login(req, res, next) {
     await withTransaction(async (client) => {
       await client.query(
         `INSERT INTO user_sessions
-           (user_id, pc_identifier, ip_address, token, status)
+           (user_id, pc_identifier, ip_address, token_hash, status)
          VALUES ($1,$2,$3,$4,'online')`,
-        [user.id, pcIdentifier, ipAddress, token],
+        [user.id, pcIdentifier, ipAddress, hashToken(token)],
       );
       await client.query(
         `INSERT INTO pc_registry (pc_identifier, hostname, ip_address, last_seen)
@@ -239,9 +239,9 @@ async function refresh(req, res, next) {
 
     await query(
       `UPDATE user_sessions
-          SET token = $1, last_activity_at = NOW()
+          SET token_hash = $1, last_activity_at = NOW()
         WHERE id = $2`,
-      [token, req.sessionId],
+      [hashToken(token), req.sessionId],
     );
 
     return ok(res, { token, user: sanitizeUser(user) });
