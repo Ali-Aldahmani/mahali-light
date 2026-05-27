@@ -11,7 +11,7 @@
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n vite,server,electron -c blue,green,magenta \"npm:dev:vite\" \"npm:dev:server\" \"npm:dev:electron\"",
+    "dev": "concurrently -k -n vite,server,electron -c blue,green,magenta \"vite\" \"nodemon --watch server --watch shared server/index.js\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
     "dev:frontend": "vite",
     "dev:vite": "vite",
     "dev:server": "nodemon --watch server --watch shared server/index.js",
@@ -47,11 +47,24 @@
       "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,test,tests,__tests__}"
     ],
     "extraResources": [
-      { "from": "assets", "to": "assets" },
-      { "from": "server", "to": "server" }
+      {
+        "from": "assets",
+        "to": "assets"
+      },
+      {
+        "from": "server",
+        "to": "server"
+      }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "assets/icon.png",
       "artifactName": "BytecraPOS-Setup-${version}.${ext}"
     },
@@ -86,6 +99,7 @@
     "drivelist": "^12.0.2",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.5.2",
     "fast-csv": "^5.0.7",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",

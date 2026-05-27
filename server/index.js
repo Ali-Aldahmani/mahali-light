@@ -67,6 +67,7 @@ const {
   errorHandler,
   registerProcessHandlers,
 } = require('./middleware/errors');
+const { authLimiter, apiLimiter } = require('./middleware/rateLimiter');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
 const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
 const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
@@ -93,10 +94,52 @@ async function bootstrap() {
   app.set('io', io);
 
   app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
-  app.use(cors({ origin: true, credentials: true }));
+  // Explicit origin allow-list — replaces the previous `origin: true` wildcard
+  // that reflected any Origin header back with credentials allowed.
+  //
+  // Three cases are always allowed without configuration:
+  //   • No Origin header  — same-origin browser requests, curl, health checks.
+  //   • Origin: "null"    — Electron renderer in production: the app loads from
+  //                         file://, which Chromium encodes as the string "null".
+  //                         Blocking this would break the desktop app entirely.
+  //   • CORS_ORIGINS list — comma-separated explicit origins from the environment
+  //                         (e.g. http://localhost:5173 for the Vite dev server).
+  //
+  // Everything else receives a 403 so that arbitrary websites on the same LAN
+  // cannot make credentialed requests to the API from a browser tab.
+  const allowedOrigins = new Set(
+    (process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean),
+  );
+  app.use(
+    cors({
+      origin: (origin, cb) => {
+        if (!origin || origin === 'null' || allowedOrigins.has(origin)) {
+          return cb(null, true);
+        }
+        cb(Object.assign(new Error(`Origin "${origin}" not allowed by CORS`), { status: 403 }));
+      },
+      credentials: true,
+    }),
+  );
   app.use(compression());
   app.use(express.json({ limit: '2mb' }));
   app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+  // Rate limiting — applied before any route handler so the window counters
+  // are accurate regardless of which middleware runs next.
+  //
+  // Login gets its own strict limit (20 req/15 min per IP) that sits on top
+  // of the per-username account lockout in authController.js, blocking
+  // credential-stuffing attacks that cycle across different usernames.
+  //
+  // The global limiter (500 req/min per IP) protects every other endpoint.
+  // At a 5-PC store a busy cashier generates ~25 req/min, so this leaves
+  // ample headroom while still stopping runaway clients or scanning loops.
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api', apiLimiter);
 
   // Phase 17 — short-circuit writes during a restore so the database isn't
   // mutated mid-restore. Mounted before any route so 503 is the universal
@@ -193,7 +236,28 @@ async function bootstrap() {
   });
 }
 
+function printDbHelp(err) {
+  const codes = [err?.code];
+  if (AggregateError && err instanceof AggregateError && Array.isArray(err.errors)) {
+    codes.push(...err.errors.map((e) => e?.code));
+  }
+  if (!codes.includes('ECONNREFUSED')) return;
+  const h = process.env.PGHOST || 'localhost';
+  const p = process.env.PGPORT || '5432';
+  const db = process.env.PGDATABASE || 'mahali_light';
+  console.error('');
+  console.error(
+    '[server] Cannot connect to PostgreSQL (connection refused). The API needs a running database before setup works.',
+  );
+  console.error(`[server] Expected: host=${h} port=${p} database=${db}`);
+  console.error('[server] Fix: install/start PostgreSQL 15+, create the database, then set PG* in .env (see .env.example).');
+  console.error('[server] Then run: npm run migrate');
+  console.error('[server] Windows: ensure the "postgresql-x64-*" service is running (services.msc).');
+  console.error('');
+}
+
 bootstrap().catch((err) => {
   console.error('[server] failed to start', err);
+  printDbHelp(err);
   process.exit(1);
 });
