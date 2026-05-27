@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 import Header from './Header.jsx';
@@ -19,6 +19,10 @@ import RestoreOverlay from '../backup/RestoreOverlay.jsx';
 import ErrorBoundary from '../ErrorBoundary.jsx';
 import GlobalErrorShell from '../errors/GlobalErrorShell.jsx';
 import { initStockCache } from '../../services/stockCacheService.js';
+import { syncAllCaches } from '../../services/localCacheService.js';
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts.js';
+import KeyboardShortcutOverlay from '../errors/KeyboardShortcutOverlay.jsx';
+import { useAppSettingsStore } from '../../store/appSettingsStore.js';
 import {
   onAdjustmentEvent,
   onCustomerBalanceUpdate,
@@ -82,6 +86,7 @@ const TITLES = {
   '/reports/scheduled': 'Scheduled reports',
   '/analytics': 'Analytics',
   '/approvals': 'Approvals',
+  '/settings': 'Settings',
   '/settings/notifications': 'Notification preferences',
   '/settings/backup': 'Backup & restore',
   '/admin/bug-reports': 'Bug reports',
@@ -90,7 +95,10 @@ const TITLES = {
 
 export default function AppLayout() {
   const location = useLocation();
+  const [helpOpen, setHelpOpen] = useState(false);
   const token = useAuthStore((s) => s.token);
+  const fetchAppSettings = useAppSettingsStore((s) => s.fetchPublic);
+  useKeyboardShortcuts({ onToggleHelp: () => setHelpOpen((v) => !v) });
   const permissions = useAuthStore((s) => s.user?.permissions || []);
   const connect = useSocketStore((s) => s.connect);
   const disconnect = useSocketStore((s) => s.disconnect);
@@ -125,8 +133,10 @@ export default function AppLayout() {
       permissions.includes('stock.view') || permissions.includes('*');
     if (hasStock) {
       initStockCache({ force: true }).catch(() => {});
+      syncAllCaches().catch(() => {});
       refreshInventory();
     }
+    fetchAppSettings?.().catch(() => {});
     const hasSupplier =
       permissions.includes('supplier.view') || permissions.includes('*');
     if (hasSupplier) {
@@ -287,6 +297,7 @@ export default function AppLayout() {
         </GlobalErrorShell>
       </div>
       <RestoreOverlay />
+      <KeyboardShortcutOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

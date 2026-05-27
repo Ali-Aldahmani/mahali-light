@@ -11,6 +11,8 @@ import PresenceWidget from './PresenceWidget.jsx';
 import CashBalanceWidget from '../ui/CashBalanceWidget.jsx';
 import NotificationBell from '../notifications/NotificationBell.jsx';
 import NotificationPanel from '../notifications/NotificationPanel.jsx';
+import GlobalSearchBar from '../search/GlobalSearchBar.jsx';
+import PCIdentifierBadge from './PCIdentifierBadge.jsx';
 
 export default function Header({ title }) {
   const user = useAuthStore((s) => s.user);
@@ -36,6 +38,8 @@ export default function Header({ title }) {
       </div>
 
       <div className="flex items-center gap-3">
+        <GlobalSearchBar />
+        <PCIdentifierBadge />
         <div
           title={isConnected ? 'Live connection' : 'Disconnected'}
           className={

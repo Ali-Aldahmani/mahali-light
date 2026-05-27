@@ -4,6 +4,8 @@ const api = {
   // Reads the local Electron config file (server IP, PC identifier).
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
+  getLocalIps: () => ipcRenderer.invoke('network:local-ips'),
+  toggleFullscreen: () => ipcRenderer.invoke('window:toggle-fullscreen'),
   getSystemInfo: () => ipcRenderer.invoke('system:info'),
 
   // Phase 7 — printer + PDF integration.
@@ -33,6 +35,8 @@ const bootstrap = async () => {
     contextBridge.exposeInMainWorld('electron', {
       ...api,
       serverIp: cfg.serverIp,
+      serverPort: cfg.serverPort,
+      mode: cfg.mode,
       pcIdentifier: cfg.pcIdentifier,
     });
   } catch (_err) {

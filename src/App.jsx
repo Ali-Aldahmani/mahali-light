@@ -57,12 +57,16 @@ import BugReportsAdminPage from './pages/admin/BugReportsAdminPage.jsx';
 import ErrorLogsAdminPage from './pages/admin/ErrorLogsAdminPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import SetupGate from './components/SetupGate.jsx';
+import SetupWizardPage from './pages/setup/SetupWizardPage.jsx';
+import SettingsHubPage from './pages/settings/SettingsHubPage.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
 
 export default function App() {
   return (
-    <>
+    <SetupGate>
       <Routes>
+        <Route path="/setup" element={<SetupWizardPage />} />
         <Route path="/login" element={<LoginPage />} />
 
         <Route
@@ -479,6 +483,15 @@ export default function App() {
           />
 
           <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <SettingsHubPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/settings/notifications"
             element={
               <ProtectedRoute>
@@ -518,6 +531,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
       <ToastViewport />
-    </>
+    </SetupGate>
   );
 }

@@ -1,7 +1,7 @@
 {
   "name": "mahali-light",
-  "version": "0.1.0",
-  "description": "Mahali Light — Multi-PC Electron POS for an electrical retail store (UAE). Phase 1: Auth & Users.",
+  "version": "1.0.0",
+  "description": "Mahali Light — Multi-PC Electron POS for an electrical retail store (UAE).",
   "main": "electron/main.js",
   "author": "Mahali",
   "license": "UNLICENSED",
@@ -12,10 +12,45 @@
     "dev:server": "nodemon --watch server --watch shared server/index.js",
     "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
     "build": "vite build",
+    "build:server": "node -e \"console.log('Server runs from source; no bundle step required.')\"",
+    "build:electron": "npm run build && electron-builder",
+    "build:all": "npm run build && electron-builder",
     "preview": "vite preview",
     "server": "node server/index.js",
     "migrate": "node server/db/migrate.js",
     "seed": "node server/db/seed.js"
+  },
+  "build": {
+    "appId": "com.bytecra.pos",
+    "productName": "Bytecra POS",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server/**/*",
+      "shared/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "extraResources": [
+      { "from": "server", "to": "server" },
+      { "from": "assets", "to": "assets" }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bytecra",
+        "repo": "mahali-light"
+      }
+    ]
   },
   "dependencies": {
     "archiver": "^8.0.0",
@@ -57,6 +92,8 @@
     "concurrently": "^9.0.1",
     "cross-env": "^7.0.3",
     "electron": "^32.1.2",
+    "electron-builder": "^25.1.8",
+    "electron-updater": "^6.3.9",
     "nodemon": "^3.1.7",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",

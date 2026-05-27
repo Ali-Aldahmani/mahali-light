@@ -144,6 +144,13 @@ async function login(req, res, next) {
       performedBy: user.id,
       notes: `PC ${pcIdentifier} (${ipAddress})`,
     });
+    await logActivity({
+      entityType: 'app',
+      entityId: pcIdentifier,
+      action: 'app.started',
+      performedBy: user.id,
+      notes: `Login from ${pcIdentifier}`,
+    });
 
     // Broadcast presence over websocket.
     if (io) {

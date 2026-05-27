@@ -10,8 +10,10 @@ function getPool() {
       user: process.env.PGUSER || 'postgres',
       password: process.env.PGPASSWORD || 'postgres',
       database: process.env.PGDATABASE || 'mahali_light',
-      max: 20,
-      idleTimeoutMillis: 30000,
+      min: Number(process.env.PGPOOL_MIN || 2),
+      max: Number(process.env.PGPOOL_MAX || 10),
+      idleTimeoutMillis: Number(process.env.PGPOOL_IDLE_MS || 30000),
+      connectionTimeoutMillis: Number(process.env.PGPOOL_CONN_MS || 2000),
     });
 
     pool.on('error', (err) => {

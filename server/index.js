@@ -57,6 +57,10 @@ const notificationsRouter = require('./routes/notifications');
 const backupRouter = require('./routes/backup');
 const errorLogsRouter = require('./routes/errorLogs');
 const bugReportsRouter = require('./routes/bugReports');
+const appSettingsRouter = require('./routes/appSettings');
+const setupRouter = require('./routes/setup');
+const searchRouter = require('./routes/search');
+const { isServerMode } = require('./utils/serverMode');
 
 const {
   notFoundHandler,
@@ -159,22 +163,29 @@ async function bootstrap() {
   app.use('/api/backup', backupRouter);
   app.use('/api/error-logs', errorLogsRouter);
   app.use('/api/bug-reports', bugReportsRouter);
+  app.use('/api/app-settings', appSettingsRouter);
+  app.use('/api/setup', setupRouter);
+  app.use('/api/search', searchRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
 
-  // Background jobs.
-  startOverduePoJob(io);
-  startStaleDraftInvoiceJob();
-  startPdfCleanupJob();
-  startWarrantyExpiryJob(io);
-  startAttendanceSweepJob(io);
-  startBillStatusSweepJob(io);
-  startScheduledReportJob(io);
-  startForecastJob();
-  notificationService.setIoInstance(io);
-  startNotificationCronJobs(io);
-  startBackupScheduler(io);
+  // Background jobs — SERVER mode only (client PCs skip schedulers).
+  if (isServerMode()) {
+    startOverduePoJob(io);
+    startStaleDraftInvoiceJob();
+    startPdfCleanupJob();
+    startWarrantyExpiryJob(io);
+    startAttendanceSweepJob(io);
+    startBillStatusSweepJob(io);
+    startScheduledReportJob(io);
+    startForecastJob();
+    notificationService.setIoInstance(io);
+    startNotificationCronJobs(io);
+    startBackupScheduler(io);
+  } else {
+    console.log('[server] client mode — background schedulers disabled');
+  }
 
   const port = Number(process.env.PORT || 3000);
   server.listen(port, '0.0.0.0', () => {

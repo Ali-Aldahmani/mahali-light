@@ -5,15 +5,19 @@ const {
   dialog,
   Notification,
   desktopCapturer,
+  Menu,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
+const appConfig = require('./config/appConfig');
+const { initUpdater } = require('./updater');
 
-const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
+function legacyConfigFile() {
+  return path.join(app.getPath('userData'), 'config.json');
+}
 const PRINT_SETTINGS_FILE = path.join(
   app.getPath('userData'),
   'printSettings.json',
@@ -52,40 +56,35 @@ function savePrintSettings(patch) {
   return next;
 }
 
-function loadConfig() {
-  const defaults = {
-    serverIp: process.env.MAHALI_SERVER_IP || '127.0.0.1',
-    pcIdentifier: null,
-  };
+function userData() {
+  return app.getPath('userData');
+}
+
+function migrateLegacyConfig() {
   try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      return { ...defaults, ...data };
-    }
+    const legacyPath = legacyConfigFile();
+    if (!fs.existsSync(legacyPath)) return;
+    const legacy = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
+    appConfig.save(userData(), {
+      serverIp: legacy.serverIp,
+      pcIdentifier: legacy.pcIdentifier,
+    });
+    fs.renameSync(legacyPath, `${legacyPath}.bak`);
   } catch (err) {
-    console.warn('[electron] failed to load config', err);
+    console.warn('[electron] legacy config migration skipped', err.message);
   }
-  return defaults;
+}
+
+function loadConfig() {
+  return appConfig.load(userData());
 }
 
 function saveConfig(patch) {
-  const current = loadConfig();
-  const next = { ...current, ...patch };
-  try {
-    fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2));
-  } catch (err) {
-    console.warn('[electron] failed to save config', err);
-  }
-  return next;
+  return appConfig.save(userData(), patch);
 }
 
 function ensurePcIdentifier() {
-  const cfg = loadConfig();
-  if (cfg.pcIdentifier) return cfg.pcIdentifier;
-  const id = `${os.hostname()}-${crypto.randomBytes(4).toString('hex')}`.slice(0, 50);
-  saveConfig({ pcIdentifier: id });
-  return id;
+  return appConfig.ensurePcIdentifier(userData());
 }
 
 let mainWindow;
@@ -94,16 +93,18 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1024,
-    minHeight: 700,
+    minWidth: 1280,
+    minHeight: 720,
     backgroundColor: '#F5F6FA',
     show: false,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  Menu.setApplicationMenu(null);
 
   const devUrl = 'http://localhost:5173';
   if (process.env.NODE_ENV === 'development') {
@@ -112,15 +113,20 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize();
+    mainWindow.show();
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
 app.whenReady().then(() => {
+  migrateLegacyConfig();
   ensurePcIdentifier();
   createWindow();
+  initUpdater(mainWindow);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -132,6 +138,13 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('config:get', () => loadConfig());
 ipcMain.handle('config:set', (_e, patch) => saveConfig(patch));
+ipcMain.handle('network:local-ips', () => appConfig.localIps());
+ipcMain.handle('window:toggle-fullscreen', () => {
+  if (!mainWindow) return false;
+  const next = !mainWindow.isFullScreen();
+  mainWindow.setFullScreen(next);
+  return next;
+});
 
 // Phase 16 — native desktop notifications. Only surface a tray notification
 // when the window is NOT focused; otherwise the in-app panel + sound is the
@@ -204,7 +217,7 @@ ipcMain.handle('print:get-printers', async () => {
 function getApiBase() {
   const cfg = loadConfig();
   const ip = cfg.serverIp || '127.0.0.1';
-  const port = process.env.MAHALI_SERVER_PORT || 3000;
+  const port = cfg.serverPort || process.env.MAHALI_SERVER_PORT || 3000;
   return `http://${ip}:${port}`;
 }
 

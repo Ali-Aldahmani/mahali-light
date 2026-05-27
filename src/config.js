@@ -3,9 +3,14 @@ const SERVER_IP =
   import.meta.env.VITE_SERVER_IP ||
   '192.168.1.10';
 
-export const API_BASE = `http://${SERVER_IP}:3000/api`;
-export const SOCKET_URL = `http://${SERVER_IP}:3000`;
-export const FILES_BASE = `http://${SERVER_IP}:3000/files`;
+const SERVER_PORT =
+  (typeof window !== 'undefined' && window.electron?.serverPort) ||
+  import.meta.env.VITE_SERVER_PORT ||
+  3000;
+
+export const API_BASE = `http://${SERVER_IP}:${SERVER_PORT}/api`;
+export const SOCKET_URL = `http://${SERVER_IP}:${SERVER_PORT}`;
+export const FILES_BASE = `http://${SERVER_IP}:${SERVER_PORT}/files`;
 export const SERVER_HOST = SERVER_IP;
 
 // Convert a stored relative image path (e.g. "products/<id>/123.webp")

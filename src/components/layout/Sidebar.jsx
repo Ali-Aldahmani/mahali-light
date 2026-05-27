@@ -1,12 +1,14 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Boxes,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   FileEdit,
   FolderTree,
   LayoutDashboard,
   Package,
-  Printer,
   Receipt,
   RotateCcw,
   Shield,
@@ -33,7 +35,7 @@ import {
   CalendarCheck2,
   Activity,
   CheckSquare,
-  DatabaseBackup,
+  Settings,
   Bug,
   AlertCircle,
 } from 'lucide-react';
@@ -47,217 +49,41 @@ import { useReturnStore } from '../../store/returnStore.js';
 import { useAttendanceStore } from '../../store/attendanceStore.js';
 import { useBillStore } from '../../store/billStore.js';
 import { useNotificationStore } from '../../store/notificationStore.js';
+import { useAppSettingsStore } from '../../store/appSettingsStore.js';
+import { useUiErrorStore } from '../../store/uiErrorStore.js';
+import SidebarBadge from './SidebarBadge.jsx';
+import AppVersion from '../settings/AppVersion.jsx';
 import { cn } from '../../utils/cn.js';
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: null },
-  { section: 'Catalog' },
-  { to: '/products', label: 'Products', icon: Package, permission: 'product.view' },
-  { to: '/categories', label: 'Categories', icon: FolderTree, permission: 'product.view' },
-  { to: '/attributes', label: 'Attributes', icon: Sliders, permission: 'product.view' },
-  { section: 'Operations' },
-  {
-    to: '/inventory',
-    label: 'Inventory',
-    icon: Boxes,
-    permission: 'stock.view',
-    badge: 'inventory',
-  },
-  { section: 'Procurement' },
-  {
-    to: '/suppliers',
-    label: 'Suppliers',
-    icon: Building2,
-    permission: 'supplier.view',
-  },
-  {
-    to: '/purchase-orders',
-    label: 'Purchase orders',
-    icon: Truck,
-    permission: 'supplier.view',
-    badge: 'po',
-  },
+  { to: '/pos', label: 'POS', icon: ShoppingCart, permission: 'invoice.create' },
   { section: 'Sales' },
-  {
-    to: '/pos',
-    label: 'POS',
-    icon: ShoppingCart,
-    permission: 'invoice.create',
-  },
-  {
-    to: '/invoices',
-    label: 'Invoices',
-    icon: Receipt,
-    permission: 'invoice.view',
-  },
-  {
-    to: '/invoices/edit-requests',
-    label: 'Edit requests',
-    icon: FileEdit,
-    permission: 'invoice.edit_approve',
-    badge: 'editRequests',
-  },
-  {
-    to: '/customers',
-    label: 'Customers',
-    icon: Users,
-    permission: 'customer.view',
-    badge: 'customers',
-  },
-  {
-    to: '/customers/outstanding',
-    label: 'Receivables',
-    icon: Wallet,
-    permission: 'customer.view_balance',
-    badge: 'receivables',
-  },
-  { section: 'Warranties' },
-  {
-    to: '/warranties/lookup',
-    label: 'Warranty lookup',
-    icon: SearchIcon,
-    permission: 'warranty.view',
-  },
-  {
-    to: '/warranties',
-    label: 'Warranties',
-    icon: Shield,
-    permission: 'warranty.view',
-    badge: 'warrantiesExpiring',
-  },
-  {
-    to: '/warranty-claims',
-    label: 'Claims',
-    icon: ShieldAlert,
-    permission: 'warranty.view',
-    badge: 'warrantyClaims',
-  },
-  { section: 'Returns' },
-  {
-    to: '/returns',
-    label: 'Returns',
-    icon: RotateCcw,
-    permission: 'return.request',
-    badge: 'returnsPending',
-  },
-  { section: 'Treasury' },
-  {
-    to: '/treasury',
-    label: 'Treasury',
-    icon: Banknote,
-    permission: 'cash.view',
-  },
-  { section: 'Attendance' },
-  {
-    to: '/attendance',
-    label: 'Attendance',
-    icon: CalendarClock,
-    permission: 'attendance.view_own',
-    badge: 'attendancePending',
-  },
-  {
-    to: '/attendance/leave-balances',
-    label: 'Leave balances',
-    icon: CalendarDays,
-    permission: 'attendance.view_all',
-  },
-  {
-    to: '/attendance/holidays',
-    label: 'Holidays',
-    icon: CalendarOff,
-    permission: 'attendance.view_own',
-  },
-  { section: 'Expenses' },
-  {
-    to: '/expenses',
-    label: 'Bills & expenses',
-    icon: Receipt,
-    permission: 'bills.view',
-    badge: 'billsAttention',
-  },
+  { to: '/invoices', label: 'Invoices', icon: Receipt, permission: 'invoice.view' },
+  { to: '/inventory', label: 'Inventory', icon: Boxes, permission: 'stock.view', badge: 'inventory', badgeTone: 'warning' },
+  { to: '/products', label: 'Products', icon: Package, permission: 'product.view' },
+  { section: 'Partners' },
+  { to: '/suppliers', label: 'Suppliers', icon: Building2, permission: 'supplier.view' },
+  { to: '/customers', label: 'Customers', icon: Users, permission: 'customer.view' },
+  { section: 'Service' },
+  { to: '/warranties', label: 'Warranties', icon: Shield, permission: 'warranty.view' },
+  { to: '/returns', label: 'Returns', icon: RotateCcw, permission: 'return.request', badge: 'returnsPending', badgeTone: 'warning' },
   { section: 'Finance' },
-  { to: '/finance',          label: 'Finance',           icon: LineChart,     permission: 'finance.view_dashboard' },
-  { to: '/finance/journal',  label: 'Journal entries',   icon: BookOpen,      permission: 'finance.view_journal'    },
-  { to: '/finance/accounts', label: 'Chart of accounts', icon: Scale,         permission: 'finance.view_journal'    },
-  { to: '/finance/periods',  label: 'Periods',           icon: CalendarRange, permission: 'finance.view_journal'    },
-  { section: 'Reports' },
-  {
-    to: '/reports',
-    label: 'All reports',
-    icon: BarChart3,
-    anyPermissions: [
-      'report.financial',
-      'report.sales',
-      'report.inventory',
-      'report.suppliers',
-      'report.customers',
-      'report.employees',
-      'report.attendance',
-      'report.warranty',
-      'report.returns',
-      'report.bills',
-      'report.employee_performance_own',
-      'report.employee_performance_all',
-    ],
-  },
-  {
-    to: '/reports/net-profit',
-    label: 'Net profit',
-    icon: LineChart,
-    permission: 'report.financial',
-  },
-  {
-    to: '/reports/scheduled',
-    label: 'Scheduled reports',
-    icon: CalendarCheck2,
-    permission: 'report.schedule',
-  },
-  { section: 'Analytics' },
-  {
-    to: '/analytics',
-    label: 'Analytics hub',
-    icon: Activity,
-    anyPermissions: [
-      'analytics.view',
-      'analytics.view_peaks',
-      'analytics.view_reorder',
-    ],
-  },
-  {
-    to: '/approvals',
-    label: 'Approvals',
-    icon: CheckSquare,
-    anyRoles: ['Admin', 'Manager'],
-    badge: 'approvals',
-  },
-  { section: 'Administration' },
-  { to: '/users', label: 'Users', icon: UserCog, permission: 'user.edit' },
+  { to: '/treasury', label: 'Treasury', icon: Banknote, permission: 'cash.view' },
+  { to: '/expenses', label: 'Bills & expenses', icon: Receipt, permission: 'bills.view', badge: 'billsAttention', badgeTone: 'error' },
+  { to: '/finance', label: 'Finance', icon: LineChart, permission: 'finance.view_dashboard' },
+  { to: '/reports', label: 'Reports', icon: BarChart3, anyPermissions: ['report.financial', 'report.sales', 'report.inventory', '*'] },
+  { to: '/analytics', label: 'Analytics', icon: Activity, anyPermissions: ['analytics.view', '*'] },
+  { section: 'People' },
   { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
-  { to: '/roles', label: 'Roles & Permissions', icon: ShieldCheck, permission: 'user.edit' },
-  {
-    to: '/settings/printers',
-    label: 'Printers & branding',
-    icon: Printer,
-    permission: 'settings.view',
-  },
-  {
-    to: '/settings/backup',
-    label: 'Backup & restore',
-    icon: DatabaseBackup,
-    permission: 'backup.view',
-  },
-  {
-    to: '/admin/bug-reports',
-    label: 'Bug reports',
-    icon: Bug,
-    permission: 'bug.view_all',
-  },
-  {
-    to: '/admin/error-logs',
-    label: 'Error logs',
-    icon: AlertCircle,
-    permission: 'errors.view_all',
-  },
+  { to: '/attendance', label: 'Attendance', icon: CalendarClock, permission: 'attendance.view_own' },
+  { section: 'More' },
+  { to: '/approvals', label: 'Approvals', icon: CheckSquare, anyRoles: ['Admin', 'Manager'], badge: 'approvals', badgeTone: 'error' },
+  { to: '/categories', label: 'Categories', icon: FolderTree, permission: 'product.view' },
+  { to: '/purchase-orders', label: 'Purchase orders', icon: Truck, permission: 'supplier.view', badge: 'po' },
+  { to: '/invoices/edit-requests', label: 'Edit requests', icon: FileEdit, permission: 'invoice.edit_approve', badge: 'editRequests' },
+  { to: '/settings', label: 'Settings', icon: Settings, permission: 'settings.view' },
+  { to: '/admin/error-logs', label: 'Error logs', icon: AlertCircle, permission: 'errors.view_all' },
 ];
 
 function itemAllowed(item, hasPermission, role) {
@@ -292,7 +118,25 @@ function visibleItems(nav, hasPermission, role) {
 export default function Sidebar() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const role = useAuthStore((s) => s.user?.role);
+  const storeName = useAppSettingsStore((s) => s.publicSettings?.store_name || s.settings?.store_name);
+  const openBugReport = useUiErrorStore((s) => s.openBugReport);
+  const [collapsed, setCollapsed] = useState(false);
   const approvalCount = useNotificationStore((s) => s.approvalCount);
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
+
+  useEffect(() => {
+    window.electron?.getConfig?.().then((cfg) => {
+      if (cfg?.display?.sidebarCollapsed) setCollapsed(true);
+    });
+  }, []);
+
+  async function toggleCollapse() {
+    const next = !collapsed;
+    setCollapsed(next);
+    if (window.electron?.setConfig) {
+      await window.electron.setConfig({ display: { sidebarCollapsed: next } });
+    }
+  }
   const lowStockCount = useInventoryStore((s) => s.lowStockCount);
   const pendingReorderAlerts = useInventoryStore((s) => s.pendingReorderAlerts);
   const pendingAdjustments = useInventoryStore((s) => s.pendingAdjustmentsCount);
@@ -348,20 +192,36 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 shrink-0 border-r border-border bg-surface flex flex-col">
-      <div className="flex items-center gap-2 px-5 py-5 border-b border-border">
-        <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
+    <aside
+      className={cn(
+        'shrink-0 border-r border-border bg-surface flex flex-col transition-all',
+        collapsed ? 'w-[72px]' : 'w-64',
+      )}
+    >
+      <div className="flex items-center gap-2 px-4 py-5 border-b border-border">
+        <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-white">
           <Zap size={18} />
         </div>
-        <div className="leading-tight">
-          <p className="text-sm font-semibold text-ink">Mahali Light</p>
-          <p className="text-xs text-ink-muted">Electrical · POS</p>
-        </div>
+        {!collapsed && (
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-semibold text-ink">{storeName || 'Mahali Light'}</p>
+            <p className="text-xs text-ink-muted">Electrical · POS</p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={toggleCollapse}
+          className={cn('ml-auto rounded-md p-1 text-ink-muted hover:bg-surface-2', collapsed && 'mx-auto')}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+      <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
         {visibleItems(NAV, hasPermission, role).map((item, idx) => {
           if (item.section) {
+            if (collapsed) return null;
             return (
               <p
                 key={`section-${idx}`}
@@ -377,29 +237,48 @@ export default function Sidebar() {
             <NavLink
               key={item.to}
               to={item.to}
+              title={collapsed ? item.label : undefined}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition',
                   isActive
                     ? 'bg-accent-light text-accent'
                     : 'text-ink hover:bg-surface-2',
+                  collapsed && 'justify-center px-2',
                 )
               }
             >
-              <Icon size={16} />
-              <span className="flex-1">{item.label}</span>
-              {badge !== null && (
-                <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-[11px] font-medium rounded-full bg-accent text-white">
-                  {badge}
-                </span>
+              <Icon size={16} className="shrink-0" />
+              {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+              {!collapsed && badge !== null && (
+                <SidebarBadge count={badge} tone={item.badgeTone} />
               )}
             </NavLink>
           );
         })}
       </nav>
 
-      <div className="px-5 py-3 border-t border-border text-[11px] text-ink-muted">
-        v0.3.0 · {new Date().getFullYear()}
+      <div className="border-t border-border px-2 py-3 space-y-1">
+        <button
+          type="button"
+          onClick={() => openBugReport()}
+          title="Report a bug"
+          className={cn(
+            'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-ink-muted hover:bg-surface-2',
+            collapsed && 'justify-center',
+          )}
+        >
+          <Bug size={16} />
+          {!collapsed && <span>Bug report</span>}
+        </button>
+        {!collapsed && (
+          <div className="px-3">
+            <AppVersion />
+          </div>
+        )}
+        {!collapsed && unreadCount > 0 && (
+          <p className="px-3 text-[11px] text-ink-muted">{unreadCount} unread notifications</p>
+        )}
       </div>
     </aside>
   );
