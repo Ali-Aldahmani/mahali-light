@@ -14,6 +14,8 @@ import { useTreasuryStore } from '../../store/treasuryStore.js';
 import { useAttendanceStore } from '../../store/attendanceStore.js';
 import { useBillStore } from '../../store/billStore.js';
 import { useNotificationStore } from '../../store/notificationStore.js';
+import { useBackupStore } from '../../store/backupStore.js';
+import RestoreOverlay from '../backup/RestoreOverlay.jsx';
 import { initStockCache } from '../../services/stockCacheService.js';
 import {
   onAdjustmentEvent,
@@ -79,6 +81,7 @@ const TITLES = {
   '/analytics': 'Analytics',
   '/approvals': 'Approvals',
   '/settings/notifications': 'Notification preferences',
+  '/settings/backup': 'Backup & restore',
 };
 
 export default function AppLayout() {
@@ -109,6 +112,7 @@ export default function AppLayout() {
   const fetchApprovalCount = useNotificationStore((s) => s.fetchApprovalCount);
   const fetchPreferences = useNotificationStore((s) => s.fetchPreferences);
   const resetNotifications = useNotificationStore((s) => s.reset);
+  const fetchMaintenance = useBackupStore((s) => s.fetchMaintenance);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -171,6 +175,9 @@ export default function AppLayout() {
     // Phase 16 — bootstrap notification state.
     fetchPreferences?.();
     fetchUnreadCount?.();
+    // Phase 17 — pick up an in-progress restore so a freshly opened tab
+    // shows the overlay immediately.
+    fetchMaintenance?.();
     const isManagerOrAdmin =
       permissions.includes('*') ||
       ['Manager', 'Admin'].includes(useAuthStore.getState().user?.role);
@@ -271,6 +278,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <RestoreOverlay />
     </div>
   );
 }

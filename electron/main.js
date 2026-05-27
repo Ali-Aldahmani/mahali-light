@@ -345,3 +345,61 @@ ipcMain.handle(
     }
   },
 );
+
+// ----- Phase 17 — backup integration ---------------------------------------
+//
+// We never bundle the backup file inside the IPC payload — it could easily
+// exceed Electron's IPC message-size limits. Instead we stream the download
+// straight to the file the user picks.
+ipcMain.handle(
+  'backup:download',
+  async (_e, { url, token, filename, jobId } = {}) => {
+    try {
+      const target = url && url.startsWith('http')
+        ? url
+        : `${getApiBase()}${url || `/api/backup/jobs/${jobId}/download`}`;
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: 'Save backup archive',
+        defaultPath: filename || `backup-${jobId || 'archive'}.tar.gz`,
+        filters: [
+          { name: 'Compressed archive', extensions: ['tar.gz', 'tgz', 'tar'] },
+          { name: 'All files', extensions: ['*'] },
+        ],
+      });
+      if (result.canceled || !result.filePath) {
+        return { success: false, cancelled: true };
+      }
+
+      const client = target.startsWith('https:') ? https : http;
+      await new Promise((resolve, reject) => {
+        const req = client.get(target, { headers }, (res) => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}`));
+            return;
+          }
+          const out = fs.createWriteStream(result.filePath);
+          res.pipe(out);
+          out.on('finish', () => out.close(resolve));
+          out.on('error', reject);
+          res.on('error', reject);
+        });
+        req.on('error', reject);
+      });
+      return { success: true, path: result.filePath };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+);
+
+ipcMain.handle('backup:usb-list', async () => {
+  try {
+    const drivelist = require('drivelist');
+    const drives = await drivelist.list();
+    return (drives || []).filter((d) => d.isRemovable && !d.isSystem);
+  } catch (err) {
+    return { error: err.message };
+  }
+});

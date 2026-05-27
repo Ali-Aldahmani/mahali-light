@@ -52,6 +52,7 @@ import ScheduledReportsPage from './pages/reports/ScheduledReportsPage.jsx';
 import AnalyticsPage from './pages/analytics/AnalyticsPage.jsx';
 import ApprovalsPage from './pages/approvals/ApprovalsPage.jsx';
 import NotificationPreferencesPage from './pages/settings/NotificationPreferencesPage.jsx';
+import BackupSettingsPage from './pages/settings/BackupSettingsPage.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ToastViewport from './components/ui/Toast.jsx';
@@ -480,6 +481,15 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <NotificationPreferencesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/settings/backup"
+            element={
+              <ProtectedRoute permission="backup.view">
+                <BackupSettingsPage />
               </ProtectedRoute>
             }
           />

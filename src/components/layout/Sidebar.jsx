@@ -33,6 +33,7 @@ import {
   CalendarCheck2,
   Activity,
   CheckSquare,
+  DatabaseBackup,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
@@ -236,6 +237,12 @@ const NAV = [
     label: 'Printers & branding',
     icon: Printer,
     permission: 'settings.view',
+  },
+  {
+    to: '/settings/backup',
+    label: 'Backup & restore',
+    icon: DatabaseBackup,
+    permission: 'backup.view',
   },
 ];
 

@@ -17,6 +17,10 @@ const api = {
   // Phase 16 — native desktop notifications.
   notifyDesktop: (payload) => ipcRenderer.invoke('notify:desktop', payload),
   isWindowFocused: () => ipcRenderer.invoke('window:focused'),
+
+  // Phase 17 — backup helpers (download archive + list USB drives).
+  backupDownload: (payload) => ipcRenderer.invoke('backup:download', payload),
+  backupListUsb: () => ipcRenderer.invoke('backup:usb-list'),
 };
 
 // The frontend reads `window.electron.serverIp` (used by src/config.js).

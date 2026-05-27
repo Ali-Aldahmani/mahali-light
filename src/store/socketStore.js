@@ -6,6 +6,7 @@ import { usePresenceStore } from './presenceStore.js';
 import { toast } from './toastStore.js';
 import { handleStockUpdate, syncOnReconnect } from '../services/stockCacheService.js';
 import { useNotificationStore } from './notificationStore.js';
+import { useBackupStore } from './backupStore.js';
 
 let heartbeatTimer = null;
 
@@ -487,6 +488,29 @@ export const useSocketStore = create((set, get) => ({
       if (typeof payload?.unread_count === 'number') {
         useNotificationStore.getState().setUnreadCount(payload.unread_count);
       }
+    });
+
+    // Phase 17 — backup + restore lifecycle.
+    socket.on('backup_started', (payload) => {
+      useBackupStore.getState().onBackupStarted(payload);
+    });
+    socket.on('backup_completed', (payload) => {
+      useBackupStore.getState().onBackupCompleted(payload);
+    });
+    socket.on('backup_failed', (payload) => {
+      useBackupStore.getState().onBackupFailed(payload);
+    });
+    socket.on('restore_imminent', (payload) => {
+      useBackupStore.getState().onRestoreImminent(payload);
+    });
+    socket.on('restore_progress', (payload) => {
+      useBackupStore.getState().onRestoreProgress(payload);
+    });
+    socket.on('restore_completed', (payload) => {
+      useBackupStore.getState().onRestoreCompleted(payload);
+    });
+    socket.on('disk_space_warning', (payload) => {
+      useBackupStore.getState().onDiskWarning(payload);
     });
 
     if (heartbeatTimer) clearInterval(heartbeatTimer);
