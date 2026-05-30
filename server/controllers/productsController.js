@@ -12,6 +12,13 @@ const {
   deleteImageFile,
 } = require('../utils/upload');
 const { applyStockMovement } = require('../services/stockService');
+const {
+  loadCategoryPath,
+  loadCategoryPathBatch,
+  loadVariants,
+  loadVariantsBatch,
+  shapeProduct,
+} = require('../services/productService');
 
 const SOLD_BY = ['piece', 'meter', 'roll', 'kg', 'box'];
 
@@ -60,261 +67,6 @@ const updateSchema = baseProductSchema.partial();
 function canSeeCost(req) {
   const owned = new Set(req.user?.permissions || []);
   return owned.has('product.view_cost');
-}
-
-function stripCost(variant, includeCost) {
-  if (includeCost) return variant;
-  const v = { ...variant };
-  delete v.costPrice;
-  return v;
-}
-
-async function loadCategoryPath(categoryId) {
-  if (!categoryId) return { path: null, depth: 0, categoryName: null };
-  // Single recursive CTE replaces the old up-to-6 sequential round-trips.
-  // Rows come back ordered root-first (highest depth first) so parts[0] = root
-  // and parts[last] = the direct category (depth=1).
-  const { rows } = await query(
-    `WITH RECURSIVE path AS (
-       SELECT id, name, parent_id, 1 AS depth
-         FROM product_categories WHERE id = $1
-       UNION ALL
-       SELECT c.id, c.name, c.parent_id, path.depth + 1
-         FROM product_categories c
-         JOIN path ON c.id = path.parent_id
-        WHERE path.depth < 6
-     )
-     SELECT name FROM path ORDER BY depth DESC`,
-    [categoryId],
-  );
-  if (!rows.length) return { path: null, depth: 0, categoryName: null };
-  const parts = rows.map((r) => r.name); // [root, ..., direct]
-  return {
-    categoryName: parts[parts.length - 1],
-    path: parts.join(' > ') || null,
-    depth: parts.length,
-  };
-}
-
-async function loadVariants(productId, includeCost) {
-  const { rows } = await query(
-    `SELECT * FROM product_variants
-      WHERE product_id = $1 AND is_active = true
-      ORDER BY sku ASC`,
-    [productId],
-  );
-
-  const variantIds = rows.map((r) => r.id);
-  let attrMap = new Map();
-  if (variantIds.length) {
-    const { rows: links } = await query(
-      `SELECT pva.variant_id, av.id AS value_id, av.value, av.sort_order,
-              a.id AS attribute_id, a.name AS attribute_name, a.unit
-         FROM product_variant_attributes pva
-         JOIN product_attribute_values av ON av.id = pva.attribute_value_id
-         JOIN product_attributes a ON a.id = av.attribute_id
-        WHERE pva.variant_id = ANY($1)
-        ORDER BY a.name ASC`,
-      [variantIds],
-    );
-    for (const link of links) {
-      if (!attrMap.has(link.variant_id)) attrMap.set(link.variant_id, []);
-      attrMap.get(link.variant_id).push({
-        attributeId: link.attribute_id,
-        attributeName: link.attribute_name,
-        unit: link.unit,
-        valueId: link.value_id,
-        value: link.value,
-      });
-    }
-  }
-
-  return rows.map((r) =>
-    stripCost(
-      {
-        id: r.id,
-        productId: r.product_id,
-        sku: r.sku,
-        barcode: r.barcode,
-        supplierBarcode: r.supplier_barcode,
-        internalBarcode: r.internal_barcode,
-        sellingPrice: Number(r.selling_price),
-        costPrice: Number(r.cost_price),
-        stockQty: Number(r.stock_qty),
-        quarantineQty: Number(r.quarantine_qty),
-        reorderThreshold: r.reorder_threshold == null ? null : Number(r.reorder_threshold),
-        imagePath: r.image_path,
-        isActive: r.is_active,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-        attributes: attrMap.get(r.id) || [],
-      },
-      includeCost,
-    ),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Batch loaders — used by `list` to collapse the per-product query fan-out
-// down to a fixed number of queries regardless of page size.
-// ---------------------------------------------------------------------------
-
-/**
- * Load all active variants (+ their attribute maps) for a set of product IDs.
- * Returns a Map<productId, variant[]> using the same object shape as
- * loadVariants() so shapeProduct() receives identical data.
- */
-async function loadVariantsBatch(productIds, includeCost) {
-  if (!productIds.length) return new Map();
-
-  const { rows } = await query(
-    `SELECT * FROM product_variants
-      WHERE product_id = ANY($1) AND is_active = true
-      ORDER BY product_id, sku ASC`,
-    [productIds],
-  );
-
-  const variantIds = rows.map((r) => r.id);
-  const attrMap = new Map();
-  if (variantIds.length) {
-    const { rows: links } = await query(
-      `SELECT pva.variant_id, av.id AS value_id, av.value, av.sort_order,
-              a.id AS attribute_id, a.name AS attribute_name, a.unit
-         FROM product_variant_attributes pva
-         JOIN product_attribute_values av ON av.id = pva.attribute_value_id
-         JOIN product_attributes a ON a.id = av.attribute_id
-        WHERE pva.variant_id = ANY($1)
-        ORDER BY a.name ASC`,
-      [variantIds],
-    );
-    for (const link of links) {
-      if (!attrMap.has(link.variant_id)) attrMap.set(link.variant_id, []);
-      attrMap.get(link.variant_id).push({
-        attributeId: link.attribute_id,
-        attributeName: link.attribute_name,
-        unit: link.unit,
-        valueId: link.value_id,
-        value: link.value,
-      });
-    }
-  }
-
-  const result = new Map();
-  for (const r of rows) {
-    if (!result.has(r.product_id)) result.set(r.product_id, []);
-    result.get(r.product_id).push(
-      stripCost(
-        {
-          id: r.id,
-          productId: r.product_id,
-          sku: r.sku,
-          barcode: r.barcode,
-          supplierBarcode: r.supplier_barcode,
-          internalBarcode: r.internal_barcode,
-          sellingPrice: Number(r.selling_price),
-          costPrice: Number(r.cost_price),
-          stockQty: Number(r.stock_qty),
-          quarantineQty: Number(r.quarantine_qty),
-          reorderThreshold: r.reorder_threshold == null ? null : Number(r.reorder_threshold),
-          imagePath: r.image_path,
-          isActive: r.is_active,
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-          attributes: attrMap.get(r.id) || [],
-        },
-        includeCost,
-      ),
-    );
-  }
-  return result;
-}
-
-/**
- * Load category paths for a set of category IDs in a single recursive CTE.
- * Returns a Map<categoryId, { categoryName, path, depth }> keyed by the IDs
- * passed in — identical structure to what loadCategoryPath() returns for a
- * single ID.
- */
-async function loadCategoryPathBatch(categoryIds) {
-  const unique = [...new Set(categoryIds.filter(Boolean))];
-  if (!unique.length) return new Map();
-
-  // The CTE starts from ALL requested category IDs simultaneously.
-  // Each row carries `category_id` (the original seed) so we can group results
-  // back by which product's category they belong to.
-  const { rows } = await query(
-    `WITH RECURSIVE path AS (
-       SELECT id AS category_id, name, parent_id, 1 AS depth
-         FROM product_categories WHERE id = ANY($1)
-       UNION ALL
-       SELECT path.category_id, c.name, c.parent_id, path.depth + 1
-         FROM product_categories c
-         JOIN path ON c.id = path.parent_id
-        WHERE path.depth < 6
-     )
-     SELECT category_id, name FROM path ORDER BY category_id, depth DESC`,
-    [unique],
-  );
-
-  // Group names by seed category_id.
-  // ORDER BY depth DESC means row[0] per group = root, row[last] = direct category.
-  const groups = new Map();
-  for (const r of rows) {
-    if (!groups.has(r.category_id)) groups.set(r.category_id, []);
-    groups.get(r.category_id).push(r.name);
-  }
-
-  const result = new Map();
-  for (const [catId, parts] of groups) {
-    result.set(catId, {
-      categoryName: parts[parts.length - 1], // depth=1 row = direct category
-      path: parts.join(' > ') || null,
-      depth: parts.length,
-    });
-  }
-  return result;
-}
-
-async function shapeProduct(row, { includeCost, variants, summary = false, cat = null }) {
-  const catData = cat !== null ? cat : await loadCategoryPath(row.category_id);
-  const base = {
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    categoryId: row.category_id,
-    categoryName: catData.categoryName,
-    categoryPath: catData.path,
-    brand: row.brand,
-    imagePath: row.image_path,
-    hasVariants: row.has_variants,
-    soldBy: row.sold_by,
-    unitLabel: row.unit_label,
-    defaultWarrantyMonths: row.default_warranty_months,
-    reorderThreshold: row.reorder_threshold == null ? null : Number(row.reorder_threshold),
-    isActive: row.is_active,
-    createdBy: row.created_by,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-  base.variants = variants || [];
-  if (summary) {
-    base.variantCount = variants ? variants.length : 0;
-    base.totalStock = variants
-      ? variants.reduce((a, v) => a + Number(v.stockQty || 0), 0)
-      : 0;
-    if (variants && variants.length) {
-      const prices = variants.map((v) => Number(v.sellingPrice || 0));
-      base.minPrice = Math.min(...prices);
-      base.maxPrice = Math.max(...prices);
-    }
-    if (includeCost && variants && variants.length) {
-      base.totalStockValue = variants.reduce(
-        (a, v) => a + Number(v.stockQty || 0) * Number(v.costPrice || 0),
-        0,
-      );
-    }
-  }
-  return base;
 }
 
 // ---------- list ----------
@@ -908,33 +660,37 @@ async function search(req, res, next) {
       }
     }
 
-    const data = await Promise.all(
-      rows.map(async (r) => {
-        const cat = await loadCategoryPath(r.category_id);
-        const out = {
-          variantId: r.id,
-          productId: r.product_id,
-          productName: r.product_name,
-          brand: r.brand,
-          categoryPath: cat.path,
-          sku: r.sku,
-          barcode: r.barcode,
-          supplierBarcode: r.supplier_barcode,
-          internalBarcode: r.internal_barcode,
-          sellingPrice: Number(r.selling_price),
-          stockQty: Number(r.stock_qty),
-          soldBy: r.sold_by,
-          unitLabel: r.unit_label,
-          hasVariants: r.has_variants,
-          imagePath: r.image_path || r.product_image,
-          attributes: attrMap.get(r.id) || [],
-          requiresSerial: !!r.category_requires_serial,
-          defaultWarrantyMonths: Number(r.default_warranty_months || 0),
-        };
-        if (includeCost) out.costPrice = Number(r.cost_price);
-        return out;
-      }),
+    // Resolve category paths for all result rows in one query instead of N.
+    const catPathByCategory = await loadCategoryPathBatch(
+      rows.map((r) => r.category_id),
     );
+
+    const data = rows.map((r) => {
+      const cat = catPathByCategory.get(r.category_id)
+        || { path: null, depth: 0, categoryName: null };
+      const out = {
+        variantId: r.id,
+        productId: r.product_id,
+        productName: r.product_name,
+        brand: r.brand,
+        categoryPath: cat.path,
+        sku: r.sku,
+        barcode: r.barcode,
+        supplierBarcode: r.supplier_barcode,
+        internalBarcode: r.internal_barcode,
+        sellingPrice: Number(r.selling_price),
+        stockQty: Number(r.stock_qty),
+        soldBy: r.sold_by,
+        unitLabel: r.unit_label,
+        hasVariants: r.has_variants,
+        imagePath: r.image_path || r.product_image,
+        attributes: attrMap.get(r.id) || [],
+        requiresSerial: !!r.category_requires_serial,
+        defaultWarrantyMonths: Number(r.default_warranty_months || 0),
+      };
+      if (includeCost) out.costPrice = Number(r.cost_price);
+      return out;
+    });
 
     return ok(res, data);
   } catch (err) {
