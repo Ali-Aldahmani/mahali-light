@@ -65,9 +65,18 @@ async function closeBrowser() {
 
 // -- template helpers ----------------------------------------------------
 
+// Cache template file contents after the first read so that repeated PDF
+// requests (e.g. bulk invoice printing) do not pay the synchronous disk I/O
+// cost on every call.  Templates are static files — they never change at
+// runtime — so a process-lifetime cache is safe.
+const _templateCache = new Map();
+
 function loadTemplate(name) {
+  if (_templateCache.has(name)) return _templateCache.get(name);
   const file = path.join(__dirname, '..', 'templates', name);
-  return fs.readFileSync(file, 'utf8');
+  const content = fs.readFileSync(file, 'utf8');
+  _templateCache.set(name, content);
+  return content;
 }
 
 function escapeHtml(str) {
