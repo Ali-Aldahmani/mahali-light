@@ -70,6 +70,7 @@ const {
 const { authLimiter, apiLimiter } = require('./middleware/rateLimiter');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
 const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
+const { startDbCleanupJob } = require('./jobs/dbCleanup');
 const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
 const { startWarrantyExpiryJob } = require('./jobs/warrantyExpiry');
 const { startAttendanceSweepJob } = require('./jobs/attendanceSweep');
@@ -293,6 +294,7 @@ async function bootstrap() {
 
   // Background jobs — SERVER mode only (client PCs skip schedulers).
   if (isServerMode()) {
+    startDbCleanupJob();
     startOverduePoJob(io);
     startStaleDraftInvoiceJob();
     startPdfCleanupJob();
