@@ -37,8 +37,8 @@ async function isLockedOut(username) {
        FROM login_attempts
       WHERE username = $1
         AND success = false
-        AND attempted_at > NOW() - INTERVAL '${LOCK_WINDOW_MINUTES} minutes'`,
-    [username],
+        AND attempted_at > NOW() - make_interval(mins => $2)`,
+    [username, LOCK_WINDOW_MINUTES],
   );
   return rows[0].fails >= MAX_FAILED_ATTEMPTS;
 }

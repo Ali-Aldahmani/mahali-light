@@ -683,7 +683,25 @@ async function generatePurchaseOrderPDFSafe(poId, opts) {
 
 // -- generic report PDF --------------------------------------------------
 
+/**
+ * Render a generic report to a PDF file and return its path.
+ *
+ * SECURITY — `html` parameter contract:
+ *   This function injects `html` verbatim into a Puppeteer page body.
+ *   ALL callers MUST pass pre-sanitised markup (every user-supplied string run
+ *   through escapeHtml()).  Passing raw user input here is an HTML-injection
+ *   risk; even though the Puppeteer CSP (injected by renderPdf/injectCsp)
+ *   blocks script execution, injected markup can still exfiltrate data via
+ *   CSS or resource loads.
+ *
+ *   If you are adding a new call site, validate that every dynamic value in
+ *   the HTML string has been escaped with escapeHtml() before reaching here.
+ */
 async function generateReportPDF({ title, html, reportType = 'report' }) {
+  if (typeof html !== 'string') {
+    throw new Error('[generateReportPDF] html must be a pre-sanitised string');
+  }
+
   const dir = ensurePdfDir('reports');
   const stamp = new Date().toISOString().slice(0, 10);
   const safeType = String(reportType).replace(/[^a-z0-9-]+/gi, '-').toLowerCase();

@@ -15,12 +15,13 @@ async function sweep() {
     const { rows } = await query(
       `UPDATE invoices
           SET status = 'cancelled',
-              cancel_reason = 'auto-cancelled: draft older than ${MAX_AGE_HOURS}h',
+              cancel_reason = 'auto-cancelled: draft older than ' || $1 || 'h',
               cancelled_at = NOW(),
               updated_at = NOW()
         WHERE status = 'draft'
-          AND created_at < NOW() - INTERVAL '${MAX_AGE_HOURS} hours'
+          AND created_at < NOW() - make_interval(hours => $1)
         RETURNING id, invoice_number`,
+      [MAX_AGE_HOURS],
     );
     if (rows.length) {
       console.log(
