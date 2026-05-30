@@ -12,6 +12,11 @@
 -- every request.  The composite index on (username, attempted_at DESC) lets the
 -- planner satisfy both the equality filter on username and the range filter on
 -- attempted_at using an index-only scan.
+--
+-- Note: CONCURRENTLY is intentionally omitted.  This migration runs inside the
+-- migrate.js transaction wrapper at server startup (before any traffic is
+-- served), so a non-concurrent build is safe and is the only form allowed
+-- inside an explicit transaction block.
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_login_attempts_username_attempted_at
+CREATE INDEX IF NOT EXISTS idx_login_attempts_username_attempted_at
     ON login_attempts (username, attempted_at DESC);

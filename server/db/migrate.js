@@ -30,15 +30,26 @@ async function runMigrations() {
     }
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
     console.log(`[migrate] apply ${file}`);
-    await query('BEGIN');
+    // Check out a dedicated client so that BEGIN, the migration SQL, the
+    // _migrations INSERT, and COMMIT all run on the SAME connection.
+    // Using pool.query() for each statement (the old approach) gave no
+    // atomicity guarantee: each call could land on a different pool connection,
+    // leaving BEGIN's transaction unrelated to the subsequent queries.
+    const client = await getPool().connect();
     try {
-      await query(sql);
-      await query('INSERT INTO _migrations (filename) VALUES ($1)', [file]);
-      await query('COMMIT');
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query(
+        'INSERT INTO _migrations (filename) VALUES ($1)',
+        [file],
+      );
+      await client.query('COMMIT');
     } catch (err) {
-      await query('ROLLBACK');
+      await client.query('ROLLBACK');
       console.error(`[migrate] failed ${file}`, err);
       throw err;
+    } finally {
+      client.release();
     }
   }
   console.log('[migrate] done.');

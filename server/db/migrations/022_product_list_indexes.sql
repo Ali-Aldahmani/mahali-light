@@ -8,25 +8,28 @@
 --   3. The batch variant loader (loadVariantsBatch) scanning product_variants
 --      without a partial index covering the is_active = true predicate.
 --
--- All indexes are created CONCURRENTLY so they don't block the live table.
+-- CONCURRENTLY is intentionally omitted from all statements below.
+-- This migration runs inside migrate.js's explicit transaction block at server
+-- startup (before any traffic is served).  PostgreSQL forbids CREATE INDEX
+-- CONCURRENTLY inside a transaction; non-concurrent builds are safe here.
 
 -- ── products ──────────────────────────────────────────────────────────────
 
 -- Composite index covering the most common list query pattern:
 --   WHERE is_active = <bool> ORDER BY updated_at DESC
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_is_active_updated_at
+CREATE INDEX IF NOT EXISTS idx_products_is_active_updated_at
     ON products (is_active, updated_at DESC);
 
 -- Category filter (used by the recursive category descendant query)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_category_id
+CREATE INDEX IF NOT EXISTS idx_products_category_id
     ON products (category_id)
     WHERE category_id IS NOT NULL;
 
 -- Enum filters
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_sold_by
+CREATE INDEX IF NOT EXISTS idx_products_sold_by
     ON products (sold_by);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_has_variants
+CREATE INDEX IF NOT EXISTS idx_products_has_variants
     ON products (has_variants);
 
 -- ── Text search — trigram GIN indexes (requires pg_trgm) ──────────────────
@@ -37,10 +40,10 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_has_variants
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_name_trgm
+CREATE INDEX IF NOT EXISTS idx_products_name_trgm
     ON products USING gin (name gin_trgm_ops);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_brand_trgm
+CREATE INDEX IF NOT EXISTS idx_products_brand_trgm
     ON products USING gin (brand gin_trgm_ops)
     WHERE brand IS NOT NULL;
 
@@ -48,19 +51,19 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_brand_trgm
 
 -- Partial index used by loadVariantsBatch / loadVariants — only active rows,
 -- which are the only ones the application ever fetches.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_variants_product_id_active
+CREATE INDEX IF NOT EXISTS idx_product_variants_product_id_active
     ON product_variants (product_id)
     WHERE is_active = true;
 
 -- Barcode / SKU lookups used by the POS search endpoint
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_variants_barcode
+CREATE INDEX IF NOT EXISTS idx_product_variants_barcode
     ON product_variants (barcode)
     WHERE barcode IS NOT NULL;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_variants_internal_barcode
+CREATE INDEX IF NOT EXISTS idx_product_variants_internal_barcode
     ON product_variants (internal_barcode)
     WHERE internal_barcode IS NOT NULL;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_variants_sku_trgm
+CREATE INDEX IF NOT EXISTS idx_product_variants_sku_trgm
     ON product_variants USING gin (sku gin_trgm_ops)
     WHERE sku IS NOT NULL;
