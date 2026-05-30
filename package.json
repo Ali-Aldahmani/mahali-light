@@ -24,7 +24,9 @@
     "lint": "eslint src electron shared --ext .js,.jsx",
     "lint:fix": "eslint src electron shared --ext .js,.jsx --fix",
     "preview": "vite preview",
-    "test": "echo \"No tests yet\" && exit 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "server": "node server/index.js",
     "migrate": "node server/db/migrate.js",
     "seed": "node server/db/seed.js"
@@ -125,6 +127,7 @@
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",
+    "@vitest/coverage-v8": "^4.1.7",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.0.1",
     "cross-env": "^7.0.3",
@@ -136,8 +139,10 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "nodemon": "^3.1.7",
     "postcss": "^8.4.47",
+    "supertest": "^7.2.2",
     "tailwindcss": "^3.4.13",
     "vite": "^5.4.8",
+    "vitest": "^4.1.7",
     "wait-on": "^8.0.1"
   }
 }
