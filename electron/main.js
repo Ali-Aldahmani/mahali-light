@@ -266,6 +266,35 @@ function getLanHttpsAgent() {
   return _lanHttpsAgent;
 }
 
+// ---------------------------------------------------------------------------
+// SSRF guard — origin-level URL allowlist for IPC download handlers
+//
+// `print:download` and `backup:download` accept a `url` from the renderer and
+// fetch it in the main process (which has full Node.js network access).  A
+// compromised renderer (XSS in the React app, or a malicious update) could
+// supply an arbitrary URL and direct the main process to fetch cloud IMDS
+// endpoints, internal services, or any host reachable from the server PC.
+//
+// We compare the *parsed* origin (protocol + hostname + port) rather than
+// using a plain startsWith() check, which is bypassable via a URL like
+// http://<serverIp>:<port>.evil.com/ — that string starts with the base but
+// resolves to a completely different host.
+// ---------------------------------------------------------------------------
+function isAllowedApiUrl(urlStr) {
+  if (typeof urlStr !== 'string' || !urlStr) return false;
+  try {
+    const allowed = new URL(getApiBase());
+    const target  = new URL(urlStr);
+    return (
+      target.protocol === allowed.protocol &&
+      target.hostname  === allowed.hostname &&
+      target.port      === allowed.port
+    );
+  } catch (_e) {
+    return false;
+  }
+}
+
 // Fetches a binary URL into a Buffer. Used to pull the PDF from the server
 // before rendering it for print.
 function downloadBuffer(url, headers = {}) {
@@ -399,9 +428,12 @@ ipcMain.handle(
   async (_e, { url, token, filename } = {}) => {
     try {
       if (!url) throw new Error('Missing url');
-      const base = url.startsWith('http') ? url : `${getApiBase()}${url}`;
+      const resolved = url.startsWith('http') ? url : `${getApiBase()}${url}`;
+      if (!isAllowedApiUrl(resolved)) {
+        return { success: false, error: 'URL not permitted' };
+      }
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const buf = await downloadBuffer(base, headers);
+      const buf = await downloadBuffer(resolved, headers);
 
       const result = await dialog.showSaveDialog(mainWindow, {
         title: 'Save PDF',
@@ -431,6 +463,9 @@ ipcMain.handle(
       const target = url && url.startsWith('http')
         ? url
         : `${getApiBase()}${url || `/api/backup/jobs/${jobId}/download`}`;
+      if (!isAllowedApiUrl(target)) {
+        return { success: false, error: 'URL not permitted' };
+      }
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
       const result = await dialog.showSaveDialog(mainWindow, {
@@ -445,9 +480,16 @@ ipcMain.handle(
         return { success: false, cancelled: true };
       }
 
-      const client = target.startsWith('https:') ? https : http;
+      // Stream directly to disk — backup archives can be large, so we must
+      // not load them into a Buffer first (unlike downloadBuffer).
+      const isHttps = target.startsWith('https:');
+      const client  = isHttps ? https : http;
+      const reqOpts = { headers };
+      if (isHttps && loadConfig().serverUseHttps) {
+        reqOpts.agent = getLanHttpsAgent();
+      }
       await new Promise((resolve, reject) => {
-        const req = client.get(target, { headers }, (res) => {
+        const req = client.get(target, reqOpts, (res) => {
           if (res.statusCode && res.statusCode >= 400) {
             reject(new Error(`HTTP ${res.statusCode}`));
             return;
