@@ -5,6 +5,7 @@ import UsersPage from './pages/users/UsersPage.jsx';
 import EmployeesPage from './pages/users/EmployeesPage.jsx';
 import RolesPage from './pages/users/RolesPage.jsx';
 import RolePermissionsPage from './pages/users/RolePermissionsPage.jsx';
+import TeamPage from './pages/users/TeamPage.jsx';
 import ProductsPage from './pages/products/ProductsPage.jsx';
 import NewProductPage from './pages/products/NewProductPage.jsx';
 import ProductDetailPage from './pages/products/ProductDetailPage.jsx';
@@ -79,30 +80,19 @@ export default function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
 
+          {/* Unified team page — tabs for Users / Employees / Roles */}
           <Route
-            path="/users"
+            path="/team"
             element={
-              <ProtectedRoute permission="user.edit">
-                <UsersPage />
+              <ProtectedRoute>
+                <TeamPage />
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/employees"
-            element={
-              <ProtectedRoute permission="employee.view">
-                <EmployeesPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/roles"
-            element={
-              <ProtectedRoute permission="user.edit">
-                <RolesPage />
-              </ProtectedRoute>
-            }
-          />
+          {/* Legacy deep-links: redirect to the tabbed page */}
+          <Route path="/users"     element={<Navigate to="/team?tab=users"     replace />} />
+          <Route path="/employees" element={<Navigate to="/team?tab=employees" replace />} />
+          <Route path="/roles"     element={<Navigate to="/team?tab=roles"     replace />} />
           <Route
             path="/roles/:id/permissions"
             element={

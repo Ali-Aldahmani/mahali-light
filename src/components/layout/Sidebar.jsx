@@ -75,7 +75,7 @@ const NAV = [
   { to: '/reports', label: 'Reports', icon: BarChart3, anyPermissions: ['report.financial', 'report.sales', 'report.inventory', '*'] },
   { to: '/analytics', label: 'Analytics', icon: Activity, anyPermissions: ['analytics.view', '*'] },
   { section: 'People' },
-  { to: '/employees', label: 'Employees', icon: UsersRound, permission: 'employee.view' },
+  { to: '/team', label: 'Team', icon: UsersRound, anyPermissions: ['user.edit', 'employee.view'] },
   { to: '/attendance', label: 'Attendance', icon: CalendarClock, permission: 'attendance.view_own' },
   { section: 'More' },
   { to: '/approvals', label: 'Approvals', icon: CheckSquare, anyRoles: ['Admin', 'Manager'], badge: 'approvals', badgeTone: 'error' },
