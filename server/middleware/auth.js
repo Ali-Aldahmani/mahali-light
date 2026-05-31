@@ -40,13 +40,31 @@ async function loadUserContext(userId) {
   // req.user.role (short form) or req.user.role_name without breakage.
   user.role = user.role_name;
 
+  // Role-level permissions
   const { rows: permRows } = await query(
     `SELECT p.key FROM role_permissions rp
        JOIN permissions p ON p.id = rp.permission_id
       WHERE rp.role_id = $1`,
     [user.role_id],
   );
-  user.permissions = permRows.map((p) => p.key);
+  const roleKeys = new Set(permRows.map((p) => p.key));
+
+  // User-level overrides: granted=true adds beyond the role, granted=false
+  // removes a permission even when the role provides it.
+  const { rows: overrideRows } = await query(
+    `SELECT p.key, up.granted
+       FROM user_permissions up
+       JOIN permissions p ON p.id = up.permission_id
+      WHERE up.user_id = $1`,
+    [userId],
+  );
+  const effective = new Set(roleKeys);
+  for (const { key, granted } of overrideRows) {
+    if (granted) effective.add(key);
+    else effective.delete(key);
+  }
+
+  user.permissions = Array.from(effective);
   return user;
 }
 

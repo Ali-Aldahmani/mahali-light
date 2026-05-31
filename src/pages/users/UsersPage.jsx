@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { LogOut, Pencil, Plus, Search, UserCog, UserX } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { LogOut, Pencil, Plus, Search, Shield, UserCog, UserX } from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
@@ -17,6 +18,7 @@ import { toast } from '../../store/toastStore.js';
 import { timeAgo } from '../../utils/format.js';
 
 export default function UsersPage() {
+  const navigate = useNavigate();
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const currentUserId = useAuthStore((s) => s.user?.id);
 
@@ -124,6 +126,16 @@ export default function UsersPage() {
         align: 'right',
         render: (row) => (
           <div className="flex items-center justify-end gap-1">
+            <PermissionGate permission="user.change_role">
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={<Shield size={14} />}
+                onClick={() => navigate(`/team/users/${row.id}/permissions`)}
+              >
+                Permissions
+              </Button>
+            </PermissionGate>
             <PermissionGate permission="user.edit">
               <Button
                 variant="ghost"

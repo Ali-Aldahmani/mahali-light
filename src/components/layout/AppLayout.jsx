@@ -46,6 +46,7 @@ import {
 const TITLES = {
   '/dashboard': 'Dashboard',
   '/team': 'Team',
+  '/team/users': 'User Permissions',
   '/users': 'Team',
   '/employees': 'Team',
   '/roles': 'Roles & Permissions',

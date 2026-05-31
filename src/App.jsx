@@ -6,6 +6,7 @@ import EmployeesPage from './pages/users/EmployeesPage.jsx';
 import RolesPage from './pages/users/RolesPage.jsx';
 import RolePermissionsPage from './pages/users/RolePermissionsPage.jsx';
 import TeamPage from './pages/users/TeamPage.jsx';
+import UserPermissionsPage from './pages/users/UserPermissionsPage.jsx';
 import ProductsPage from './pages/products/ProductsPage.jsx';
 import NewProductPage from './pages/products/NewProductPage.jsx';
 import ProductDetailPage from './pages/products/ProductDetailPage.jsx';
@@ -86,6 +87,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <TeamPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/team/users/:id/permissions"
+            element={
+              <ProtectedRoute permission="user.change_role">
+                <UserPermissionsPage />
               </ProtectedRoute>
             }
           />

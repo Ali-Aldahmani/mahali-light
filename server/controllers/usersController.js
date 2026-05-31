@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const { z } = require('zod');
-const { query } = require('../db/postgres');
+const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
@@ -328,4 +328,151 @@ async function forceLogout(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, create, update, softDelete, forceLogout };
+// ---------------------------------------------------------------------------
+// Per-user permission overrides
+// ---------------------------------------------------------------------------
+
+async function getPermissions(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    // User + role info
+    const { rows: userRows } = await query(
+      `SELECT u.id, u.username, r.id AS role_id, r.name AS role_name
+         FROM users u LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.id = $1`,
+      [id],
+    );
+    if (!userRows.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
+    const u = userRows[0];
+
+    // All permissions in the system (for the full matrix)
+    const { rows: allPerms } = await query(
+      `SELECT id, key, label, module FROM permissions ORDER BY module, key`,
+    );
+
+    // Role's permissions
+    const { rows: rolePermRows } = await query(
+      `SELECT p.key FROM role_permissions rp
+         JOIN permissions p ON p.id = rp.permission_id
+        WHERE rp.role_id = $1`,
+      [u.role_id],
+    );
+    const roleKeys = new Set(rolePermRows.map((r) => r.key));
+
+    // User-level overrides
+    const { rows: overrideRows } = await query(
+      `SELECT p.key, up.granted
+         FROM user_permissions up
+         JOIN permissions p ON p.id = up.permission_id
+        WHERE up.user_id = $1`,
+      [id],
+    );
+    const userOverrides = Object.fromEntries(
+      overrideRows.map((r) => [r.key, r.granted]),
+    );
+
+    // Effective set
+    const effective = new Set(roleKeys);
+    for (const [key, granted] of Object.entries(userOverrides)) {
+      if (granted) effective.add(key);
+      else effective.delete(key);
+    }
+
+    return ok(res, {
+      userId: u.id,
+      username: u.username,
+      roleId: u.role_id,
+      roleName: u.role_name,
+      rolePermissionKeys: Array.from(roleKeys),
+      userOverrides,
+      effectiveKeys: Array.from(effective),
+      allPermissions: allPerms,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+const setPermissionsSchema = z.object({
+  effectiveKeys: z.array(z.string()).default([]),
+});
+
+async function setPermissions(req, res, next) {
+  try {
+    const { id } = req.params;
+    const body = setPermissionsSchema.parse(req.body || {});
+
+    // Load role permissions to compute the delta
+    const { rows: userRows } = await query(
+      `SELECT u.id, r.id AS role_id FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
+      [id],
+    );
+    if (!userRows.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
+    const roleId = userRows[0].role_id;
+
+    const { rows: rolePermRows } = await query(
+      `SELECT p.id AS perm_id, p.key
+         FROM role_permissions rp
+         JOIN permissions p ON p.id = rp.permission_id
+        WHERE rp.role_id = $1`,
+      [roleId],
+    );
+    const roleKeys = new Set(rolePermRows.map((r) => r.key));
+    const rolePermMap = Object.fromEntries(rolePermRows.map((r) => [r.key, r.perm_id]));
+
+    // Load all permissions by key → id
+    const { rows: allPerms } = await query(`SELECT id, key FROM permissions`);
+    const permIdMap = Object.fromEntries(allPerms.map((p) => [p.key, p.id]));
+
+    const desiredKeys = new Set(body.effectiveKeys);
+
+    // Build the overrides: only store rows that DIFFER from the role default.
+    // granted=true  → desired but role doesn't have it (extra grant)
+    // granted=false → not desired but role has it   (explicit deny)
+    const overrides = [];
+    for (const key of desiredKeys) {
+      if (!roleKeys.has(key)) {
+        const permId = permIdMap[key];
+        if (permId) overrides.push({ permId, granted: true });
+      }
+    }
+    for (const key of roleKeys) {
+      if (!desiredKeys.has(key)) {
+        const permId = rolePermMap[key] || permIdMap[key];
+        if (permId) overrides.push({ permId, granted: false });
+      }
+    }
+
+    // Replace all user_permissions rows atomically
+    await withTransaction(async (client) => {
+      await client.query('DELETE FROM user_permissions WHERE user_id = $1', [id]);
+      for (const { permId, granted } of overrides) {
+        await client.query(
+          `INSERT INTO user_permissions (user_id, permission_id, granted)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, permission_id) DO UPDATE SET granted = EXCLUDED.granted`,
+          [id, permId, granted],
+        );
+      }
+    });
+
+    await logActivity({
+      entityType: 'user',
+      entityId: id,
+      action: 'user.permissions_updated',
+      performedBy: req.user.id,
+      newValue: { overridesCount: overrides.length },
+    });
+
+    return ok(res, { updated: true, overridesCount: overrides.length });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { list, getOne, create, update, softDelete, forceLogout, getPermissions, setPermissions };

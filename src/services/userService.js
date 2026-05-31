@@ -30,3 +30,11 @@ export function deactivateUser(id) {
 export function forceLogout(id) {
   return apiPost(`/users/${id}/force-logout`);
 }
+
+export function getUserPermissions(id) {
+  return apiGet(`/users/${id}/permissions`);
+}
+
+export function setUserPermissions(id, effectiveKeys) {
+  return apiPut(`/users/${id}/permissions`, { effectiveKeys });
+}
