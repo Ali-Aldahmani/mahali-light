@@ -1,6 +1,6 @@
 {
   "name": "mahali-light",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Bytecra POS — Multi-PC Electron POS for electrical retail (UAE).",
   "main": "electron/main.js",
   "author": {
