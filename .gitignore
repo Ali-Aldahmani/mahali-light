@@ -30,7 +30,7 @@ backups/
 # TLS certificates — auto-generated private keys must never be committed
 tls/
 
-# Logs
+# Logs (includes PM2 logs written to logs/)
 logs/
 *.log
 

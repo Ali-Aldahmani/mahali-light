@@ -29,7 +29,12 @@
     "test:coverage": "vitest run --coverage",
     "server": "node server/index.js",
     "migrate": "node server/db/migrate.js",
-    "seed": "node server/db/seed.js"
+    "seed": "node server/db/seed.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop mahali-light",
+    "pm2:restart": "pm2 restart mahali-light",
+    "pm2:logs": "pm2 logs mahali-light",
+    "pm2:status": "pm2 status"
   },
   "build": {
     "appId": "com.bytecra.pos",
