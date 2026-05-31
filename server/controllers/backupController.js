@@ -228,11 +228,24 @@ const settingsSchema = z.object({
   pg_restore_path: z.string().max(500).nullable().optional(),
 });
 
+function getBackupKey() {
+  const raw = process.env.MAHALI_BACKUP_SECRET;
+  if (!raw) {
+    throw new AppError(
+      ERROR_CODES.CONFIGURATION_ERROR || 'CONFIGURATION_ERROR',
+      'MAHALI_BACKUP_SECRET is not set — cannot encrypt NAS credentials.',
+      { status: 500 },
+    );
+  }
+  // Derive a 32-byte key from the secret (AES-256 requires exactly 32 bytes).
+  return Buffer.from(raw.padEnd(32).slice(0, 32));
+}
+
 function encryptCredentials(value) {
   if (!value) return null;
-  const key = (process.env.MAHALI_BACKUP_SECRET || 'mahali-backup-default').padEnd(32).slice(0, 32);
+  const key = getBackupKey();
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(key), iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const enc = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return JSON.stringify({

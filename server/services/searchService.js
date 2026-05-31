@@ -21,8 +21,14 @@ async function globalSearch(term, { userId, permissions = [] } = {}) {
     returns: [],
   };
 
+  // Build the set of queries gated by the caller's permissions, then fire them
+  // all in parallel with Promise.all instead of sequentially.  Each independent
+  // query can use a separate pool connection; the total latency becomes the
+  // latency of the slowest single query rather than the sum of all queries.
+  const tasks = [];
+
   if (can('product.view')) {
-    const { rows } = await query(
+    tasks.push(['products', query(
       `SELECT p.id, p.name, v.sku, v.barcode, v.id AS variant_id
          FROM products p
          JOIN product_variants v ON v.product_id = p.id
@@ -31,24 +37,22 @@ async function globalSearch(term, { userId, permissions = [] } = {}) {
         ORDER BY p.name
         LIMIT ${LIMIT_PER_TYPE}`,
       [q],
-    );
-    out.products = rows;
+    )]);
   }
 
   if (can('customer.view')) {
-    const { rows } = await query(
+    tasks.push(['customers', query(
       `SELECT id, name, phone
          FROM customers
         WHERE is_active = true AND (name ILIKE $1 OR phone ILIKE $1)
         ORDER BY name
         LIMIT ${LIMIT_PER_TYPE}`,
       [q],
-    );
-    out.customers = rows;
+    )]);
   }
 
   if (can('invoice.view')) {
-    const { rows } = await query(
+    tasks.push(['invoices', query(
       `SELECT i.id, i.invoice_number, c.name AS customer_name
          FROM invoices i
          LEFT JOIN customers c ON c.id = i.customer_id
@@ -56,65 +60,59 @@ async function globalSearch(term, { userId, permissions = [] } = {}) {
         ORDER BY i.created_at DESC
         LIMIT ${LIMIT_PER_TYPE}`,
       [q],
-    );
-    out.invoices = rows;
+    )]);
   }
 
   if (can('supplier.view')) {
-    const { rows } = await query(
+    tasks.push(['suppliers', query(
       `SELECT id, name FROM suppliers
         WHERE is_active = true AND name ILIKE $1
         ORDER BY name LIMIT ${LIMIT_PER_TYPE}`,
       [q],
-    );
-    out.suppliers = rows;
-  }
-
-  if (can('employee.view')) {
-    const { rows } = await query(
-      `SELECT id, name FROM employees
-        WHERE is_active = true AND name ILIKE $1
-        ORDER BY name LIMIT ${LIMIT_PER_TYPE}`,
-      [q],
-    );
-    out.employees = rows;
-  }
-
-  if (can('supplier.view')) {
-    const { rows } = await query(
+    )]);
+    tasks.push(['purchase_orders', query(
       `SELECT id, po_number, supplier_id
          FROM purchase_orders
         WHERE po_number ILIKE $1
         ORDER BY created_at DESC
         LIMIT ${LIMIT_PER_TYPE}`,
       [q],
-    );
-    out.purchase_orders = rows;
+    )]);
+  }
+
+  if (can('employee.view')) {
+    tasks.push(['employees', query(
+      `SELECT id, name FROM employees
+        WHERE is_active = true AND name ILIKE $1
+        ORDER BY name LIMIT ${LIMIT_PER_TYPE}`,
+      [q],
+    )]);
   }
 
   if (can('warranty.view')) {
-    const { rows } = await query(
+    tasks.push(['warranties', query(
       `SELECT id, warranty_number, serial_number
          FROM warranties
         WHERE warranty_number ILIKE $1 OR serial_number ILIKE $1
         ORDER BY created_at DESC
         LIMIT ${LIMIT_PER_TYPE}`,
       [q],
-    );
-    out.warranties = rows;
+    )]);
   }
 
   if (can('return.request') || can('return.approve')) {
-    const { rows } = await query(
+    tasks.push(['returns', query(
       `SELECT id, request_number
          FROM return_requests
         WHERE request_number ILIKE $1
         ORDER BY created_at DESC
         LIMIT ${LIMIT_PER_TYPE}`,
       [q],
-    );
-    out.returns = rows;
+    )]);
   }
+
+  const results = await Promise.all(tasks.map(([, p]) => p));
+  tasks.forEach(([key], i) => { out[key] = results[i].rows; });
 
   return out;
 }

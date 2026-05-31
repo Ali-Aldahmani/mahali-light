@@ -36,6 +36,9 @@ async function loadUserContext(userId) {
   );
   if (!rows.length) return null;
   const user = rows[0];
+  // Expose a canonical `role` field so controllers can use either
+  // req.user.role (short form) or req.user.role_name without breakage.
+  user.role = user.role_name;
 
   const { rows: permRows } = await query(
     `SELECT p.key FROM role_permissions rp

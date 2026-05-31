@@ -7,9 +7,21 @@ const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
 const TIMEOUT_LOGOUT_MS = 30 * 60 * 1000;
 
-function attachSocket(httpServer) {
+// allowedOrigins is the same Set used by the Express CORS middleware so both
+// the HTTP and WebSocket upgrade paths enforce the same origin policy.
+function attachSocket(httpServer, allowedOrigins = new Set()) {
   const io = new Server(httpServer, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
+    cors: {
+      origin: (origin, cb) => {
+        // Allow: no origin (same-origin / curl), Electron file:// ("null"),
+        // or an explicitly whitelisted web origin.
+        if (!origin || origin === 'null' || allowedOrigins.has(origin)) {
+          return cb(null, true);
+        }
+        cb(new Error(`Origin "${origin}" not allowed`));
+      },
+      methods: ['GET', 'POST'],
+    },
   });
 
   // Authenticate the socket via JWT in handshake.auth.token (or query).
@@ -95,8 +107,8 @@ function attachSocket(httpServer) {
            FROM user_sessions s
            JOIN users u ON u.id = s.user_id
           WHERE s.logout_at IS NULL
-            AND s.last_activity_at < NOW() - ($1 || ' minutes')::interval`,
-        [String(cutoffMin)],
+            AND s.last_activity_at < NOW() - make_interval(mins => $1)`,
+        [cutoffMin],
       );
       for (const r of rows) {
         await query(

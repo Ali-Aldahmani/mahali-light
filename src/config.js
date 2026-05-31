@@ -8,9 +8,17 @@ const SERVER_PORT =
   import.meta.env.VITE_SERVER_PORT ||
   3000;
 
-export const API_BASE = `http://${SERVER_IP}:${SERVER_PORT}/api`;
-export const SOCKET_URL = `http://${SERVER_IP}:${SERVER_PORT}`;
-export const FILES_BASE = `http://${SERVER_IP}:${SERVER_PORT}/files`;
+// Use https:// when the Electron config reports that the server has TLS enabled.
+// The preload bridge exposes serverUseHttps from appConfig.json so the renderer
+// always matches the scheme the server is actually listening on.
+const SERVER_USE_HTTPS =
+  typeof window !== 'undefined' && window.electron?.serverUseHttps === true;
+
+const SCHEME = SERVER_USE_HTTPS ? 'https' : 'http';
+
+export const API_BASE   = `${SCHEME}://${SERVER_IP}:${SERVER_PORT}/api`;
+export const SOCKET_URL = `${SCHEME}://${SERVER_IP}:${SERVER_PORT}`;
+export const FILES_BASE = `${SCHEME}://${SERVER_IP}:${SERVER_PORT}/files`;
 export const SERVER_HOST = SERVER_IP;
 
 // Convert a stored relative image path (e.g. "products/<id>/123.webp")

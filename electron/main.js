@@ -165,7 +165,33 @@ app.on('window-all-closed', () => {
 });
 
 ipcMain.handle('config:get', () => loadConfig());
-ipcMain.handle('config:set', (_e, patch) => saveConfig(patch));
+
+// config:set — only allow known keys with strict value types.
+// A compromised renderer could otherwise overwrite arbitrary config keys
+// (e.g. redirect serverIp to an attacker-controlled host).
+const CONFIG_PATCH_VALIDATORS = {
+  serverIp:       (v) => typeof v === 'string' && v.length > 0 && v.length <= 253,
+  serverPort:     (v) => Number.isInteger(v) && v > 0 && v < 65536,
+  serverUseHttps: (v) => typeof v === 'boolean',
+  mode:           (v) => v === 'server' || v === 'client',
+  pcIdentifier:   (v) => typeof v === 'string' && v.length > 0 && v.length <= 50,
+  printers:       (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
+  display:        (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
+  updater:        (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
+};
+ipcMain.handle('config:set', (_e, patch) => {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    return { error: 'Invalid patch object' };
+  }
+  const sanitized = {};
+  for (const [key, value] of Object.entries(patch)) {
+    const validate = CONFIG_PATCH_VALIDATORS[key];
+    if (!validate) return { error: `Unknown config key: "${key}"` };
+    if (!validate(value)) return { error: `Invalid value for config key "${key}"` };
+    sanitized[key] = value;
+  }
+  return saveConfig(sanitized);
+});
 ipcMain.handle('network:local-ips', () => appConfig.localIps());
 ipcMain.handle('window:toggle-fullscreen', () => {
   if (!mainWindow) return false;
@@ -385,7 +411,14 @@ async function printPdfBuffer(buffer, options = {}) {
   });
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function loadInvoicePdf(invoiceId, kind, token) {
+  // Validate before interpolating into the URL — prevents path-segment
+  // injection from a compromised renderer (e.g. "../../admin/something").
+  if (!invoiceId || !UUID_RE.test(String(invoiceId))) {
+    throw new Error('Invalid invoice ID');
+  }
   const base = getApiBase();
   const url = `${base}/api/invoices/${invoiceId}/${kind === 'receipt' ? 'receipt' : 'pdf'}`;
   const headers = token ? { Authorization: `Bearer ${token}` } : {};

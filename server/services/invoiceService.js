@@ -114,42 +114,61 @@ function computeLineFigures(item) {
 // Persist the cart items for a draft invoice. Removes existing rows and
 // inserts the new ones. Snapshots product_name/variant_attributes/sku from
 // product_variants at this moment so a draft re-save reflects current data.
+//
+// Batch approach: two queries load ALL variants + attributes at once (via
+// ANY($1)) instead of 2 queries per item, cutting a 20-item invoice from
+// 40 queries + inserts down to 2 + 20 inserts.
 async function replaceItems(client, invoiceId, items) {
   await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [
     invoiceId,
   ]);
-  let position = 0;
-  for (const raw of items) {
-    if (!raw.variant_id) continue;
-    const { rows: variantRows } = await client.query(
+
+  const validItems = items.filter((i) => i.variant_id);
+  if (!validItems.length) return;
+
+  // Deduplicate variant IDs — a cart may have the same variant twice.
+  const variantIds = [...new Set(validItems.map((i) => i.variant_id))];
+
+  const [{ rows: variantRows }, { rows: attrRows }] = await Promise.all([
+    client.query(
       `SELECT v.id, v.product_id, v.sku, v.cost_price, v.selling_price,
               p.name AS product_name, p.unit_label
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
-        WHERE v.id = $1`,
-      [raw.variant_id],
-    );
-    if (!variantRows.length) {
+        WHERE v.id = ANY($1)`,
+      [variantIds],
+    ),
+    client.query(
+      `SELECT pva.variant_id, a.name, a.unit, av.value
+         FROM product_variant_attributes pva
+         JOIN product_attribute_values av ON av.id = pva.attribute_value_id
+         JOIN product_attributes a        ON a.id = av.attribute_id
+        WHERE pva.variant_id = ANY($1)`,
+      [variantIds],
+    ),
+  ]);
+
+  const variantMap = new Map(variantRows.map((v) => [v.id, v]));
+
+  // Group flat attribute rows into { variant_id → { name: value } } map.
+  const attrMap = new Map();
+  for (const r of attrRows) {
+    if (!attrMap.has(r.variant_id)) attrMap.set(r.variant_id, {});
+    const attrs = attrMap.get(r.variant_id);
+    attrs[r.name] = r.unit ? `${r.value}${r.unit}` : r.value;
+  }
+
+  let position = 0;
+  for (const raw of validItems) {
+    const v = variantMap.get(raw.variant_id);
+    if (!v) {
       throw new AppError(
         ERROR_CODES.RESOURCE_NOT_FOUND,
         `Variant ${raw.variant_id} not found.`,
         { status: 404 },
       );
     }
-    const v = variantRows[0];
-
-    const { rows: attrRows } = await client.query(
-      `SELECT a.name, a.unit, av.value
-         FROM product_variant_attributes pva
-         JOIN product_attribute_values av ON av.id = pva.attribute_value_id
-         JOIN product_attributes a ON a.id = av.attribute_id
-        WHERE pva.variant_id = $1`,
-      [raw.variant_id],
-    );
-    const variantAttrs = attrRows.reduce((acc, r) => {
-      acc[r.name] = r.unit ? `${r.value}${r.unit}` : r.value;
-      return acc;
-    }, {});
+    const variantAttrs = attrMap.get(raw.variant_id) || {};
 
     const item = {
       quantity: money(raw.quantity),

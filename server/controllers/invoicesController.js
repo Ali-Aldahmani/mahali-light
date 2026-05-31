@@ -180,41 +180,42 @@ async function list(req, res, next) {
       params,
     );
 
-    // Summary cards (always today + month-to-date roll-ups).
-    const { rows: summaryRows } = await query(`
-      SELECT
-        COALESCE(SUM(total) FILTER (
-          WHERE status = 'confirmed'
-            AND created_at::date = CURRENT_DATE
-        ), 0)::numeric AS revenue_today,
-        COUNT(*) FILTER (
-          WHERE status = 'confirmed'
-            AND created_at::date = CURRENT_DATE
-        )::int AS invoices_today,
-        COALESCE(SUM(balance_due) FILTER (
-          WHERE status = 'confirmed' AND balance_due > 0
-        ), 0)::numeric AS outstanding,
-        COALESCE(SUM(total) FILTER (
-          WHERE status = 'confirmed'
-            AND created_at >= date_trunc('month', CURRENT_DATE)
-        ), 0)::numeric AS revenue_month
-      FROM invoices
-    `);
+    // Summary cards — today + month-to-date roll-ups.
+    // Only computed on the first page: the aggregate is identical on every
+    // subsequent page and running a full-table scan on page 2+ is wasted work.
+    let totals = { revenueToday: 0, invoicesToday: 0, outstanding: 0, revenueMonth: 0 };
+    if (page === 1) {
+      const { rows: summaryRows } = await query(`
+        SELECT
+          COALESCE(SUM(total) FILTER (
+            WHERE status = 'confirmed'
+              AND created_at::date = CURRENT_DATE
+          ), 0)::numeric AS revenue_today,
+          COUNT(*) FILTER (
+            WHERE status = 'confirmed'
+              AND created_at::date = CURRENT_DATE
+          )::int AS invoices_today,
+          COALESCE(SUM(balance_due) FILTER (
+            WHERE status = 'confirmed' AND balance_due > 0
+          ), 0)::numeric AS outstanding,
+          COALESCE(SUM(total) FILTER (
+            WHERE status = 'confirmed'
+              AND created_at >= date_trunc('month', CURRENT_DATE)
+          ), 0)::numeric AS revenue_month
+        FROM invoices
+      `);
+      totals = {
+        revenueToday: Number(summaryRows[0].revenue_today),
+        invoicesToday: summaryRows[0].invoices_today,
+        outstanding:   Number(summaryRows[0].outstanding),
+        revenueMonth:  Number(summaryRows[0].revenue_month),
+      };
+    }
 
     return ok(
       res,
       rows.map((r) => shapeInvoice(r)),
-      {
-        page,
-        limit,
-        total: countRows[0].total,
-        totals: {
-          revenueToday: Number(summaryRows[0].revenue_today),
-          invoicesToday: summaryRows[0].invoices_today,
-          outstanding: Number(summaryRows[0].outstanding),
-          revenueMonth: Number(summaryRows[0].revenue_month),
-        },
-      },
+      { page, limit, total: countRows[0].total, totals },
     );
   } catch (err) {
     next(err);

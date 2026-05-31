@@ -126,8 +126,24 @@ function assertJwtSecret() {
   }
 }
 
+function assertBackupSecret() {
+  const secret = process.env.MAHALI_BACKUP_SECRET || '';
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (!secret) {
+    const msg =
+      '[startup] MAHALI_BACKUP_SECRET is not set. NAS credentials cannot be encrypted safely.\n' +
+      '  Generate one with: node -e "require(\'crypto\').randomBytes(32,(e,b)=>console.log(b.toString(\'hex\')))"';
+    if (isProduction) {
+      throw new Error(msg);
+    } else {
+      console.warn('\x1b[33m⚠  WARN\x1b[0m', msg);
+    }
+  }
+}
+
 async function bootstrap() {
   assertJwtSecret();
+  assertBackupSecret();
   registerProcessHandlers();
   await runMigrations();
   await runSeed();
@@ -170,7 +186,19 @@ async function bootstrap() {
     );
   }
 
-  const io = attachSocket(server);
+  // Build the origin allowlist early so both the HTTP CORS middleware and the
+  // Socket.IO server use the same policy.  Three cases are always permitted:
+  //   • No Origin header  — same-origin requests, curl, health checks.
+  //   • Origin: "null"    — Electron renderer (file:// → Chromium sends "null").
+  //   • CORS_ORIGINS list — comma-separated explicit origins from the env.
+  const allowedOrigins = new Set(
+    (process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean),
+  );
+
+  const io = attachSocket(server, allowedOrigins);
   app.set('io', io);
 
   // Security headers via helmet.
@@ -209,25 +237,9 @@ async function bootstrap() {
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );
-  // Explicit origin allow-list — replaces the previous `origin: true` wildcard
-  // that reflected any Origin header back with credentials allowed.
-  //
-  // Three cases are always allowed without configuration:
-  //   • No Origin header  — same-origin browser requests, curl, health checks.
-  //   • Origin: "null"    — Electron renderer in production: the app loads from
-  //                         file://, which Chromium encodes as the string "null".
-  //                         Blocking this would break the desktop app entirely.
-  //   • CORS_ORIGINS list — comma-separated explicit origins from the environment
-  //                         (e.g. http://localhost:5173 for the Vite dev server).
-  //
-  // Everything else receives a 403 so that arbitrary websites on the same LAN
+  // CORS — uses the same allowedOrigins Set created above (before attachSocket).
+  // Everything not in the list receives a 403 so arbitrary websites on the LAN
   // cannot make credentialed requests to the API from a browser tab.
-  const allowedOrigins = new Set(
-    (process.env.CORS_ORIGINS || '')
-      .split(',')
-      .map((o) => o.trim())
-      .filter(Boolean),
-  );
   app.use(
     cors({
       origin: (origin, cb) => {

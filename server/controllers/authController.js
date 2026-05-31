@@ -17,10 +17,13 @@ const loginSchema = z.object({
   hostname: z.string().max(100).optional(),
 });
 
+// Use only the TCP socket address for login-attempt logging.
+// Trusting the X-Forwarded-For header without a configured proxy allowlist
+// lets any client inject a fake IP and pollute the audit log.  The server
+// runs directly on the LAN (no reverse proxy), so the socket address is
+// always authoritative.
 function clientIp(req) {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
-  return req.ip || (req.socket && req.socket.remoteAddress) || null;
+  return req.socket?.remoteAddress || req.ip || null;
 }
 
 async function recordAttempt({ username, ipAddress, pcIdentifier, success }) {

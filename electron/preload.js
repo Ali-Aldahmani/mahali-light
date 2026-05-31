@@ -36,6 +36,7 @@ const bootstrap = async () => {
       ...api,
       serverIp: cfg.serverIp,
       serverPort: cfg.serverPort,
+      serverUseHttps: cfg.serverUseHttps ?? false,
       mode: cfg.mode,
       pcIdentifier: cfg.pcIdentifier,
     });
