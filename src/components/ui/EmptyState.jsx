@@ -1,3 +1,4 @@
+import { isValidElement, createElement } from 'react';
 import { cn } from '../../utils/cn.js';
 
 export default function EmptyState({
@@ -7,6 +8,15 @@ export default function EmptyState({
   action = null,
   className = '',
 }) {
+  // `icon` may be either a pre-rendered JSX element (<ShieldCheck size={24} />)
+  // or a component reference (ShieldCheck).  Lucide icons are forwardRef objects
+  // so typeof === 'object', not 'function' — handle both cases.
+  const iconEl = icon
+    ? isValidElement(icon)
+      ? icon
+      : createElement(icon, { size: 24 })
+    : null;
+
   return (
     <div
       className={cn(
@@ -14,9 +24,9 @@ export default function EmptyState({
         className,
       )}
     >
-      {icon && (
+      {iconEl && (
         <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-accent-light text-accent">
-          {icon}
+          {iconEl}
         </div>
       )}
       <h3 className="text-base font-semibold text-ink">{title}</h3>

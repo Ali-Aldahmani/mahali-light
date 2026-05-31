@@ -64,7 +64,7 @@ export default function StartStockCountModal({ open, onClose, onCreated }) {
 
   const categoryOptions = (categoriesFlat || []).map((c) => ({
     value: c.id,
-    label: c.path?.map((p) => p.name).join(' / ') || c.name,
+    label: (typeof c.path === 'string' ? c.path : c.path?.map?.((p) => p.name).join(' / ')) || c.name,
   }));
 
   return createPortal(

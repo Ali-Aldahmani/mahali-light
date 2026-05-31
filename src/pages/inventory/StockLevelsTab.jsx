@@ -137,7 +137,7 @@ export default function StockLevelsTab() {
       { value: null, label: 'All categories' },
       ...(categoriesFlat || []).map((c) => ({
         value: c.id,
-        label: c.path?.map((p) => p.name).join(' / ') || c.name,
+        label: (typeof c.path === 'string' ? c.path : c.path?.map?.((p) => p.name).join(' / ')) || c.name,
       })),
     ],
     [categoriesFlat],
