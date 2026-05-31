@@ -238,6 +238,39 @@ function classifyError(err) {
     };
   }
 
+  // Zod validation errors — format into a human-readable message instead of
+  // dumping the raw ZodError JSON string that Zod uses as its .message.
+  if (err?.name === 'ZodError' && Array.isArray(err.errors)) {
+    const structured = err.errors.map((ze) => ({
+      field: ze.path.join('.') || null,
+      message: ze.message,
+      code: ze.code,
+    }));
+
+    // Build a short human-readable summary: "store_email: Invalid email"
+    // or "3 errors: store_name: Required; store_email: Invalid email; …"
+    const lines = structured.map((d) => {
+      if (!d.field) return d.message;
+      // Convert dotted path to a readable label: "store.store_email" → "store email"
+      const label = d.field.split('.').pop().replace(/_/g, ' ');
+      return `${label}: ${d.message}`;
+    });
+    const humanMessage =
+      lines.length === 1
+        ? lines[0]
+        : `${lines.length} validation errors — ${lines.slice(0, 3).join('; ')}`;
+
+    return {
+      code: ERROR_CODES.VALIDATION_FAILED,
+      message: humanMessage,
+      status: 400,
+      details: structured,
+      field: structured[0]?.field || null,
+      severity: 'warning',
+      stack: err.stack,
+    };
+  }
+
   // PostgreSQL errors
   const pgCode = err?.code;
   if (pgCode && String(pgCode).startsWith('23')) {

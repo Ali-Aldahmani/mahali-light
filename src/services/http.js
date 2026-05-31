@@ -65,10 +65,30 @@ http.interceptors.response.use(
     }
 
     const { status, data } = err.response;
-    const code = data?.error?.code;
-    const message = data?.error?.message || 'Request failed.';
+    const code    = data?.error?.code;
+    const rawMsg  = data?.error?.message || 'Request failed.';
     const details = data?.error?.details;
-    const field = data?.error?.field;
+    const field   = data?.error?.field;
+
+    // When the server returns structured validation details, build a concise
+    // human-readable message so toasts never show raw JSON or Zod internals.
+    const message = (() => {
+      if (
+        code === 'VALIDATION_FAILED' &&
+        Array.isArray(details) &&
+        details.length > 0
+      ) {
+        const lines = details.map((d) => {
+          if (!d.field) return d.message;
+          const label = d.field.split('.').pop().replace(/_/g, ' ');
+          return `${label}: ${d.message}`;
+        });
+        return lines.length === 1
+          ? lines[0]
+          : lines.slice(0, 3).join('\n');
+      }
+      return rawMsg;
+    })();
 
     addBreadcrumb('api_error', { method, url, status, code, message });
 

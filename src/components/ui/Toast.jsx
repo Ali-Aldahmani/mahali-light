@@ -49,7 +49,7 @@ export default function ToastViewport() {
                 {t.title && (
                   <p className="text-sm font-semibold text-ink leading-tight">{t.title}</p>
                 )}
-                <p className="text-sm text-ink-muted break-words">{t.message}</p>
+                <p className="text-sm text-ink-muted break-words whitespace-pre-line">{t.message}</p>
                 {t.actionLabel && t.onAction && (
                   <button
                     type="button"

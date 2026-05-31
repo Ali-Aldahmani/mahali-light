@@ -184,7 +184,14 @@ export default function SetupWizardPage() {
         title="Store profile"
         subtitle="Shown on invoices and receipts."
         onBack={() => setStep(1)}
-        onNext={() => setStep(3)}
+        onNext={() => {
+          const emailVal = store.store_email.trim();
+          if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+            toast.error('store email: Please enter a valid email address or leave it empty.');
+            return;
+          }
+          setStep(3);
+        }}
         nextDisabled={!store.store_name || !store.store_address || !store.store_phone}
       >
         <div className="space-y-3">
