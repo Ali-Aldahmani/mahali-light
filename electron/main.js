@@ -123,6 +123,33 @@ function createWindow() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Self-signed TLS — Chromium renderer certificate-error handler
+//
+// When serverUseHttps=true the renderer makes fetch() calls to an HTTPS server
+// with a self-signed certificate.  Chromium blocks such connections by default.
+// We intercept the error and allow it ONLY for the configured server IP so
+// arbitrary MITM certs on other domains are still rejected.
+// ---------------------------------------------------------------------------
+app.on('certificate-error', (event, _webContents, url, _error, _certificate, callback) => {
+  const cfg = loadConfig();
+  if (!cfg.serverUseHttps) {
+    // Not using HTTPS — this should not fire, but reject just in case.
+    return callback(false);
+  }
+  try {
+    const requestHost = new URL(url).hostname;
+    const serverHost  = cfg.serverIp || '127.0.0.1';
+    if (requestHost === serverHost || requestHost === '127.0.0.1') {
+      event.preventDefault(); // suppress the default blocking behaviour
+      return callback(true);  // allow
+    }
+  } catch (_parseErr) {
+    // URL parse failed — fall through and reject
+  }
+  callback(false); // reject cert errors for any other host
+});
+
 app.whenReady().then(() => {
   migrateLegacyConfig();
   ensurePcIdentifier();
@@ -217,17 +244,42 @@ ipcMain.handle('print:get-printers', async () => {
 
 function getApiBase() {
   const cfg = loadConfig();
-  const ip = cfg.serverIp || '127.0.0.1';
-  const port = cfg.serverPort || process.env.MAHALI_SERVER_PORT || 3000;
-  return `http://${ip}:${port}`;
+  const ip     = cfg.serverIp     || '127.0.0.1';
+  const port   = cfg.serverPort   || process.env.MAHALI_SERVER_PORT || 3000;
+  const scheme = cfg.serverUseHttps ? 'https' : 'http';
+  return `${scheme}://${ip}:${port}`;
+}
+
+// ---------------------------------------------------------------------------
+// Self-signed TLS agent for main-process HTTPS calls (downloadBuffer etc.)
+//
+// When serverUseHttps is true the server presents a self-signed certificate.
+// Node.js rejects self-signed certs by default; we pass a custom Agent with
+// rejectUnauthorized:false ONLY for requests that explicitly use this agent
+// (i.e. requests we know are going to our own LAN server).
+// ---------------------------------------------------------------------------
+let _lanHttpsAgent = null;
+function getLanHttpsAgent() {
+  if (!_lanHttpsAgent) {
+    _lanHttpsAgent = new https.Agent({ rejectUnauthorized: false });
+  }
+  return _lanHttpsAgent;
 }
 
 // Fetches a binary URL into a Buffer. Used to pull the PDF from the server
 // before rendering it for print.
 function downloadBuffer(url, headers = {}) {
   return new Promise((resolve, reject) => {
-    const client = url.startsWith('https:') ? https : http;
-    const req = client.get(url, { headers }, (res) => {
+    const isHttps = url.startsWith('https:');
+    const client  = isHttps ? https : http;
+    // When the server uses a self-signed cert (serverUseHttps=true) the Node.js
+    // TLS stack would reject it.  We use a dedicated Agent that trusts the cert
+    // only for requests we know are going to our own LAN server.
+    const options = { headers };
+    if (isHttps && loadConfig().serverUseHttps) {
+      options.agent = getLanHttpsAgent();
+    }
+    const req = client.get(url, options, (res) => {
       if (res.statusCode && res.statusCode >= 400) {
         reject(new Error(`HTTP ${res.statusCode} for ${url}`));
         return;

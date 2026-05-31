@@ -27,6 +27,9 @@ electron/config.local.json
 uploads/
 backups/
 
+# TLS certificates — auto-generated private keys must never be committed
+tls/
+
 # Logs
 logs/
 *.log

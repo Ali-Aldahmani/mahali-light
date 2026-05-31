@@ -1,12 +1,14 @@
 require('dotenv').config();
 
 const http = require('http');
+const https = require('https');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
 
+const { loadTlsOptions } = require('./utils/tlsCert');
 const { runMigrations } = require('./db/migrate');
 const { run: runSeed } = require('./db/seed');
 const { run: runSeedProducts } = require('./db/seedProducts');
@@ -133,7 +135,41 @@ async function bootstrap() {
   await runSeedSettings();
 
   const app = express();
-  const server = http.createServer(app);
+
+  // ---------------------------------------------------------------------------
+  // HTTPS / HTTP server selection
+  //
+  // Set SERVER_USE_HTTPS=true in .env to enable HTTPS.  The server will try
+  // to load a TLS certificate in this order:
+  //   1. TLS_CERT_FILE + TLS_KEY_FILE env vars (external / company CA certs).
+  //   2. <repo>/tls/cert.pem + <repo>/tls/key.pem (manually placed certs).
+  //   3. Auto-generate a self-signed cert into <repo>/tls/ via openssl (runs
+  //      once; cert is reused on every subsequent startup).
+  //
+  // If no certificate is available the server falls back to HTTP and prints a
+  // warning.  Plain HTTP is fine for localhost-only (server + one PC); it is
+  // a risk for multi-PC LAN deployments where passwords and JWT tokens cross
+  // the wire in cleartext.
+  // ---------------------------------------------------------------------------
+  const tlsOptions = loadTlsOptions();
+  const server = tlsOptions
+    ? https.createServer(tlsOptions, app)
+    : http.createServer(app);
+
+  if (tlsOptions) {
+    console.log('[server] TLS enabled — API will be served over HTTPS');
+  } else if (process.env.SERVER_USE_HTTPS === 'true') {
+    console.warn(
+      '[server] \x1b[33m⚠  WARNING\x1b[0m SERVER_USE_HTTPS=true but no certificate could be loaded — ' +
+      'falling back to plain HTTP.  Check TLS_CERT_FILE / TLS_KEY_FILE or ensure openssl is in PATH.',
+    );
+  } else if (process.env.NODE_ENV === 'production') {
+    console.warn(
+      '[server] \x1b[33m⚠  WARNING\x1b[0m Plain HTTP is active.  ' +
+      'For LAN deployments set SERVER_USE_HTTPS=true so passwords and tokens are encrypted in transit.',
+    );
+  }
+
   const io = attachSocket(server);
   app.set('io', io);
 
