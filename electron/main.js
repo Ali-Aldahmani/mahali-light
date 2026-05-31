@@ -110,7 +110,8 @@ function createWindow() {
   const devUrl = 'http://localhost:5173';
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL(devUrl);
-    mainWindow.webContents.openDevTools();
+    // Open DevTools in a detached window so it's always visible
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
