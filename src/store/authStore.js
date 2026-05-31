@@ -3,6 +3,11 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 
 const STORAGE_KEY = 'mahali-light.auth';
 
+// Clear any stale token that may have been persisted to localStorage by an
+// older build.  Without this, upgrading from localStorage→sessionStorage would
+// leave a ghost entry that is never read but also never removed.
+try { localStorage.removeItem(STORAGE_KEY); } catch (_e) { /* ignore */ }
+
 export const useAuthStore = create(
   persist(
     (set, get) => ({
@@ -36,7 +41,11 @@ export const useAuthStore = create(
     }),
     {
       name: STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      // sessionStorage is cleared automatically when the Electron window (or
+      // browser tab) closes, so the user must sign in again on every launch.
+      // localStorage would survive app restarts, which is a security risk for
+      // a shared POS terminal where different employees use the same machine.
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         user: state.user,
         token: state.token,
