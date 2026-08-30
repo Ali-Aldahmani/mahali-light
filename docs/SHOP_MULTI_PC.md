@@ -193,7 +193,7 @@ npm run build
 npm run build:electron
 ```
 
-Installer: `C:\BytecraPOS\release\BytecraPOS-Setup-1.0.1.exe` (version may differ).
+Installer: `C:\BytecraPOS\release\BytecraPOS-Setup-1.1.0.exe` (version may differ).
 
 Copy that `.exe` to a USB stick for the other tills.
 
