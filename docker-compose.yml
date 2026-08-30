@@ -1,0 +1,83 @@
+# Bytecra POS — production Compose (API + PostgreSQL 16).
+# Electron tills stay native Windows apps and connect to the API on the LAN.
+# PostgreSQL is not published to the host or LAN.
+
+name: bytecrapos
+
+services:
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mahali_light}
+      POSTGRES_USER: ${POSTGRES_USER:-mahali}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/backups:/backups
+    networks:
+      - bytecrapos
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # Intentionally no `ports:` — Postgres stays on the Docker network only.
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bytecrapos-api:1.0.1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      # Force Docker DNS even if .env still has PGHOST=localhost (PM2 / host install).
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: ${POSTGRES_USER:-mahali}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-mahali_light}
+      PGPOOL_CONN_MS: '10000'
+      UPLOADS_DIR: /data/uploads
+      MAHALI_UPLOADS_DIR: /data/uploads
+      TLS_DIR: /data/tls
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      MAHALI_PG_BIN_DIR: /usr/lib/postgresql/16/bin
+    ports:
+      - '${API_PORT:-3000}:3000'
+    volumes:
+      - api_uploads:/data/uploads
+      - api_backups:/app/backups
+      - api_tls:/data/tls
+    networks:
+      - bytecrapos
+    shm_size: '256mb'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget -qO- --no-check-certificate https://127.0.0.1:3000/api/health || wget -qO- http://127.0.0.1:3000/api/health || exit 1',
+        ]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 50s
+
+volumes:
+  postgres_data:
+  api_uploads:
+  api_backups:
+  api_tls:
+
+networks:
+  bytecrapos:
+    driver: bridge

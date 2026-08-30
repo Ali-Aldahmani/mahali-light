@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from './http.js';
-import { API_BASE } from '../config.js';
+import { getApiBase } from '../config.js';
 import { useAuthStore } from '../store/authStore.js';
 
 function qs(params) {
@@ -163,7 +163,7 @@ export function runReport(type, params = {}) {
 // binary blob, and we need the browser to trigger a Save As dialog.
 export async function downloadExport(type, format, params = {}) {
   const token = useAuthStore.getState().token;
-  const url = `${API_BASE}/reports/${type}/export${qs({ ...params, format })}`;
+  const url = `${getApiBase()}/reports/${type}/export${qs({ ...params, format })}`;
   const res = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });

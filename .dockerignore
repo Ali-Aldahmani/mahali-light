@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Secrets and local env — never bake into the image
+.env
+.env.*
+!.env.example
+
+# Dependencies and build artifacts
+node_modules
+server/node_modules
+dist
+release
+build
+.vite
+out
+dist-electron
+coverage
+
+# Electron / frontend (API image does not serve the React UI)
+src
+electron
+index.html
+vite.config.js
+tailwind.config.js
+postcss.config.js
+eslint.config.js
+.eslintrc*
+*.config.cjs
+
+# Tests and docs (keep docker/README out of the image)
+tests
+docs
+*.md
+!docker/README.md
+
+# Runtime data
+uploads
+backups
+tls
+logs
+tmp
+temp
+*.log
+*.dump
+*.sql.bak
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+.cursor
+
+# Docker context noise
+docker/postgres/backups/**
+!docker/postgres/backups/.gitkeep

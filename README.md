@@ -1,4 +1,12 @@
-# Mahali Light — Phase 1: Auth & Users
+# Bytecra POS (Mahali Light)
+
+Multi-PC Electron POS for electrical retail (UAE). **Windows tills** in the shop: one **server PC** (PostgreSQL + API) and any number of **client PCs**.
+
+**Shop install (multiple Windows PCs):** **[docker/README.md](docker/README.md)** (Docker API + Postgres) or **[docs/SHOP_MULTI_PC.md](docs/SHOP_MULTI_PC.md)** (PM2).
+
+
+Developer Mac / local loop: [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) and `npm run dev`.
+
 
 A multi-PC POS application for an electrical retail store in the UAE, built as:
 

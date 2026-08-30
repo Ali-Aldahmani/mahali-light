@@ -26,7 +26,7 @@ module.exports = {
       autorestart: true,
 
       // Wait 3 s before a restart so rapid crash-loops don't hammer the DB.
-      restart_delay: 3000,
+      restart_delay: 8000,
 
       // Give up after 10 consecutive crashes within 30 min and mark as
       // errored so the operator is alerted instead of looping forever.

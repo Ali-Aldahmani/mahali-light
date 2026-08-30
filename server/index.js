@@ -358,7 +358,15 @@ async function bootstrap() {
     console.log('[server] client mode — background schedulers disabled');
   }
 
-  const port = Number(process.env.PORT || 3000);
+  const port = Number(process.env.PORT || 3002);
+  server.once('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[server] Port ${port} is already in use by another app.`);
+      console.error('[server] Set PORT in .env to a free port (this machine often has other apps on 3000/3001).');
+      process.exit(1);
+    }
+    throw err;
+  });
   server.listen(port, '0.0.0.0', () => {
     console.log(`[server] mahali-light API listening on http://0.0.0.0:${port}`);
   });

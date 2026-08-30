@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { io } from 'socket.io-client';
-import { SOCKET_URL } from '../config.js';
+import { getSocketUrl } from '../config.js';
 import { useAuthStore } from './authStore.js';
 import { usePresenceStore } from './presenceStore.js';
 import { toast } from './toastStore.js';
@@ -86,7 +86,7 @@ export const useSocketStore = create((set, get) => ({
     const token = useAuthStore.getState().token;
     if (!token) return null;
 
-    const socket = io(SOCKET_URL, {
+    const socket = io(getSocketUrl(), {
       auth: { token },
       transports: ['websocket'],
       reconnection: true,

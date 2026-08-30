@@ -52,17 +52,20 @@ export default function SetupWizardPage() {
   const [doneSummary, setDoneSummary] = useState(null);
 
   useEffect(() => {
-    getSetupStatus().then((s) => {
-      setStatus(s);
-      if (s?.setup_completed) navigate('/login', { replace: true });
-      if (s?.local_ips?.[0]) {
-        setNetwork((n) => ({
-          ...n,
-          server_ip: s.local_ips[0],
-        }));
-      }
-      if (s?.has_admin) setStep(6);
-    });
+    getSetupStatus()
+      .then((s) => {
+        setStatus(s);
+        if (s?.setup_completed) navigate('/login', { replace: true });
+        if (s?.server_port) {
+          setNetwork((n) => ({
+            ...n,
+            server_port: Number(s.server_port),
+          }));
+        }
+      })
+      .catch((err) => {
+        toast.error(err.message || 'Cannot reach the POS server. Restart with npm run dev.');
+      });
   }, [navigate]);
 
   const sampleVat = useMemo(() => {
@@ -99,7 +102,12 @@ export default function SetupWizardPage() {
     try {
       const result = await completeSetup({
         store,
-        vat: { ...vat, vat_number: vat.vat_number || store.store_trn },
+        vat: {
+          ...vat,
+          vat_enabled: Boolean(vat.vat_enabled),
+          vat_rate: Number(vat.vat_rate) || 5,
+          vat_number: vat.vat_number || store.store_trn,
+        },
         network,
         admin: status?.has_admin ? undefined : {
           full_name: admin.full_name,
@@ -119,9 +127,11 @@ export default function SetupWizardPage() {
       setDoneSummary(result);
       setStep(8);
       if (window.electron?.setConfig) {
+        const port = Number(network.server_port) || Number(status?.server_port) || 3002;
         await window.electron.setConfig({
-          serverIp: network.server_ip,
-          serverPort: network.server_port,
+          // Server PC always talks to itself on loopback. LAN IP is for client PCs.
+          serverIp: network.mode === 'server' ? '127.0.0.1' : network.server_ip,
+          serverPort: port,
           mode: network.mode,
           pcIdentifier: network.pc_identifier,
         });
@@ -248,7 +258,7 @@ export default function SetupWizardPage() {
           </label>
           {network.mode === 'server' && (
             <p className="text-sm text-ink-muted">
-              Client PCs should use IP: <strong>{status?.local_ips?.[0] || network.server_ip}</strong> port {status?.server_port || 3000}
+              Client PCs should use IP: <strong>{status?.local_ips?.[0] || 'this PC LAN address'}</strong> port {status?.server_port || network.server_port}
             </p>
           )}
           {network.mode === 'client' && (

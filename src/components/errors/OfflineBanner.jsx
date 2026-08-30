@@ -1,6 +1,6 @@
 import { WifiOff, RefreshCw } from 'lucide-react';
 import { useOfflineStore } from '../../store/offlineStore.js';
-import { API_BASE } from '../../config.js';
+import { getApiOrigin } from '../../config.js';
 import { toast } from '../../store/toastStore.js';
 import { formatDateTime } from '../../utils/format.js';
 
@@ -14,8 +14,7 @@ export default function OfflineBanner() {
 
   const retry = async () => {
     try {
-      const base = API_BASE.replace(/\/api$/, '');
-      const res = await fetch(`${base}/api/health`, { cache: 'no-store' });
+      const res = await fetch(`${getApiOrigin()}/api/health`, { cache: 'no-store' });
       if (res.ok) {
         setOffline(false);
         toast.success('Reconnected');

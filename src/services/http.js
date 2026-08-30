@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { API_BASE } from '../config.js';
+import { getApiBase } from '../config.js';
 import { useAuthStore } from '../store/authStore.js';
 import { useOfflineStore } from '../store/offlineStore.js';
 import { useUiErrorStore } from '../store/uiErrorStore.js';
@@ -9,12 +9,12 @@ import { addBreadcrumb } from './breadcrumbService.js';
 const APP_VERSION = '0.1.0';
 
 const http = axios.create({
-  baseURL: API_BASE,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
 
 http.interceptors.request.use((config) => {
+  config.baseURL = getApiBase();
   const token = useAuthStore.getState().token;
   config.headers = config.headers || {};
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -44,7 +44,6 @@ http.interceptors.response.use(
     if (!err.response) {
       if (err.code === 'ECONNABORTED') {
         toast.error('Request timed out. Please try again.', {
-          duration: 0,
           actionLabel: 'Retry',
           onAction: () => http.request(config),
         });

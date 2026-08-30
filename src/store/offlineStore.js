@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { API_BASE } from '../config.js';
+import { getApiOrigin } from '../config.js';
 
 export const useOfflineStore = create((set, get) => ({
   isOffline: false,
@@ -22,8 +22,7 @@ export const useOfflineStore = create((set, get) => ({
     const timer = setInterval(async () => {
       if (!get().isOffline) return;
       try {
-        const base = API_BASE.replace(/\/api$/, '');
-        const res = await fetch(`${base}/api/health`, { cache: 'no-store' });
+        const res = await fetch(`${getApiOrigin()}/api/health`, { cache: 'no-store' });
         if (res.ok) {
           set({ isOffline: false, offlineSince: null });
         }

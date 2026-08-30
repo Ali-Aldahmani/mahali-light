@@ -39,7 +39,7 @@ async function getBrowser() {
     browserPromise = null;
   }
   const puppeteer = loadPuppeteer();
-  browserPromise = puppeteer.launch({
+  const launchOpts = {
     headless: 'new',
     args: [
       '--no-sandbox',
@@ -47,7 +47,12 @@ async function getBrowser() {
       '--disable-dev-shm-usage',
       '--font-render-hinting=none',
     ],
-  });
+  };
+  // Docker / custom Chromium: PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    launchOpts.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  browserPromise = puppeteer.launch(launchOpts);
   return browserPromise;
 }
 

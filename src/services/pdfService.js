@@ -1,16 +1,16 @@
 import http, { apiPost, apiGet } from './http.js';
-import { API_BASE } from '../config.js';
+import { getApiBase } from '../config.js';
 import { useAuthStore } from '../store/authStore.js';
 
 // Build an absolute URL to a PDF endpoint. The Authorization header travels
 // via the axios interceptor for fetches via `http`, but for raw downloads we
 // emit a URL the Electron IPC bridge can pull directly.
 function pdfUrl(invoiceId, kind = 'pdf') {
-  return `${API_BASE}/invoices/${invoiceId}/${kind}`;
+  return `${getApiBase()}/invoices/${invoiceId}/${kind}`;
 }
 
 function poPdfUrl(poId) {
-  return `${API_BASE}/purchase-orders/${poId}/pdf`;
+  return `${getApiBase()}/purchase-orders/${poId}/pdf`;
 }
 
 export function getInvoicePdfMeta(invoiceId) {
@@ -27,7 +27,7 @@ export function regeneratePurchaseOrderPdf(poId) {
 
 // Fetch a PDF as a Blob (used for in-browser preview if no Electron host).
 async function fetchPdfBlob(url) {
-  const res = await http.get(url.replace(API_BASE, ''), {
+  const res = await http.get(url.replace(getApiBase(), ''), {
     responseType: 'blob',
   });
   return res.data;
@@ -42,7 +42,7 @@ export async function getReceiptPdfBlob(invoiceId) {
 }
 
 export async function getPurchaseOrderPdfBlob(poId) {
-  return fetchPdfBlob(poPdfUrl(poId).replace(API_BASE, ''));
+  return fetchPdfBlob(poPdfUrl(poId).replace(getApiBase(), ''));
 }
 
 // Trigger a save dialog (Electron) or fall back to a regular download.

@@ -39,13 +39,13 @@ const completeSchema = z.object({
   }),
   vat: z.object({
     vat_enabled: z.boolean().default(true),
-    vat_rate: z.number().default(5),
+    vat_rate: z.coerce.number().default(5),
     vat_number: z.string().optional(),
   }),
   network: z.object({
     mode: z.enum(['server', 'client']),
     server_ip: z.string().optional(),
-    server_port: z.number().optional(),
+    server_port: z.coerce.number().optional(),
     pc_identifier: z.string().optional(),
   }),
   admin: z
@@ -57,7 +57,7 @@ const completeSchema = z.object({
     .optional(),
   cash_drawer: z
     .object({
-      opening_balance: z.number().min(0),
+      opening_balance: z.coerce.number().min(0),
     })
     .optional(),
   bank: z

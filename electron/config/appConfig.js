@@ -10,7 +10,7 @@ function configPath(userDataPath) {
 const DEFAULTS = {
   pcIdentifier: null,
   serverIp: process.env.MAHALI_SERVER_IP || '127.0.0.1',
-  serverPort: Number(process.env.PORT || 3000),
+  serverPort: Number(process.env.PORT || process.env.MAHALI_SERVER_PORT || 3002),
   // Set to true when the server is running with TLS (SERVER_USE_HTTPS=true in
   // the server .env).  Electron will then use https:// for all API calls and
   // will accept the server's self-signed certificate for the configured IP.

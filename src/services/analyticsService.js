@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from './http.js';
-import { API_BASE } from '../config.js';
+import { getApiBase } from '../config.js';
 import { useAuthStore } from '../store/authStore.js';
 
 function qs(params) {
@@ -96,7 +96,7 @@ export function dismissReorderRecommendation(id) {
 // the auth header rather than the apiGet helper.
 export async function downloadAnnualPlanExcel(params = {}) {
   const token = useAuthStore.getState().token;
-  const res = await fetch(`${API_BASE}/forecast/annual-plan/export/xlsx${qs(params)}`, {
+  const res = await fetch(`${getApiBase()}/forecast/annual-plan/export/xlsx${qs(params)}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {

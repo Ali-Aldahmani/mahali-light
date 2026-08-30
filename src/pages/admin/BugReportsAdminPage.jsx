@@ -9,7 +9,7 @@ import {
   updateBugReport,
   addBugComment,
 } from '../../services/bugReportService.js';
-import { API_BASE } from '../../config.js';
+import { getFilesBase } from '../../config.js';
 import { formatDateTime, timeAgo } from '../../utils/format.js';
 import { toast } from '../../store/toastStore.js';
 
@@ -23,8 +23,7 @@ const STATUS_TONE = {
 
 function filesUrl(rel) {
   if (!rel) return null;
-  const base = API_BASE.replace(/\/api$/, '');
-  return `${base}/files/${rel}`;
+  return `${getFilesBase()}/${rel}`;
 }
 
 export default function BugReportsAdminPage() {

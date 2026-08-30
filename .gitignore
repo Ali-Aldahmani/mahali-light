@@ -26,6 +26,8 @@ electron/config.local.json
 # User data (never commit)
 uploads/
 backups/
+docker/postgres/backups/*
+!docker/postgres/backups/.gitkeep
 
 # TLS certificates — auto-generated private keys must never be committed
 tls/

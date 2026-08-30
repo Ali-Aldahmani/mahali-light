@@ -46,7 +46,7 @@ async function checkExpiringWarranties() {
     `SELECT COUNT(*)::int AS count
        FROM warranties
       WHERE status = 'active'
-        AND expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '30 days'`,
+        AND end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '30 days'`,
   );
   const count = rows[0]?.count || 0;
   if (count === 0) return 0;
@@ -66,7 +66,7 @@ async function checkExpiringWarranties() {
 async function checkBillsDue() {
   // Upcoming bills in next 3 days (excluding today).
   const { rows: upcoming } = await query(
-    `SELECT bp.id, bp.amount_due, bp.due_date, b.bill_name
+    `SELECT bp.id, bp.amount_due, bp.due_date, b.name AS bill_name
        FROM bill_payments bp
        JOIN bills b ON b.id = bp.bill_id
       WHERE bp.paid_date IS NULL
@@ -94,7 +94,7 @@ async function checkBillsDue() {
 
   // Due today.
   const { rows: dueToday } = await query(
-    `SELECT bp.id, bp.amount_due, b.bill_name
+    `SELECT bp.id, bp.amount_due, b.name AS bill_name
        FROM bill_payments bp
        JOIN bills b ON b.id = bp.bill_id
       WHERE bp.paid_date IS NULL
@@ -116,7 +116,7 @@ async function checkBillsDue() {
 
   // Overdue.
   const { rows: overdue } = await query(
-    `SELECT bp.id, bp.amount_due, bp.due_date, b.bill_name
+    `SELECT bp.id, bp.amount_due, bp.due_date, b.name AS bill_name
        FROM bill_payments bp
        JOIN bills b ON b.id = bp.bill_id
       WHERE bp.paid_date IS NULL

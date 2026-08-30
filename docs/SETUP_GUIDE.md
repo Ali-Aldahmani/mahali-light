@@ -1,5 +1,8 @@
 # Mahali Light — Full Setup Guide (Windows)
 
+**Opening a shop with several Windows PCs?** Use **[SHOP_MULTI_PC.md](./SHOP_MULTI_PC.md)** first (numbered server + client steps). This page is the detailed Windows install reference (paths, PM2, TLS).
+
+
 This guide covers everything needed to install, configure, and run **Mahali Light (Bytecra POS)** on a Windows machine from scratch — including making the server start automatically on every Windows boot.
 
 ---

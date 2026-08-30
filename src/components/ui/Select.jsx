@@ -76,7 +76,7 @@ export default function Select({
       </button>
 
       {open && (
-        <div className="absolute z-30 top-full mt-1 w-full rounded-card border border-border bg-surface shadow-pop overflow-hidden">
+        <div className="absolute z-30 top-full mt-1 min-w-full w-max rounded-card border border-border bg-surface shadow-pop">
           {searchable && (
             <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
               <Search size={14} className="text-ink-muted" />

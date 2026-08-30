@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiGetWithMeta } from './http.js';
-import { API_BASE } from '../config.js';
+import { getApiBase } from '../config.js';
 import { useAuthStore } from '../store/authStore.js';
 
 function qs(params) {
@@ -56,7 +56,7 @@ export function runRetentionCleanup() {
 // preload bridge is available.
 export async function downloadBackup(jobId, jobNumber) {
   const token = useAuthStore.getState().token;
-  const url = `${API_BASE}/backup/jobs/${jobId}/download`;
+  const url = `${getApiBase()}/backup/jobs/${jobId}/download`;
   const filename = `${jobNumber || 'backup'}.tar.gz`;
   const ipc = typeof window !== 'undefined' && window.electron;
   if (ipc && typeof ipc.backupDownload === 'function') {

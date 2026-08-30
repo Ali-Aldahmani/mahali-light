@@ -1,0 +1,2 @@
+# Optional SQL run once when the Postgres data volume is first created.
+# Application schema is applied by `npm run migrate` (see docker/README.md).

@@ -29,20 +29,19 @@ const api = {
 };
 
 // The frontend reads `window.electron.serverIp` (used by src/config.js).
-const bootstrap = async () => {
-  try {
-    const cfg = await api.getConfig();
-    contextBridge.exposeInMainWorld('electron', {
-      ...api,
-      serverIp: cfg.serverIp,
-      serverPort: cfg.serverPort,
-      serverUseHttps: cfg.serverUseHttps ?? false,
-      mode: cfg.mode,
-      pcIdentifier: cfg.pcIdentifier,
-    });
-  } catch (_err) {
-    contextBridge.exposeInMainWorld('electron', api);
-  }
-};
+// Must be synchronous — Vite can load the renderer before an async bootstrap finishes.
+let cfg = {};
+try {
+  cfg = ipcRenderer.sendSync('config:get-sync') || {};
+} catch (_err) {
+  cfg = {};
+}
 
-bootstrap();
+contextBridge.exposeInMainWorld('electron', {
+  ...api,
+  serverIp: cfg.serverIp || '127.0.0.1',
+  serverPort: cfg.serverPort || 3002,
+  serverUseHttps: cfg.serverUseHttps ?? false,
+  mode: cfg.mode || 'server',
+  pcIdentifier: cfg.pcIdentifier,
+});

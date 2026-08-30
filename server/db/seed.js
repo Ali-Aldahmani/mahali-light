@@ -163,6 +163,11 @@ async function assignRolePermissions() {
 }
 
 async function ensureAdminUser() {
+  if (process.env.NODE_ENV === 'production') {
+    console.log('[seed] skipping default admin in production — create it in the setup wizard');
+    return;
+  }
+
   const { rows } = await query('SELECT id FROM users WHERE username = $1', ['admin']);
   if (rows.length) {
     console.log('[seed] admin user already exists');

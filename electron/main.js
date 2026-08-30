@@ -167,6 +167,9 @@ app.on('window-all-closed', () => {
 });
 
 ipcMain.handle('config:get', () => loadConfig());
+ipcMain.on('config:get-sync', (event) => {
+  event.returnValue = loadConfig();
+});
 
 // config:set — only allow known keys with strict value types.
 // A compromised renderer could otherwise overwrite arbitrary config keys
@@ -273,7 +276,7 @@ ipcMain.handle('print:get-printers', async () => {
 function getApiBase() {
   const cfg = loadConfig();
   const ip     = cfg.serverIp     || '127.0.0.1';
-  const port   = cfg.serverPort   || process.env.MAHALI_SERVER_PORT || 3000;
+  const port   = cfg.serverPort   || process.env.MAHALI_SERVER_PORT || process.env.PORT || 3002;
   const scheme = cfg.serverUseHttps ? 'https' : 'http';
   return `${scheme}://${ip}:${port}`;
 }
