@@ -188,7 +188,12 @@ export default function Sidebar() {
         collapsed ? 'w-[72px]' : 'w-64',
       )}
     >
-      <div className="flex items-center gap-2 px-4 py-5 border-b border-border">
+      <div
+        className={cn(
+          'flex items-center gap-2 px-4 py-5 border-b border-border',
+          collapsed && 'flex-col gap-3 px-2',
+        )}
+      >
         <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-white">
           <Zap size={18} />
         </div>
@@ -201,7 +206,7 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={toggleCollapse}
-          className={cn('ml-auto rounded-md p-1 text-ink-muted hover:bg-surface-2', collapsed && 'mx-auto')}
+          className={cn('rounded-md p-1 text-ink-muted hover:bg-surface-2', !collapsed && 'ml-auto')}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
