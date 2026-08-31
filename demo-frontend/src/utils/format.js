@@ -74,7 +74,9 @@ export function formatQty(value, { fractionDigits = 2 } = {}) {
   return n.toFixed(fractionDigits).replace(/\.?0+$/, '');
 }
 
-// Format AED amounts.
+// Format AED amounts. Used for plain-text contexts (CSV export, toasts,
+// native dialogs, chart tooltips) that can't render the Dirham glyph — JSX
+// UI should prefer the <Money> component instead so the symbol renders.
 export function formatCurrency(value, { currency = 'AED' } = {}) {
   const n = Number(value);
   if (!Number.isFinite(n)) return `${currency} 0.00`;
@@ -82,6 +84,17 @@ export function formatCurrency(value, { currency = 'AED' } = {}) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+// Same formatting as formatCurrency but without the "AED" prefix, for
+// pairing with the <Money>/<DirhamSymbol> glyph in JSX.
+export function formatCurrencyNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0.00';
+  return n.toLocaleString('en-AE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 // Alias used by Phase 3 stock UIs.

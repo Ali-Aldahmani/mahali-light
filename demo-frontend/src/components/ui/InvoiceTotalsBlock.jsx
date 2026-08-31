@@ -1,4 +1,4 @@
-import { formatCurrency } from '../../utils/format.js';
+import Money from './Money.jsx';
 
 // Reusable totals block used in the cart, the confirm-pay modal, and the
 // invoice detail page. Renders subtotal → discount → taxable → VAT → total
@@ -26,31 +26,35 @@ export default function InvoiceTotalsBlock({
   const s = sizes[size] || sizes.md;
   return (
     <div className={`space-y-1.5 ${s.row}`}>
-      <Row label="Subtotal" value={formatCurrency(subtotal || 0)} />
+      <Row label="Subtotal" value={<Money value={subtotal || 0} />} />
       {totalDiscount > 0 && (
         <Row
           label="Discount"
-          value={`- ${formatCurrency(totalDiscount)}`}
+          value={
+            <>
+              - <Money value={totalDiscount} />
+            </>
+          }
           tone="success"
         />
       )}
-      <Row label="Taxable" value={formatCurrency(taxable || 0)} />
+      <Row label="Taxable" value={<Money value={taxable || 0} />} />
       <Row
         label={`VAT (${Number(taxRate).toFixed(0)}%)`}
-        value={formatCurrency(tax || 0)}
+        value={<Money value={tax || 0} />}
       />
       <div className="border-t border-border pt-2 mt-2 flex items-center justify-between">
         <span className="font-semibold text-ink">Total</span>
         <span className={`font-semibold text-ink ${s.total}`}>
-          {formatCurrency(total || 0)}
+          <Money value={total || 0} />
         </span>
       </div>
       {showPayments && (
         <div className="mt-2 space-y-1 border-t border-border pt-2">
-          <Row label="Amount paid" value={formatCurrency(amountPaid || 0)} />
+          <Row label="Amount paid" value={<Money value={amountPaid || 0} />} />
           <Row
             label="Balance due"
-            value={formatCurrency(balanceDue || 0)}
+            value={<Money value={balanceDue || 0} />}
             tone={Number(balanceDue || 0) > 0 ? 'accent' : 'success'}
           />
         </div>

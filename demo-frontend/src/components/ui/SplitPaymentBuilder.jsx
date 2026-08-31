@@ -1,7 +1,7 @@
 import { Banknote, Building2, CreditCard, Plus, Trash2 } from 'lucide-react';
 import Button from './Button.jsx';
 import Input from './Input.jsx';
-import { formatCurrency } from '../../utils/format.js';
+import Money from './Money.jsx';
 import ChangeCalculator from './ChangeCalculator.jsx';
 
 const METHODS = [
@@ -83,11 +83,11 @@ export default function SplitPaymentBuilder({
       <div className="rounded-card border border-border bg-surface p-3 space-y-1.5">
         <div className="flex items-center justify-between text-sm">
           <span className="text-ink-muted">Total</span>
-          <span className="text-ink font-medium">{formatCurrency(total || 0)}</span>
+          <span className="text-ink font-medium"><Money value={total || 0} /></span>
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-ink-muted">Paid so far</span>
-          <span className="text-ink font-medium">{formatCurrency(amountPaid)}</span>
+          <span className="text-ink font-medium"><Money value={amountPaid} /></span>
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-ink-muted">Remaining</span>
@@ -97,7 +97,7 @@ export default function SplitPaymentBuilder({
               remaining <= 0.001 ? 'text-success' : 'text-accent',
             ].join(' ')}
           >
-            {formatCurrency(Math.max(0, remaining))}
+            <Money value={Math.max(0, remaining)} />
           </span>
         </div>
       </div>

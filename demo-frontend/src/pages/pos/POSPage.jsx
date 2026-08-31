@@ -35,7 +35,8 @@ import {
   addInvoicePayment,
   confirmInvoice as confirmInvoiceApi,
 } from '../../services/invoiceService.js';
-import { formatCurrency } from '../../utils/format.js';
+import Money from '../../components/ui/Money.jsx';
+import DirhamSymbol from '../../components/ui/DirhamSymbol.jsx';
 
 export default function POSPage() {
   const cart = usePosStore((s) => s.cart);
@@ -503,7 +504,9 @@ function CartPanel({
 
       <div className="border-t border-border px-4 py-3 space-y-3">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-ink-muted">Invoice discount (AED)</span>
+          <span className="text-xs text-ink-muted inline-flex items-center gap-0.5">
+            Invoice discount (<DirhamSymbol />)
+          </span>
           <input
             type="number"
             min={0}
@@ -530,7 +533,7 @@ function CartPanel({
           disabled={cart.length === 0}
           leftIcon={<Banknote className="h-4 w-4" />}
         >
-          Confirm &amp; Pay · {formatCurrency(totals.total)}
+          Confirm &amp; Pay · <Money value={totals.total} />
         </Button>
       </div>
     </div>
@@ -584,14 +587,14 @@ function ConfirmPayModal({
                   <div className="min-w-0">
                     <div className="text-ink truncate">{it.productName}</div>
                     <div className="text-xs text-ink-muted">
-                      {it.quantity} × {formatCurrency(it.unitPrice)}
+                      {it.quantity} × <Money value={it.unitPrice} />
                       {Number(it.lineDiscount || 0) > 0 && (
-                        <> · -{formatCurrency(it.lineDiscount)}</>
+                        <> · -<Money value={it.lineDiscount} /></>
                       )}
                     </div>
                   </div>
                   <div className="text-ink font-medium shrink-0">
-                    {formatCurrency(it.lineTotal)}
+                    <Money value={it.lineTotal} />
                   </div>
                 </li>
               ))}
@@ -671,13 +674,17 @@ function SuccessScreen({ success, onNewSale }) {
             {success.invoiceNumber}
           </div>
           <div className="mt-3 text-3xl font-semibold text-ink">
-            {formatCurrency(success.total)}
+            <Money value={success.total} />
           </div>
           <div className="mt-1 text-xs text-ink-muted">
-            Paid {formatCurrency(success.amountPaid)} ·{' '}
-            {success.balanceDue > 0
-              ? `Balance ${formatCurrency(success.balanceDue)} on credit`
-              : 'Fully paid'}
+            Paid <Money value={success.amountPaid} /> ·{' '}
+            {success.balanceDue > 0 ? (
+              <>
+                Balance <Money value={success.balanceDue} /> on credit
+              </>
+            ) : (
+              'Fully paid'
+            )}
           </div>
 
           {success.warranties && success.warranties.length > 0 && (

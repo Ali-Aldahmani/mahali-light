@@ -1,5 +1,6 @@
 import { cn } from '../../utils/cn.js';
-import { formatCurrency } from '../../utils/format.js';
+import { formatCurrencyNumber } from '../../utils/format.js';
+import DirhamSymbol from '../ui/DirhamSymbol.jsx';
 import GrowthBadge from './GrowthBadge.jsx';
 import SparklineChart from './SparklineChart.jsx';
 
@@ -22,7 +23,11 @@ export default function KPICard({
   if (value == null) {
     display = '—';
   } else if (format === 'currency') {
-    display = formatCurrency(Number(value) || 0);
+    display = (
+      <>
+        <DirhamSymbol /> {formatCurrencyNumber(Number(value) || 0)}
+      </>
+    );
   } else if (format === 'percent') {
     display = `${Number(value).toFixed(1)}%`;
   } else if (format === 'number') {

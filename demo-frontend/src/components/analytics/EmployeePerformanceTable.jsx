@@ -1,6 +1,6 @@
 import { Crown, Trophy, Medal } from 'lucide-react';
 import { cn } from '../../utils/cn.js';
-import { formatCurrency } from '../../utils/format.js';
+import Money from '../ui/Money.jsx';
 
 const MEDALS = {
   1: { Icon: Crown, color: 'text-amber-500' },
@@ -70,11 +70,11 @@ export default function EmployeePerformanceTable({ rows = [], compact = false, t
                 </td>
                 <td className="px-3 py-2 text-right">{r.invoices_created}</td>
                 <td className="px-3 py-2 text-right font-semibold">
-                  {formatCurrency(r.revenue_generated)}
+                  <Money value={r.revenue_generated} />
                 </td>
                 {!compact && (
                   <td className="px-3 py-2 text-right">
-                    {formatCurrency(r.avg_invoice_value)}
+                    <Money value={r.avg_invoice_value} />
                   </td>
                 )}
                 {!compact && (

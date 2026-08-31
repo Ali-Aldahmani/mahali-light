@@ -1,7 +1,7 @@
 import { Package } from 'lucide-react';
 import Badge from '../ui/Badge.jsx';
 import { fileUrl } from '../../config.js';
-import { formatCurrency } from '../../utils/format.js';
+import Money from '../ui/Money.jsx';
 
 function stockTone(qty) {
   if (qty <= 0) return { tone: 'error', label: 'Out' };
@@ -74,7 +74,7 @@ export default function POSProductCard({ variant, onClick }) {
       )}
       <div className="mt-2 flex items-baseline justify-between">
         <div className="text-base font-semibold text-accent">
-          {formatCurrency(variant.sellingPrice || 0)}
+          <Money value={variant.sellingPrice || 0} />
         </div>
         <div className="text-[11px] text-ink-muted">
           per {variant.unitLabel || 'pcs'}

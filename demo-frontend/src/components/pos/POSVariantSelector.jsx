@@ -4,7 +4,7 @@ import Button from '../ui/Button.jsx';
 import Input from '../ui/Input.jsx';
 import Badge from '../ui/Badge.jsx';
 import { fileUrl } from '../../config.js';
-import { formatCurrency } from '../../utils/format.js';
+import Money from '../ui/Money.jsx';
 
 // Modal-style variant picker for products with attributes. The parent passes
 // an initially-selected variant; the cashier may switch to a sibling variant
@@ -127,7 +127,7 @@ export default function POSVariantSelector({
             )}
             <div className="mt-1 flex items-center gap-2">
               <span className="text-lg font-semibold text-accent">
-                {formatCurrency(selected.sellingPrice || 0)}
+                <Money value={selected.sellingPrice || 0} />
               </span>
               <Badge
                 tone={stock > 5 ? 'success' : stock > 0 ? 'warning' : 'error'}
@@ -220,9 +220,9 @@ export default function POSVariantSelector({
           <div>
             <div className="text-xs text-ink-muted">Line total</div>
             <div className="text-lg font-semibold text-ink">
-              {formatCurrency(
-                Number(qty || 0) * Number(selected.sellingPrice || 0),
-              )}
+              <Money
+                value={Number(qty || 0) * Number(selected.sellingPrice || 0)}
+              />
             </div>
           </div>
           <Button

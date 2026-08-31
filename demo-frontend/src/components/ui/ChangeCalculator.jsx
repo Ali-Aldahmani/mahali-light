@@ -1,5 +1,5 @@
 import { CircleCheck } from 'lucide-react';
-import { formatCurrency } from '../../utils/format.js';
+import Money from './Money.jsx';
 
 // Visual reminder for cash overpayment. Renders a friendly green callout
 // with the amount of change due. Returns null when the cashier hasn't yet
@@ -18,7 +18,7 @@ export default function ChangeCalculator({ tendered, due, className = '' }) {
         Change due
       </span>
       <span className="text-lg font-semibold text-success">
-        {formatCurrency(change)}
+        <Money value={change} />
       </span>
     </div>
   );

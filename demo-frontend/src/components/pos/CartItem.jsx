@@ -1,6 +1,7 @@
 import { Minus, Percent, Plus, Trash2 } from 'lucide-react';
 import Input from '../ui/Input.jsx';
-import { formatCurrency } from '../../utils/format.js';
+import Money from '../ui/Money.jsx';
+import DirhamSymbol from '../ui/DirhamSymbol.jsx';
 
 // Single cart line item with qty stepper, discount toggle (% or AED), and
 // remove. Discount toggle is local — the global posStore stores either
@@ -80,11 +81,11 @@ export default function CartItem({
             </button>
           )}
           <span className="text-[11px] text-ink-muted ml-1">
-            × {formatCurrency(item.unitPrice)}
+            × <Money value={item.unitPrice} />
           </span>
         </div>
         <div className="text-sm font-semibold text-ink">
-          {formatCurrency(lineTotal)}
+          <Money value={lineTotal} />
         </div>
       </div>
 
@@ -119,7 +120,7 @@ export default function CartItem({
         <span className="text-[11px] text-ink-muted">or</span>
         <div className="flex items-center rounded-input border border-border bg-surface overflow-hidden">
           <span className="h-7 px-2 text-xs text-ink-muted flex items-center">
-            AED
+            <DirhamSymbol />
           </span>
           <input
             type="number"
