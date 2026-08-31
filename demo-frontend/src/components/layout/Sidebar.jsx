@@ -194,7 +194,7 @@ export default function Sidebar() {
         </div>
         {!collapsed && (
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-sm font-semibold text-ink">{storeName || 'Mahali Light'}</p>
+            <p className="text-sm font-semibold leading-snug text-ink">{storeName || 'Mahali Light'}</p>
             <p className="text-xs text-ink-muted">Electrical · POS</p>
           </div>
         )}
