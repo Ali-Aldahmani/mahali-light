@@ -15,7 +15,11 @@ export async function submitBugReport({ whatWereYouDoing, whatHappened, urgency 
 }
 
 export async function listBugReports(params = {}) {
-  return apiGetWithMeta('/admin/bug-reports');
+  const usp = new URLSearchParams();
+  if (params.status) usp.set('status', params.status);
+  if (params.limit) usp.set('limit', params.limit);
+  const qs = usp.toString();
+  return apiGetWithMeta(`/admin/bug-reports${qs ? `?${qs}` : ''}`);
 }
 
 export async function getBugReport(id) {

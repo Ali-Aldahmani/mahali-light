@@ -10,12 +10,11 @@ export default function PermissionGate({
   fallback = null,
   children,
 }) {
-  const owned = useAuthStore((s) => s.permissions);
-  const set = new Set(owned || []);
+  const hasAnyPermission = useAuthStore((s) => s.hasAnyPermission);
   const required = permissions || (permission ? [permission] : []);
 
   if (required.length === 0) return children;
-  const ok = required.some((p) => set.has(p));
+  const ok = hasAnyPermission(required);
   if (!ok) return fallback;
   return children;
 }

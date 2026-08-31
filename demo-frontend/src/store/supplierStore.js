@@ -18,7 +18,7 @@ export const useSupplierStore = create((set) => ({
       const t = meta?.totals || {};
       set({
         totalPos: t.totalPos || 0,
-        pendingPaymentCount: t.pendingPayment || 0,
+        pendingPaymentCount: t.pendingPaymentCount || 0,
         overdueCount: t.overdueCount || 0,
         overdueAmount: t.overdueAmount ?? null,
         thisMonthSpent: t.thisMonthSpent ?? null,

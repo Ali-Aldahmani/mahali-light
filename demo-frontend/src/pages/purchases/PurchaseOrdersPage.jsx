@@ -258,7 +258,7 @@ export default function PurchaseOrdersPage() {
         <SummaryCard
           icon={<Wallet className="h-5 w-5" />}
           label="Pending payment"
-          value={totals?.pendingPayment ?? 0}
+          value={formatCurrency(totals?.pendingPayment ?? 0)}
         />
         <SummaryCard
           icon={<AlertCircle className="h-5 w-5" />}
