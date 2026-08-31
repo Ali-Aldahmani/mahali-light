@@ -74,27 +74,32 @@ export function formatQty(value, { fractionDigits = 2 } = {}) {
   return n.toFixed(fractionDigits).replace(/\.?0+$/, '');
 }
 
+// Shared number formatting: hide the .00 for whole amounts, but keep
+// fils when they're non-zero (e.g. 8,450 vs 184,500.50).
+function formatAmount(n) {
+  const rounded = Math.round(n * 100) / 100;
+  const hasFils = Math.abs(rounded % 1) > 0.001;
+  return rounded.toLocaleString('en-AE', {
+    minimumFractionDigits: hasFils ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
+}
+
 // Format AED amounts. Used for plain-text contexts (CSV export, toasts,
 // native dialogs, chart tooltips) that can't render the Dirham glyph — JSX
 // UI should prefer the <Money> component instead so the symbol renders.
 export function formatCurrency(value, { currency = 'AED' } = {}) {
   const n = Number(value);
-  if (!Number.isFinite(n)) return `${currency} 0.00`;
-  return `${currency} ${n.toLocaleString('en-AE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  if (!Number.isFinite(n)) return `${currency} 0`;
+  return `${currency} ${formatAmount(n)}`;
 }
 
 // Same formatting as formatCurrency but without the "AED" prefix, for
 // pairing with the <Money>/<DirhamSymbol> glyph in JSX.
 export function formatCurrencyNumber(value) {
   const n = Number(value);
-  if (!Number.isFinite(n)) return '0.00';
-  return n.toLocaleString('en-AE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  if (!Number.isFinite(n)) return '0';
+  return formatAmount(n);
 }
 
 // Alias used by Phase 3 stock UIs.
