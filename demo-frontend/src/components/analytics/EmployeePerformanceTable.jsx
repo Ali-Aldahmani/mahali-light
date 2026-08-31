@@ -32,8 +32,8 @@ export default function EmployeePerformanceTable({ rows = [], compact = false, t
   }
   const maxRevenue = topRevenue || Math.max(...rows.map((r) => Number(r.revenue_generated) || 0), 1);
   return (
-    <div className="rounded-card border border-border bg-surface overflow-hidden">
-      <table className="w-full text-sm">
+    <div className="rounded-card border border-border bg-surface overflow-x-auto">
+      <table className={cn('w-full text-sm', !compact && 'min-w-[560px]')}>
         <thead className="bg-surface-2 text-ink-muted">
           <tr>
             <th className="px-3 py-2 text-left w-10">#</th>
@@ -44,7 +44,7 @@ export default function EmployeePerformanceTable({ rows = [], compact = false, t
             {!compact && <th className="px-3 py-2 text-right">Discounts</th>}
             {!compact && <th className="px-3 py-2 text-right">Returns</th>}
             {!compact && <th className="px-3 py-2 text-right">Attendance</th>}
-            <th className="px-3 py-2 text-right w-32">Achievement</th>
+            {!compact && <th className="px-3 py-2 text-right w-32">Achievement</th>}
           </tr>
         </thead>
         <tbody>
@@ -107,17 +107,19 @@ export default function EmployeePerformanceTable({ rows = [], compact = false, t
                     </span>
                   </td>
                 )}
-                <td className="px-3 py-2">
-                  <div className="h-2 w-full rounded-full bg-surface-2 overflow-hidden">
-                    <div
-                      className="h-full bg-accent"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="mt-1 text-[10px] text-ink-muted text-right">
-                    {pct.toFixed(0)}%
-                  </div>
-                </td>
+                {!compact && (
+                  <td className="px-3 py-2">
+                    <div className="h-2 w-full rounded-full bg-surface-2 overflow-hidden">
+                      <div
+                        className="h-full bg-accent"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 text-[10px] text-ink-muted text-right">
+                      {pct.toFixed(0)}%
+                    </div>
+                  </td>
+                )}
               </tr>
             );
           })}
