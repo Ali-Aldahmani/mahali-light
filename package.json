@@ -36,6 +36,9 @@
     "pm2:logs": "pm2 logs mahali-light",
     "pm2:status": "pm2 status"
   },
+  "overrides": {
+    "node-gyp": "^13.0.2"
+  },
   "build": {
     "appId": "com.bytecra.pos",
     "productName": "Bytecra POS",
