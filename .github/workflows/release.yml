@@ -70,9 +70,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: Bytecra POS ${{ github.ref_name }}
+          name: A1 Smart Light ${{ github.ref_name }}
           body: |
-            ## Bytecra POS ${{ github.ref_name }}
+            ## A1 Smart Light ${{ github.ref_name }}
 
             ### Installation
             1. Download the `.exe` file below
