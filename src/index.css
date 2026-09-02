@@ -17,7 +17,10 @@ body {
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
-*:focus-visible {
+/* :not(.outline-none) so components like Input.jsx that already draw their
+   own focus ring (a rounded box around icon + field together) don't also
+   get this generic per-element outline stacked on top of it. */
+*:focus-visible:not(.outline-none) {
   outline: 2px solid theme('colors.accent.DEFAULT');
   outline-offset: 2px;
   border-radius: 6px;

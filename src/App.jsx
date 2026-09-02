@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import LoginPage from './pages/auth/LoginPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
+import AiComingSoonPage from './pages/ai/AiComingSoonPage.jsx';
 import UsersPage from './pages/users/UsersPage.jsx';
 import EmployeesPage from './pages/users/EmployeesPage.jsx';
 import RolesPage from './pages/users/RolesPage.jsx';
@@ -392,6 +393,9 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          <Route path="/ai/items" element={<AiComingSoonPage title="Items" />} />
+          <Route path="/ai/sales" element={<AiComingSoonPage title="Sales" />} />
 
           <Route
             path="/expenses"

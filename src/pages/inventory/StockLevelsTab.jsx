@@ -19,6 +19,7 @@ import StockBadge from '../../components/ui/StockBadge.jsx';
 import EmptyState from '../../components/ui/EmptyState.jsx';
 import PermissionGate from '../../components/ui/PermissionGate.jsx';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js';
+import { useBarcodeListener } from '../../hooks/useBarcodeListener.js';
 import { getStockSummary } from '../../services/stockService.js';
 import { useProductStore } from '../../store/productStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
@@ -98,6 +99,11 @@ export default function StockLevelsTab() {
   useEffect(() => {
     ensureCats?.();
   }, [ensureCats]);
+
+  // Scan a barcode from anywhere on the page to find a product's stock — no
+  // need to click into the search box first. Disabled while a slide-over is
+  // open so a stray scan can't be mistaken for input there.
+  useBarcodeListener((code) => setSearch(code), { enabled: !adjustOpen && !movementsOpen });
 
   const fetchData = async () => {
     const seq = ++fetchSeq.current;

@@ -221,7 +221,7 @@ ipcMain.handle('notify:desktop', (_e, { title, body } = {}) => {
     if (!Notification.isSupported()) return { delivered: false };
     if (mainWindow && mainWindow.isFocused()) return { delivered: false };
     const notification = new Notification({
-      title: title || 'Mahali Light',
+      title: title || 'A1 Smart Light',
       body: body || '',
       silent: false,
     });

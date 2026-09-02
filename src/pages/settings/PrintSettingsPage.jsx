@@ -324,7 +324,7 @@ export default function PrintSettingsPage() {
         {!hasElectronPrint() ? (
           <div className="rounded-input border border-border bg-surface-2 p-4 text-sm text-ink-muted">
             Printer selection is only available from the Electron desktop app.
-            Open Mahali Light on each cashier PC to configure printers.
+            Open A1 Smart Light on each cashier PC to configure printers.
           </div>
         ) : printersLoading ? (
           <div className="py-6 text-center">

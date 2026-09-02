@@ -19,6 +19,7 @@ const {
   loadVariantsBatch,
   shapeProduct,
 } = require('../services/productService');
+const barcodeLookupService = require('../services/barcodeLookupService');
 
 const SOLD_BY = ['piece', 'meter', 'roll', 'kg', 'box'];
 
@@ -698,6 +699,19 @@ async function search(req, res, next) {
   }
 }
 
+async function lookupBarcode(req, res, next) {
+  try {
+    const code = String(req.params.code || '').trim();
+    if (!code) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Barcode is required');
+    }
+    const result = await barcodeLookupService.lookupBarcode(code);
+    return ok(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   getOne,
@@ -708,5 +722,6 @@ module.exports = {
   deleteImage,
   history,
   search,
+  lookupBarcode,
   emitProductChange,
 };

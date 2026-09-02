@@ -163,7 +163,7 @@ export default function SettingsHubPage() {
           )}
           {section === 'about' && (
             <SettingsSection title="About">
-              <p className="text-lg font-semibold text-ink">Mahali Light POS</p>
+              <p className="text-lg font-semibold text-ink">A1 Smart Light POS</p>
               <p className="text-sm text-ink-muted">Built by Bytecra</p>
               <AppVersion />
             </SettingsSection>

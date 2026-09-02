@@ -591,6 +591,11 @@ async function runAllForecasts({ aggregate = true, actor = null } = {}) {
 // =======================================================================
 let timer = null;
 
+// setTimeout delays above this (~24.8 days) are silently clamped to 1ms by
+// Node, which would fire the "monthly" run almost immediately instead of
+// waiting. Chain shorter waits until the real target is within range.
+const MAX_TIMEOUT_MS = 2147483647;
+
 function msUntilNextRun() {
   const now = new Date();
   const next = new Date(now);
@@ -608,6 +613,10 @@ function msUntilNextRun() {
 function scheduleNextRun() {
   const delay = msUntilNextRun();
   if (timer) clearTimeout(timer);
+  if (delay > MAX_TIMEOUT_MS) {
+    timer = setTimeout(scheduleNextRun, MAX_TIMEOUT_MS);
+    return;
+  }
   timer = setTimeout(async () => {
     try {
       const result = await runAllForecasts({ aggregate: true });

@@ -3,7 +3,7 @@ import { create } from 'zustand';
 let _id = 0;
 
 const MAX_VISIBLE = 3;
-const DEFAULT_DURATION = 20_000;
+const DEFAULT_DURATION = 3_000;
 
 export const useToastStore = create((set, get) => ({
   toasts: [],

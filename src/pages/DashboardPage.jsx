@@ -306,9 +306,15 @@ export default function DashboardPage() {
               <TopProductsTable rows={topProducts} />
             </div>
             <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-ink">Category breakdown</h3>
+              </div>
               <CategoryBreakdownBars rows={categories} />
             </div>
             <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-ink">Needs attention</h3>
+              </div>
               <AlertsPanel />
             </div>
           </div>

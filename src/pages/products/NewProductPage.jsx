@@ -21,6 +21,7 @@ import { useProductStore } from '../../store/productStore.js';
 import {
   createProduct,
   uploadProductImage,
+  lookupBarcode,
 } from '../../services/productService.js';
 import { generateInternalBarcode } from '../../services/variantService.js';
 import { getCategoryAttributes } from '../../services/categoryService.js';
@@ -88,6 +89,56 @@ export default function NewProductPage() {
   const [basicErrors, setBasicErrors] = useState({});
   const [pricingError, setPricingError] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  const [scanCode, setScanCode] = useState('');
+  const [looking, setLooking] = useState(false);
+
+  async function fetchImageAsFile(url) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const ext = (blob.type.split('/')[1] || 'jpg').split('+')[0];
+      return new File([blob], `barcode-lookup.${ext}`, { type: blob.type });
+    } catch {
+      // Cross-origin image hosts don't always allow fetching bytes — that's
+      // fine, the rest of the auto-fill still applies.
+      return null;
+    }
+  }
+
+  async function runBarcodeLookup() {
+    const code = scanCode.trim();
+    if (!code) return;
+    setLooking(true);
+    try {
+      const result = await lookupBarcode(code);
+      if (!result?.found) {
+        toast.info('No match found for that barcode — enter details manually.');
+        return;
+      }
+      setBasic((b) => ({
+        ...b,
+        name: b.name || result.title || b.name,
+        brand: b.brand || result.brand || b.brand,
+        description: b.description || result.description || b.description,
+      }));
+      setSimple((s) => ({ ...s, supplierBarcode: s.supplierBarcode || code }));
+      if (result.imageUrl) {
+        const file = await fetchImageAsFile(result.imageUrl);
+        if (file) setBasic((b) => ({ ...b, imageFile: b.imageFile || file }));
+      }
+      toast.success(
+        result.category
+          ? `Found "${result.title || code}" — category suggestion: ${result.category}. Please pick the closest match below.`
+          : `Found "${result.title || code}".`,
+      );
+    } catch (err) {
+      toast.error(err?.message || 'Barcode lookup failed.');
+    } finally {
+      setLooking(false);
+    }
+  }
 
   useEffect(() => {
     fetchCategories();
@@ -281,6 +332,10 @@ export default function NewProductPage() {
               setField={setBasicField}
               tree={tree}
               errors={basicErrors}
+              scanCode={scanCode}
+              setScanCode={setScanCode}
+              onLookup={runBarcodeLookup}
+              looking={looking}
             />
           )}
           {stepIdx === 1 && (
@@ -402,10 +457,36 @@ function Stepper({ stepIdx }) {
   );
 }
 
-function StepBasic({ basic, setField, tree, errors }) {
+function StepBasic({ basic, setField, tree, errors, scanCode, setScanCode, onLookup, looking }) {
   return (
     <div className="card p-6 space-y-4">
       <h2 className="text-base font-semibold text-ink">Step 1 · Basic info</h2>
+
+      <div className="rounded-input border border-dashed border-border bg-surface-2 p-4">
+        <div className="flex items-end gap-2">
+          <Input
+            label="Scan or enter a barcode"
+            placeholder="Scan with a USB scanner, or type a UPC/EAN"
+            value={scanCode}
+            onChange={(e) => setScanCode(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onLookup();
+              }
+            }}
+            containerClassName="flex-1"
+          />
+          <Button type="button" variant="secondary" onClick={onLookup} loading={looking}>
+            Look up
+          </Button>
+        </div>
+        <p className="text-xs text-ink-muted mt-1.5">
+          Best-effort match against a public UPC/EAN database — fills name, brand and
+          image when found. Most locally-stocked electrical parts won't have a match,
+          which is normal; just fill the fields below by hand.
+        </p>
+      </div>
 
       <Input
         label="Product name"

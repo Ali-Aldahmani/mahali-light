@@ -77,7 +77,7 @@ export default function LoginPage() {
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-white shadow-card">
             <Briefcase size={26} />
           </div>
-          <h1 className="mt-4 text-2xl font-semibold text-ink">Mahali Light</h1>
+          <h1 className="mt-4 text-2xl font-semibold text-ink">A1 Smart Light</h1>
           <p className="mt-1 text-sm text-ink-muted">
             Sign in to access the POS terminal
           </p>
@@ -140,7 +140,7 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-6 text-center text-xs text-ink-muted">
-          © {new Date().getFullYear()} Mahali Light · UAE
+          © {new Date().getFullYear()} A1 Smart Light · UAE
         </p>
       </div>
     </div>

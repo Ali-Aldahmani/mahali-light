@@ -107,6 +107,17 @@ async function login(req, res, next) {
     const token = signToken({ sub: user.id, username: user.username });
 
     await withTransaction(async (client) => {
+      // A PC only ever runs one Electron instance for a given user — a new
+      // login there means the old session is gone (app restart, crash,
+      // etc.), not a genuinely separate concurrent session. Close it out
+      // instead of leaving it "online" forever, which is what was causing
+      // duplicate entries in the presence list.
+      await client.query(
+        `UPDATE user_sessions
+            SET logout_at = NOW(), logout_type = 'replaced', status = 'offline'
+          WHERE user_id = $1 AND pc_identifier = $2 AND logout_at IS NULL`,
+        [user.id, pcIdentifier],
+      );
       await client.query(
         `INSERT INTO user_sessions
            (user_id, pc_identifier, ip_address, token_hash, status)

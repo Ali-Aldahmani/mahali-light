@@ -1,7 +1,7 @@
 {
   "name": "mahali-light",
-  "version": "1.1.0",
-  "description": "Bytecra POS — Multi-PC Electron POS for electrical retail (UAE).",
+  "version": "1.2.0",
+  "description": "A1 Smart Light — Multi-PC Electron POS for electrical retail (UAE).",
   "main": "electron/main.js",
   "author": {
     "name": "Ali Aldahmani",
@@ -41,7 +41,7 @@
   },
   "build": {
     "appId": "com.bytecra.pos",
-    "productName": "Bytecra POS",
+    "productName": "A1 Smart Light",
     "copyright": "Copyright © 2026 Bytecra. All rights reserved.",
     "directories": {
       "output": "release",
@@ -76,7 +76,7 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "BytecraPOS-Setup-${version}.${ext}"
+      "artifactName": "A1SmartLight-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -87,7 +87,7 @@
       "installerHeaderIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Bytecra POS",
+      "shortcutName": "A1 Smart Light",
       "include": "assets/installer.nsh"
     },
     "publish": [

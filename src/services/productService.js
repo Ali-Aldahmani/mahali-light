@@ -62,3 +62,9 @@ export function searchProducts(q, limit = 25, opts = {}) {
   if (opts.categoryId) params.set('categoryId', opts.categoryId);
   return apiGet(`/products/search?${params.toString()}`);
 }
+
+// Best-effort external UPC/EAN lookup — { found: false } when the barcode
+// isn't in the database (very common for locally-stocked electrical parts).
+export function lookupBarcode(code) {
+  return apiGet(`/products/barcode-lookup/${encodeURIComponent(code)}`);
+}

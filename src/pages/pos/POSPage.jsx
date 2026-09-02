@@ -190,7 +190,7 @@ export default function POSPage() {
     if (Math.abs(totals.balanceDue) > 0.001 && totals.balanceDue > 0) {
       // The cashier explicitly left a balance → goes onto customer credit
       // if a registered customer is selected, otherwise block.
-      if (!selectedCustomer) {
+      if (!selectedCustomer?.id) {
         toast.error('Cannot leave a balance for a guest customer.');
         return;
       }

@@ -38,6 +38,7 @@ import {
   Settings,
   Bug,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useInventoryStore } from '../../store/inventoryStore.js';
@@ -77,6 +78,9 @@ const NAV = [
   { section: 'People' },
   { to: '/team', label: 'Team', icon: UsersRound, anyPermissions: ['user.edit', 'employee.view'] },
   { to: '/attendance', label: 'Attendance', icon: CalendarClock, permission: 'attendance.view_own' },
+  { section: 'AI' },
+  { to: '/ai/items', label: 'Items', icon: Sparkles, permission: null },
+  { to: '/ai/sales', label: 'Sales', icon: Sparkles, permission: null },
   { section: 'More' },
   { to: '/approvals', label: 'Approvals', icon: CheckSquare, anyRoles: ['Admin', 'Manager'], badge: 'approvals', badgeTone: 'error' },
   { to: '/categories', label: 'Categories', icon: FolderTree, permission: 'product.view' },
@@ -194,28 +198,29 @@ export default function Sidebar() {
   return (
     <aside
       className={cn(
-        'shrink-0 border-r border-border bg-surface flex flex-col transition-all',
+        'relative shrink-0 border-r border-border bg-surface flex flex-col transition-all',
         collapsed ? 'w-[72px]' : 'w-64',
       )}
     >
-      <div className="flex items-center gap-2 px-4 py-5 border-b border-border">
+      <button
+        type="button"
+        onClick={toggleCollapse}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        className="absolute top-6 -right-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface text-ink-muted shadow-sm transition hover:bg-surface-2 hover:text-ink"
+      >
+        {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+      </button>
+
+      <div className={cn('flex items-center gap-2 px-4 py-5 border-b border-border', collapsed && 'justify-center px-2')}>
         <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-white">
           <Zap size={18} />
         </div>
         {!collapsed && (
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-sm font-semibold text-ink">{storeName || 'Mahali Light'}</p>
+            <p className="truncate text-sm font-semibold text-ink">{storeName || 'A1 Smart Light'}</p>
             <p className="text-xs text-ink-muted">Electrical · POS</p>
           </div>
         )}
-        <button
-          type="button"
-          onClick={toggleCollapse}
-          className={cn('ml-auto rounded-md p-1 text-ink-muted hover:bg-surface-2', collapsed && 'mx-auto')}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">

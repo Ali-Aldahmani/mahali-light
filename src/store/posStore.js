@@ -118,9 +118,14 @@ export const usePosStore = create((set, get) => ({
 
   setCustomer(customer) {
     set((state) => {
-      const next = customer && customer.id ? customer : null;
-      // Guest can't keep credit payments.
-      const payments = next
+      // Guest is `{ id: null, name: 'Guest' }` — a real selection, distinct
+      // from `null` (no selection). Only collapse to null when the caller
+      // actually passed null/undefined (i.e. cleared the field).
+      const next = customer || null;
+      // Neither guest nor no-selection can keep credit payments — only a
+      // registered account (a real id) can.
+      const hasAccount = Boolean(next && next.id);
+      const payments = hasAccount
         ? state.payments
         : state.payments.filter((p) => p.method !== 'credit');
       return { selectedCustomer: next, payments };
@@ -237,7 +242,7 @@ export const usePosStore = create((set, get) => ({
 
   addPayment(method, amount) {
     set((state) => {
-      if (method === 'credit' && !state.selectedCustomer) return state;
+      if (method === 'credit' && !state.selectedCustomer?.id) return state;
       return {
         payments: [
           ...state.payments,

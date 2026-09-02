@@ -15,7 +15,6 @@ export default function CategoryBreakdownBars({ rows = [], emptyText = 'No categ
   const max = Math.max(...rows.map((r) => Number(r.revenue) || 0), 1);
   return (
     <div className="rounded-card border border-border bg-surface p-4">
-      <div className="text-sm font-semibold text-ink mb-3">Category breakdown</div>
       <div className="space-y-3">
         {rows.map((r) => {
           const pct = (Number(r.revenue) / max) * 100;

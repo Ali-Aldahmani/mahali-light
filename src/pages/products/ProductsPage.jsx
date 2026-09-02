@@ -18,6 +18,7 @@ import { useAuthStore } from '../../store/authStore.js';
 import { onProductUpdate } from '../../store/socketStore.js';
 import { toast } from '../../store/toastStore.js';
 import { fileUrl } from '../../config.js';
+import { useBarcodeListener } from '../../hooks/useBarcodeListener.js';
 
 const SOLD_BY_OPTIONS = [
   { value: '', label: 'All units' },
@@ -97,6 +98,11 @@ export default function ProductsPage() {
     const id = setTimeout(() => setPage(1), 250);
     return () => clearTimeout(id);
   }, [search, filters]);
+
+  // Scan a barcode from anywhere on the page (no need to click into the
+  // search box first) — same heuristic POS uses. Disabled while the delete
+  // confirmation is open so a stray scan can't be mistaken for input there.
+  useBarcodeListener((code) => setSearch(code), { enabled: !confirmDel });
 
   // Real-time refresh from socket.
   useEffect(() => {
