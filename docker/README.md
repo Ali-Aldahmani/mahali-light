@@ -1,4 +1,4 @@
-# Bytecra POS — Docker on the Windows server PC
+# A1 Smart Light — Docker on the Windows server PC
 
 This is the **production** path for the API and PostgreSQL. Electron stays a native Windows app on every till. PM2 (`ecosystem.config.js`) is unchanged and is for operators who do **not** use Docker.
 
@@ -17,7 +17,7 @@ POS-1 / POS-2 / POS-3  ──LAN──►  https://192.168.1.100:3000  (or http:
 - Windows 11 Pro
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) with the **Linux engine**
 - Server PC on the shop LAN with a **static IPv4** (router reservation or manual IP)
-- This repository on the server (Git clone or ZIP), e.g. `C:\BytecraPOS`
+- This repository on the server (Git clone or ZIP), e.g. `C:\A1SmartLight`
 
 Do not run Docker on a till-only PC. Do not containerize Electron.
 
@@ -83,7 +83,7 @@ Leave `PGHOST=localhost` in `.env` if you still use PM2 on another machine. Comp
 Administrator PowerShell (use the same number as `API_PORT`):
 
 ```powershell
-New-NetFirewallRule -DisplayName "Bytecra POS API" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+New-NetFirewallRule -DisplayName "A1 Smart Light API" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
 ```
 
 Do **not** open 5432.
@@ -91,7 +91,7 @@ Do **not** open 5432.
 ### 3. Build and start
 
 ```powershell
-cd C:\BytecraPOS
+cd C:\A1SmartLight
 docker compose build
 docker compose up -d
 ```
@@ -153,7 +153,7 @@ TLS is handled **inside** the API container (`server/utils/tlsCert.js`):
 
 1. `SERVER_USE_HTTPS=true` and `SERVER_IP=<LAN IP>` in `.env`
 2. On first start, OpenSSL in the image writes `cert.pem` / `key.pem` into the `api_tls` volume (`/data/tls`)
-3. That certificate is **self-signed**. Windows POS clients must set `"serverUseHttps": true` in `%APPDATA%\BytecraPOS\appConfig.json`. Electron already allows this cert **only** for the configured server IP.
+3. That certificate is **self-signed**. Windows POS clients must set `"serverUseHttps": true` in `%APPDATA%\A1 Smart Light\appConfig.json`. Electron already allows this cert **only** for the configured server IP.
 
 Trust implication: tills trust that IP’s self-signed cert via the app, not via Windows Certificate Store. Replace with company PEMs if required:
 
@@ -170,9 +170,9 @@ Mount your files into `api_tls` or add a bind mount. Docker does not sit in fron
 
 Do not use `localhost` on a client till.
 
-1. Install `BytecraPOS-Setup-*.exe` on each till  
+1. Install `A1SmartLight-Setup-*.exe` on each till  
 2. Wizard: **This is a CLIENT PC** → Server IP = `192.168.1.100` → **Test connection**  
-3. Or edit `%APPDATA%\BytecraPOS\appConfig.json`:
+3. Or edit `%APPDATA%\A1 Smart Light\appConfig.json`:
 
 ```json
 {
