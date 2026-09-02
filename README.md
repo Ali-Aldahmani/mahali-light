@@ -17,7 +17,7 @@ If the **server PC is off**, tills cannot sell.
 | I am… | Do this |
 |--------|---------|
 | Setting up the **shop** (Windows server + tills) | Start at **[Shop setup](#shop-setup-do-this-in-order)** below. Details: [docker/README.md](docker/README.md) |
-| Installing extra **tills only** | Jump to **[Client PCs](#3-every-other-pc--till)** |
+| Installing extra **tills only** | Jump to **[Part 2 — Client PC setup](#part-2--client-pc-setup-every-till)** |
 | Developing on a **Mac / laptop** | Jump to **[Developers](#developers-mac--laptop)** |
 
 Do **not** run the live shop with `npm run dev`. That is for development only.
@@ -30,35 +30,42 @@ Do **not** run the live shop with `npm run dev`. That is for development only.
 
 - One Windows 11 Pro **server PC** that stays on during opening hours
 - A **static LAN IP** on that PC (write it down, e.g. `192.168.1.100`)
-- Other tills: 64-bit Windows 10/11, same Wi‑Fi or Ethernet
+- Other tills: 64-bit Windows 10/11, same Wi-Fi or Ethernet
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) on the **server only** (Linux engine)
+- This repository on the server (Git clone or ZIP), e.g. `C:\BytecraPOS`
 
-### 1. Server PC — API and database (Docker)
+Setup has two parts, done in order: **Part 1** sets up the one server PC (Docker backend, then the POS app in server mode). **Part 2** installs the POS app on every other till (no Docker). Finish Part 1 completely — including running migrations and testing a sale on the server — before starting Part 2.
 
-On the server, from the project folder (e.g. `C:\BytecraPOS`):
+---
 
-1. Copy env and fill secrets (do not leave `CHANGE_ME` / `REPLACE_ME`):
+## Part 1 — Server PC setup
+
+Everything in this part runs **on the server PC**, from the project folder (e.g. `C:\BytecraPOS`).
+
+### 1.1 Configure environment
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-Set at least:
+Set at least (do not leave `CHANGE_ME` / `REPLACE_ME`):
 
 - `JWT_SECRET` and `MAHALI_BACKUP_SECRET` (generate with the commands in `.env.example`)
 - `POSTGRES_PASSWORD` (strong), `POSTGRES_USER`, `POSTGRES_DB`
 - `API_PORT=3000`
-- `SERVER_IP=` this PC’s LAN IP
+- `SERVER_IP=` this PC's LAN IP (e.g. `192.168.1.100`)
 - `SERVER_USE_HTTPS=true` for more than one till
 
-2. Open the firewall for the API **only** (not 5432):
+### 1.2 Open the firewall (API only — not the database)
 
 ```powershell
 New-NetFirewallRule -DisplayName "Bytecra POS API" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
 ```
 
-3. Start:
+Do **not** open port 5432 — PostgreSQL is never published to the LAN.
+
+### 1.3 Build and start the backend (Docker)
 
 ```powershell
 docker compose build
@@ -66,22 +73,22 @@ docker compose up -d
 docker compose ps
 ```
 
-Both `api` and `postgres` should be **healthy**.
+Both `api` and `postgres` should show **healthy**. If not, check `docker compose logs api`.
 
-4. Apply schema (safe to run more than once):
+### 1.4 Apply the database schema
 
 ```powershell
 docker compose run --rm api npm run migrate
 ```
 
-Full commands (backup, restore, update, HTTPS): **[docker/README.md](docker/README.md)**.  
+Safe to run more than once. Full command reference (backup, restore, update, HTTPS): **[docker/README.md](docker/README.md)**.
 **Never** run `docker compose down -v` — that deletes the database volume.
 
-Do **not** `npm run seed` on a live shop. Production does not create `admin` / `admin123`. You create the admin in the POS wizard.
+Do **not** `npm run seed` on a live shop. Production does not create `admin` / `admin123`. You create the admin in the POS wizard (next step).
 
-### 2. Server PC — POS window
+### 1.5 Install the POS app on the server itself
 
-Build the Windows installer on the server (or any Windows machine with this repo):
+Build the Windows installer (on the server, or any Windows machine with this repo, then copy the `.exe` over):
 
 ```powershell
 npm install
@@ -89,22 +96,30 @@ npm run build
 npm run build:electron
 ```
 
-Installer: `release\BytecraPOS-Setup-….exe`
+Installer: `release\BytecraPOS-Setup-*.exe`
 
 Install it **on the server**, open **Bytecra POS**, choose **This is the SERVER PC**, create a **strong admin** password, finish the wizard, sign in.
 
-### 3. Every other PC — till
+At this point the server PC works on its own — Docker backend plus the POS app talking to `127.0.0.1`. Do a test sale here before moving on to Part 2.
 
-1. Copy the **same** `.exe` and install it.  
-2. Open Bytecra POS → **This is a CLIENT PC**.  
-3. Server IP = the address from step 1 (not `localhost`).  
-4. Click **Test connection** — it must succeed.  
-5. Unique PC name (`POS-2`, `POS-3`, …).  
-6. Sign in with users created on the server.
+---
 
-If HTTPS is on, `%APPDATA%\BytecraPOS\appConfig.json` must have `"serverUseHttps": true` and the same `serverPort` as `API_PORT`.
+## Part 2 — Client PC setup (every till)
 
-### 4. Before live sales
+No Docker on tills — repeat these steps on **each** other PC.
+
+1. Copy the **same** `.exe` built in step 1.5 and install it.
+2. Open Bytecra POS → **This is a CLIENT PC**.
+3. Server IP = the address from step 1.1 (not `localhost`).
+4. Click **Test connection** — it must succeed before continuing.
+5. Give it a unique PC name (`POS-2`, `POS-3`, …).
+6. Sign in with a user created on the server.
+
+If HTTPS is on (`SERVER_USE_HTTPS=true`), `%APPDATA%\BytecraPOS\appConfig.json` on that till must have `"serverUseHttps": true` and the same `serverPort` as `API_PORT`.
+
+---
+
+## Before live sales
 
 On **server + at least two tills**, check: login, one sale, stock updating on the other screen, print, backup. Full list: [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md).
 
@@ -112,8 +127,8 @@ On **server + at least two tills**, check: login, one sale, stock updating on th
 
 ## Daily use
 
-- Leave the **server PC** on.  
-- Staff only open **Bytecra POS** on each till.  
+- Leave the **server PC** on.
+- Staff only open **Bytecra POS** on each till.
 - If something is down: on the server run `docker compose ps` and `docker compose logs api`.
 
 | Task | Command (server, project folder) |
