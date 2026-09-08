@@ -135,11 +135,6 @@ export default function LoginPage() {
           >
             {loading ? 'Signing in…' : 'Sign in'}
           </Button>
-
-          <p className="pt-2 text-center text-xs text-ink-muted">
-            Default admin: <span className="font-mono">admin</span> /{' '}
-            <span className="font-mono">admin123</span>
-          </p>
         </form>
 
         <p className="mt-6 text-center text-xs text-ink-muted">
