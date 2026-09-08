@@ -153,6 +153,47 @@ Then, on your router's admin page, **reserve that IP** for this PC's MAC
 address (a "DHCP reservation" or "static lease") so it never changes. Make
 sure this PC and every till are on the **same** Wi‑Fi/VLAN.
 
+### A.6 Make the POS come back up automatically after a restart or power cut
+
+Every service in `docker-compose.yml` is already set to `restart: unless-stopped`,
+so once the Docker daemon is running, Docker itself keeps the containers
+alive — it restarts a service if it crashes, and it restarts every service
+after the Docker daemon restarts. The only thing left to configure is making
+sure **Docker itself starts automatically** when the server PC reboots
+(after a power cut, Windows update, etc.), with no one needing to log in and
+double-click anything.
+
+**Windows / macOS (Docker Desktop)**
+1. Open Docker Desktop → **Settings → General** and enable **"Start Docker
+   Desktop when you log in."**
+2. Docker Desktop only runs inside a logged-in user session, so also set this
+   PC to **log in automatically** after a reboot:
+   - **Windows**: press ⊞ Win+R, run `netplwiz`, untick "Users must enter a
+     user name and password to use this computer," select the account this
+     server runs under, and confirm.
+   - **macOS**: **System Settings → Users & Groups → Login Options** → set
+     **Automatic login** to this account.
+3. Reboot the PC once to confirm: it should boot straight to the desktop,
+   Docker Desktop should launch on its own, and a minute or two later
+   `docker compose ps` (from the project folder) should show every service
+   **healthy** again with no commands run by hand.
+
+**Linux (Docker Engine)** — no login required at all, which makes Linux the
+most reliable choice for a machine that's meant to run unattended:
+```bash
+sudo systemctl enable docker
+```
+This starts the Docker daemon at boot before any user logs in, and your
+containers (already `restart: unless-stopped`) come up with it.
+
+**Important caveat:** `unless-stopped` means "always restart, unless a human
+explicitly stopped it." If you ever run `docker compose down` (which removes
+the containers) and then the PC restarts, there is nothing left to restart —
+you'd need to run `docker compose up -d` again yourself. For a live server,
+prefer leaving the stack running and only use `docker compose down` for real
+maintenance; a normal reboot, power cut, or crash does **not** count as
+stopping it and will always come back on its own once Docker starts.
+
 ---
 
 ## PART B — The Docker setup (what's actually running)
