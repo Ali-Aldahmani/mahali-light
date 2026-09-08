@@ -12,6 +12,7 @@ import {
   testServerConnection,
 } from '@/services/setupService';
 import { toast } from '@/store/toastStore';
+import { useSetupStore } from '@/store/setupStore';
 
 const TOTAL = 8;
 
@@ -143,6 +144,7 @@ export default function SetupWizardPage() {
       }
     } catch (err: any) {
       if (err?.status === 409 && /already been completed/i.test(err?.message || '')) {
+        useSetupStore.getState().setCompleted(true);
         toast.success('Setup was already completed — taking you to login.');
         router.replace('/login');
         return;
@@ -187,7 +189,10 @@ export default function SetupWizardPage() {
           <button
             type="button"
             className="mt-6 rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-white"
-            onClick={() => router.replace('/login')}
+            onClick={() => {
+              useSetupStore.getState().setCompleted(true);
+              router.replace('/login');
+            }}
           >
             Go to login →
           </button>
