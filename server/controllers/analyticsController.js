@@ -302,7 +302,7 @@ async function getReorder(req, res, next) {
   try {
     const data = await forecastService.getReorderForVariant(req.params.variantId);
     if (!data) {
-      throw new AppError(ERROR_CODES.NOT_FOUND, 'Variant not found.', { status: 404 });
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Variant not found.', { status: 404 });
     }
     ok(res, data);
   } catch (err) {
@@ -338,7 +338,7 @@ async function getAnnualPlan(req, res, next) {
       parsed.year,
     );
     if (!data) {
-      throw new AppError(ERROR_CODES.NOT_FOUND, 'Variant not found.', { status: 404 });
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Variant not found.', { status: 404 });
     }
     ok(res, data);
   } catch (err) {

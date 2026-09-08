@@ -1,13 +1,16 @@
-# Bytecra POS — Docker on the Windows server PC
+# Bytecra POS — Docker notes
 
-This is the **production** path for the API and PostgreSQL. Electron stays a native Windows app on every till. PM2 (`ecosystem.config.js`) is unchanged and is for operators who do **not** use Docker.
+Canonical shop setup is the **root README.md**. Stack: `postgres`, `express-api`, `nextjs`. Optional ML profile `fastapi`.
+
+The `api` service was renamed to `express-api`. Electron is not required for tills.
 
 ```text
-Windows 11 Pro (server PC, static LAN IP e.g. 192.168.1.100)
-  Docker Desktop
-    ├── api          (Node 22, `node server/index.js`, port 3000 in the container)
-    └── postgres     (postgres:16-bookworm, not published to the LAN)
-POS-1 / POS-2 / POS-3  ──LAN──►  https://192.168.1.100:3000  (or http:// if TLS is off)
+Server PC (static LAN IP)
+  Docker
+    ├── nextjs       (web UI, WEB_PORT → 80)
+    ├── express-api  (Node 22, API + Socket.io, API_PORT → 3000)
+    └── postgres     (not published to the LAN)
+Browsers  ──LAN──►  http://SERVER_IP
 ```
 
 ---
@@ -101,7 +104,7 @@ docker compose up -d
 Preferred explicit run (same command as the project):
 
 ```powershell
-docker compose run --rm api npm run migrate
+docker compose run --rm express-api npm run migrate
 ```
 
 Safe to re-run: already-applied files are skipped.
@@ -114,7 +117,7 @@ Do **not** `npm run seed` on a live shop. Production seed skips the default `adm
 
 ```powershell
 docker compose ps
-docker compose logs api --tail 80
+docker compose logs express-api --tail 80
 docker compose logs postgres --tail 40
 ```
 
@@ -136,10 +139,10 @@ From another till, use the LAN IP, not `localhost`.
 docker compose build              # rebuild API image
 docker compose up -d              # start
 docker compose ps                 # status
-docker compose logs -f api        # API logs
+docker compose logs -f express-api        # API logs
 docker compose logs -f postgres   # database logs
 docker compose restart            # restart both
-docker compose restart api        # API only
+docker compose restart express-api        # API only
 docker compose down               # stop; KEEPS volumes (database + uploads + backups + tls)
 ```
 
@@ -211,7 +214,7 @@ Copy `docker\postgres\backups\manual.dump` off the server (USB, NAS, another dis
 ### Verify a backup exists
 
 ```powershell
-docker compose exec api ls -la /app/backups
+docker compose exec express-api ls -la /app/backups
 ```
 
 ---
@@ -225,7 +228,7 @@ Restoring **overwrites** live data. Put the shop in a quiet window. The app’s 
 1. Stop the API so it is not writing:
 
 ```powershell
-docker compose stop api
+docker compose stop express-api
 ```
 
 2. Restore (this replaces objects in `mahali_light`):
@@ -237,8 +240,8 @@ docker compose exec postgres pg_restore -U mahali -d mahali_light --clean --if-e
 3. Start API and migrate (no-op if already current):
 
 ```powershell
-docker compose start api
-docker compose run --rm api npm run migrate
+docker compose start express-api
+docker compose run --rm express-api npm run migrate
 ```
 
 4. Open a till, log in, check a known invoice and stock figure.
@@ -253,7 +256,7 @@ A backup is not production-ready until you have **run this restore once on a tes
 1. Backup (app Backup UI and/or pg_dump to docker/postgres/backups)
 2. git pull  (or copy new files) — do not delete Docker volumes
 3. docker compose build
-4. docker compose run --rm api npm run migrate
+4. docker compose run --rm express-api npm run migrate
 5. docker compose up -d
 6. docker compose ps   (both healthy)
 7. Hit /api/health from a till

@@ -250,11 +250,22 @@ async function runScheduleNow(req, res, next) {
 // =======================================================================
 // Static registry listing — frontend hub uses this to enumerate types.
 // =======================================================================
-function listRegistry(_req, res) {
-  const entries = Object.entries(reportService.REGISTRY).map(([type, def]) => ({
-    type,
-    permission: def.permission,
-  }));
+function listRegistry(req, res) {
+  const owned = new Set(req.user?.permissions || []);
+  const entries = Object.entries(reportService.REGISTRY)
+    .filter(([type, def]) => {
+      if (type === 'employee_performance') {
+        return (
+          owned.has('report.employee_performance_own') ||
+          owned.has('report.employee_performance_all')
+        );
+      }
+      return owned.has(def.permission);
+    })
+    .map(([type, def]) => ({
+      type,
+      permission: def.permission,
+    }));
   return ok(res, entries);
 }
 

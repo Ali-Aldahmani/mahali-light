@@ -9,6 +9,8 @@ const morgan = require('morgan');
 const compression = require('compression');
 
 const { loadTlsOptions } = require('./utils/tlsCert');
+const { waitForDatabase } = require('./db/postgres');
+const { extraOrigins, isAllowedOrigin } = require('./utils/corsOrigins');
 const { runMigrations } = require('./db/migrate');
 const { run: runSeed } = require('./db/seed');
 const { run: runSeedProducts } = require('./db/seedProducts');
@@ -145,6 +147,7 @@ async function bootstrap() {
   assertJwtSecret();
   assertBackupSecret();
   registerProcessHandlers();
+  await waitForDatabase();
   await runMigrations();
   await runSeed();
   await runSeedProducts();
@@ -191,12 +194,7 @@ async function bootstrap() {
   //   • No Origin header  — same-origin requests, curl, health checks.
   //   • Origin: "null"    — Electron renderer (file:// → Chromium sends "null").
   //   • CORS_ORIGINS list — comma-separated explicit origins from the env.
-  const allowedOrigins = new Set(
-    (process.env.CORS_ORIGINS || '')
-      .split(',')
-      .map((o) => o.trim())
-      .filter(Boolean),
-  );
+  const allowedOrigins = extraOrigins();
 
   const io = attachSocket(server, allowedOrigins);
   app.set('io', io);
@@ -237,13 +235,11 @@ async function bootstrap() {
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );
-  // CORS — uses the same allowedOrigins Set created above (before attachSocket).
-  // Everything not in the list receives a 403 so arbitrary websites on the LAN
-  // cannot make credentialed requests to the API from a browser tab.
+  // CORS: CORS_ORIGINS plus SERVER_IP / loopback (see utils/corsOrigins.js).
   app.use(
     cors({
       origin: (origin, cb) => {
-        if (!origin || origin === 'null' || allowedOrigins.has(origin)) {
+        if (isAllowedOrigin(origin)) {
           return cb(null, true);
         }
         cb(Object.assign(new Error(`Origin "${origin}" not allowed by CORS`), { status: 403 }));
@@ -283,8 +279,13 @@ async function bootstrap() {
     }),
   );
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ success: true, data: { status: 'ok', service: 'mahali-light', time: new Date().toISOString() } });
+  app.get('/api/health', async (_req, res) => {
+    const payload = {
+      status: 'ok',
+      service: 'mahali-light',
+      time: new Date().toISOString(),
+    };
+    res.json({ success: true, data: payload });
   });
 
   app.use('/api/auth', authRouter);

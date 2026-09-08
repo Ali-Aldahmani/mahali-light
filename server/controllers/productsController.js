@@ -19,6 +19,7 @@ const {
   loadVariantsBatch,
   shapeProduct,
 } = require('../services/productService');
+const { lookupBarcode } = require('../services/barcodeLookupService');
 
 const SOLD_BY = ['piece', 'meter', 'roll', 'kg', 'box'];
 
@@ -698,6 +699,27 @@ async function search(req, res, next) {
   }
 }
 
+// Scan-to-autofill for "Add product": checks this shop's own inventory
+// first (to flag duplicates), then an external global barcode database
+// (UPCitemdb by default) so a scanned manufacturer barcode can prefill
+// name/brand/category/image for a brand-new product.
+async function barcodeLookup(req, res, next) {
+  try {
+    const barcode = String(req.params.barcode || '').trim();
+    if (!barcode) {
+      throw new AppError(
+        ERROR_CODES.VAL_REQUIRED_FIELD,
+        'Barcode is required.',
+        { status: 400, details: { field: 'barcode' } },
+      );
+    }
+    const result = await lookupBarcode(barcode);
+    return ok(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   getOne,
@@ -708,5 +730,6 @@ module.exports = {
   deleteImage,
   history,
   search,
+  barcodeLookup,
   emitProductChange,
 };

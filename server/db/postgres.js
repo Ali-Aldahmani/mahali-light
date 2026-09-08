@@ -23,6 +23,24 @@ function getPool() {
   return pool;
 }
 
+async function waitForDatabase({ attempts = 30, delayMs = 2000 } = {}) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i += 1) {
+    try {
+      await query('SELECT 1');
+      if (i > 1) console.log(`[postgres] ready after ${i} attempt(s)`);
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(
+        `[postgres] not ready (${i}/${attempts}): ${err.code || err.message}`,
+      );
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 async function query(text, params) {
   return getPool().query(text, params);
 }
@@ -42,4 +60,4 @@ async function withTransaction(fn) {
   }
 }
 
-module.exports = { getPool, query, withTransaction };
+module.exports = { getPool, query, withTransaction, waitForDatabase };

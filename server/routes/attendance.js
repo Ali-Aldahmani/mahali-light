@@ -2,6 +2,7 @@ const express = require('express');
 const ctrl = require('../controllers/attendanceController');
 const { requireAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 
 const router = express.Router();
 router.use(requireAuth());
@@ -41,26 +42,30 @@ router.put(
 router.post('/', requirePermission('attendance.mark_manual'), ctrl.manualEntry);
 router.put('/:id', requirePermission('attendance.mark_manual'), ctrl.update);
 
-// Per-employee endpoints. Allow self-view via view_own; managers via view_all.
-// Self-view enforcement is done inline using req.user.employeeId.
-function selfOrViewAll(handler) {
-  return (req, res, next) => {
-    const perms = req.user?.permissions || [];
-    const ownEmployeeId = req.user?.employee_id;
-    if (
-      perms.includes('attendance.view_all') ||
-      (perms.includes('attendance.view_own') && ownEmployeeId === req.params.employeeId)
-    ) {
-      return handler(req, res, next);
-    }
-    return res.status(403).json({
-      success: false,
-      error: { code: 'AUTH_NO_PERMISSION', message: 'No permission for this employee.' },
-    });
-  };
+function selfOrViewAll(req, next, proceed) {
+  const perms = req.user?.permissions || [];
+  const ownEmployeeId = req.user?.employee_id;
+  if (
+    perms.includes('attendance.view_all') ||
+    (perms.includes('attendance.view_own') && ownEmployeeId === req.params.employeeId)
+  ) {
+    return proceed();
+  }
+  return next(
+    new AppError(ERROR_CODES.AUTH_NO_PERMISSION, 'No permission for this employee.', {
+      status: 403,
+      details: { employeeId: req.params.employeeId },
+    }),
+  );
 }
 
-router.get('/:employeeId', selfOrViewAll(ctrl.employeeHistory));
-router.get('/:employeeId/summary', selfOrViewAll(ctrl.employeeSummary));
+// Per-employee endpoints. Allow self-view via view_own; managers via view_all.
+router.get('/:employeeId', (req, res, next) => {
+  selfOrViewAll(req, next, () => ctrl.employeeHistory(req, res, next));
+});
+router.get('/:employeeId/summary', (req, res, next) => {
+  selfOrViewAll(req, next, () => ctrl.employeeSummary(req, res, next));
+});
 
+router.selfOrViewAll = selfOrViewAll;
 module.exports = router;

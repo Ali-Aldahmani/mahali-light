@@ -9,8 +9,13 @@ const router = express.Router();
 
 router.use(requireAuth());
 
-// Search must come before /:id to avoid being captured by the param route.
+// Search/lookup routes must come before /:id to avoid being captured by the param route.
 router.get('/search', requirePermission('product.view'), ctrl.search);
+router.get(
+  '/barcode-lookup/:barcode',
+  requirePermission('product.create'),
+  ctrl.barcodeLookup,
+);
 
 router.get('/', requirePermission('product.view'), ctrl.list);
 router.post('/', requirePermission('product.create'), ctrl.create);

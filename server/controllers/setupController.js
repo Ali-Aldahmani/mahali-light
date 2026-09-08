@@ -73,7 +73,21 @@ const completeSchema = z.object({
 async function complete(req, res, next) {
   try {
     const body = completeSchema.parse(req.body || {});
+    if (await appSettingsService.isSetupComplete()) {
+      throw new AppError(
+        ERROR_CODES.BIZ_INVALID_STATE,
+        'Setup has already been completed.',
+        { status: 409 },
+      );
+    }
     const hasAdmin = await setupService.hasAdminUser();
+    if (hasAdmin && body.admin) {
+      throw new AppError(
+        ERROR_CODES.BIZ_INVALID_STATE,
+        'An Admin account already exists. Setup cannot create another privileged user.',
+        { status: 409 },
+      );
+    }
     if (!hasAdmin && !body.admin) {
       throw new AppError(
         ERROR_CODES.VAL_REQUIRED_FIELD,

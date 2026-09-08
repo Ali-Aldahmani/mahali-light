@@ -437,8 +437,8 @@ async function getReorderForVariant(variantId) {
     [variantId],
   );
   if (!rows.length) {
-    // Fall back to a fresh calc when no row exists yet.
-    return calculateReorderRecommendation(variantId);
+    // Read-only: persistence is POST /api/forecast/recalculate + monthly job.
+    return null;
   }
   const r = rows[0];
   return {
@@ -506,8 +506,8 @@ async function getAnnualPlanForVariant(variantId, year) {
     [variantId, targetYear],
   );
   if (!rows.length) {
-    // Generate on demand the first time someone opens this view.
-    return calculateAnnualStockPlan(variantId, targetYear);
+    // Read-only: persistence is POST /api/forecast/recalculate + monthly job.
+    return null;
   }
   const { rows: vrows } = await query(
     `SELECT v.id, p.name AS product_name, v.sku

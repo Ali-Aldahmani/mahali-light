@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const { verifyToken, hashToken } = require('../middleware/auth');
 const { query } = require('../db/postgres');
 const attendanceService = require('../services/attendanceService');
+const { isAllowedOrigin } = require('../utils/corsOrigins');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
@@ -15,7 +16,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       origin: (origin, cb) => {
         // Allow: no origin (same-origin / curl), Electron file:// ("null"),
         // or an explicitly whitelisted web origin.
-        if (!origin || origin === 'null' || allowedOrigins.has(origin)) {
+        if (isAllowedOrigin(origin)) {
           return cb(null, true);
         }
         cb(new Error(`Origin "${origin}" not allowed`));
