@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const { verifyToken, hashToken } = require('../middleware/auth');
 const { query } = require('../db/postgres');
 const attendanceService = require('../services/attendanceService');
+const { isAllowedOrigin } = require('../utils/corsOrigins');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
@@ -15,7 +16,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       origin: (origin, cb) => {
         // Allow: no origin (same-origin / curl), Electron file:// ("null"),
         // or an explicitly whitelisted web origin.
-        if (!origin || origin === 'null' || allowedOrigins.has(origin)) {
+        if (isAllowedOrigin(origin)) {
           return cb(null, true);
         }
         cb(new Error(`Origin "${origin}" not allowed`));
@@ -69,14 +70,6 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
 
     socket.emit('connected', { userId, username, role });
     socket.broadcast.emit('user_online', { userId, username, role, pcIdentifier });
-
-    // Mark online immediately rather than waiting for the first heartbeat
-    // (up to 30s later) — otherwise a REST /api/presence fetch right after a
-    // (re)connect would still show this session as offline.
-    query(
-      `UPDATE user_sessions SET last_activity_at = NOW(), status = 'online' WHERE id = $1`,
-      [sessionId],
-    ).catch(() => {});
 
     socket.on('heartbeat', async () => {
       try {

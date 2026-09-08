@@ -4,6 +4,17 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const {
+  assertCanAssignRole,
+  assertCanChangeRole,
+  assertCanSetEffectivePermissions,
+} = require('../../shared/authzPolicy');
+
+async function loadRoleName(roleId) {
+  if (!roleId) return null;
+  const { rows } = await query('SELECT name FROM roles WHERE id = $1', [roleId]);
+  return rows[0]?.name || null;
+}
 
 const createSchema = z.object({
   username: z
@@ -117,6 +128,12 @@ async function create(req, res, next) {
       throw new AppError(ERROR_CODES.USERNAME_TAKEN, undefined, { status: 409 });
     }
 
+    const newRoleName = await loadRoleName(body.roleId);
+    if (!newRoleName) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Role not found.', { status: 404 });
+    }
+    assertCanAssignRole({ actor: req.user, newRoleName });
+
     const rounds = Number(process.env.BCRYPT_ROUNDS || 12);
     const hash = await bcrypt.hash(body.password, rounds);
 
@@ -174,7 +191,10 @@ async function update(req, res, next) {
     const { id } = req.params;
 
     const { rows: existing } = await query(
-      'SELECT id, username, role_id, employee_id, is_active FROM users WHERE id = $1',
+      `SELECT u.id, u.username, u.role_id, u.employee_id, u.is_active, r.name AS role_name
+         FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.id = $1`,
       [id],
     );
     if (!existing.length) {
@@ -198,7 +218,19 @@ async function update(req, res, next) {
       sets.push(`${col} = $${params.length}`);
     }
     if (body.username !== undefined) add('username', body.username);
-    if (body.roleId !== undefined) add('role_id', body.roleId);
+    if (body.roleId !== undefined && body.roleId !== existing[0].role_id) {
+      const newRoleName = await loadRoleName(body.roleId);
+      if (!newRoleName) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Role not found.', { status: 404 });
+      }
+      assertCanChangeRole({
+        actor: req.user,
+        targetUserId: id,
+        currentRoleName: existing[0].role_name,
+        newRoleName,
+      });
+      add('role_id', body.roleId);
+    }
     if (body.employeeId !== undefined) add('employee_id', body.employeeId);
     if (body.isActive !== undefined) add('is_active', body.isActive);
     if (body.password) {
@@ -407,13 +439,15 @@ async function setPermissions(req, res, next) {
 
     // Load role permissions to compute the delta
     const { rows: userRows } = await query(
-      `SELECT u.id, r.id AS role_id FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
+      `SELECT u.id, r.id AS role_id, r.name AS role_name
+         FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
       [id],
     );
     if (!userRows.length) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
     const roleId = userRows[0].role_id;
+    const desiredKeys = new Set(body.effectiveKeys);
 
     const { rows: rolePermRows } = await query(
       `SELECT p.id AS perm_id, p.key
@@ -429,7 +463,13 @@ async function setPermissions(req, res, next) {
     const { rows: allPerms } = await query(`SELECT id, key FROM permissions`);
     const permIdMap = Object.fromEntries(allPerms.map((p) => [p.key, p.id]));
 
-    const desiredKeys = new Set(body.effectiveKeys);
+    assertCanSetEffectivePermissions({
+      actor: req.user,
+      targetUserId: id,
+      targetRoleName: userRows[0].role_name,
+      roleKeys: [...roleKeys],
+      desiredKeys: [...desiredKeys],
+    });
 
     // Build the overrides: only store rows that DIFFER from the role default.
     // granted=true  → desired but role doesn't have it (extra grant)

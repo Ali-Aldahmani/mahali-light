@@ -1,6 +1,6 @@
-# Bytecra POS — production Compose (API + PostgreSQL 16).
-# Electron tills stay native Windows apps and connect to the API on the LAN.
-# PostgreSQL is not published to the host or LAN.
+# Bytecra POS — Docker (Next.js web + Express API + PostgreSQL 16).
+# FastAPI/ML is optional: docker compose --profile ml up -d
+# PostgreSQL is not published to the LAN.
 
 name: bytecrapos
 
@@ -24,13 +24,12 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
-    # Intentionally no `ports:` — Postgres stays on the Docker network only.
 
-  api:
+  express-api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: bytecrapos-api:1.2.0
+    image: bytecrapos-api:1.1.0
     restart: unless-stopped
     depends_on:
       postgres:
@@ -40,7 +39,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: '3000'
-      # Force Docker DNS even if .env still has PGHOST=localhost (PM2 / host install).
       PGHOST: postgres
       PGPORT: '5432'
       PGUSER: ${POSTGRES_USER:-mahali}
@@ -52,6 +50,9 @@ services:
       TLS_DIR: /data/tls
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
       MAHALI_PG_BIN_DIR: /usr/lib/postgresql/16/bin
+      SERVER_USE_HTTPS: ${SERVER_USE_HTTPS:-false}
+      SERVER_IP: ${SERVER_IP:-127.0.0.1}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     ports:
       - '${API_PORT:-3000}:3000'
     volumes:
@@ -71,6 +72,63 @@ services:
       timeout: 8s
       retries: 5
       start_period: 50s
+
+  nextjs:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      # NEXT_PUBLIC_* vars are baked into the browser bundle at build time —
+      # a runtime `environment:` entry has no effect on them, since the JS
+      # has already been compiled by the time the container starts. This
+      # must match the *host*-published API port below (what the browser
+      # actually connects to for Socket.io), not the container-internal one.
+      args:
+        NEXT_PUBLIC_EXPRESS_PORT: ${API_PORT:-3000}
+    image: bytecrapos-web:1.1.0
+    restart: unless-stopped
+    depends_on:
+      express-api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      EXPRESS_INTERNAL_URL: http://express-api:3000
+    ports:
+      - '${WEB_PORT:-80}:3000'
+    networks:
+      - bytecrapos
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "fetch(\"http://127.0.0.1:3000\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 40s
+
+  fastapi:
+    profiles: ['ml']
+    build:
+      context: ./backend-fastapi
+      dockerfile: Dockerfile
+    image: bytecrapos-ml:0.1.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: ${POSTGRES_USER:-mahali}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-mahali_light}
+    ports:
+      - '${FASTAPI_PORT:-8000}:8000'
+    networks:
+      - bytecrapos
 
 volumes:
   postgres_data:

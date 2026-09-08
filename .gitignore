@@ -6,18 +6,13 @@ server/node_modules/
 dist/
 release/
 build/
-.vite/
 out/
-dist-electron/
 
 # Environment
 .env
 .env.local
 .env.production
 server/.env
-
-# Electron local config
-electron/config.local.json
 
 # Database dumps
 *.dump
@@ -49,3 +44,14 @@ desktop.ini
 tmp/
 temp/
 *.tmp
+
+web/node_modules/
+web/.next/
+hardware-agent/node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+backend-fastapi/.venv/
+backend-fastapi/*.egg-info/
+*.egg-info/

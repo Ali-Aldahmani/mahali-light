@@ -11,24 +11,13 @@
 # Dependencies and build artifacts
 node_modules
 server/node_modules
+web/node_modules
+web/.next
 dist
 release
 build
-.vite
 out
-dist-electron
 coverage
-
-# Electron / frontend (API image does not serve the React UI)
-src
-electron
-index.html
-vite.config.js
-tailwind.config.js
-postcss.config.js
-eslint.config.js
-.eslintrc*
-*.config.cjs
 
 # Tests and docs (keep docker/README out of the image)
 tests

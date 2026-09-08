@@ -349,17 +349,12 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       throw new AppError(
         ERROR_CODES.BIZ_INVALID_STATE,
         `Only draft invoices can be confirmed (current: ${invoice.status}).`,
-        { status: 409 },
       );
     }
 
     const items = await loadItemsForInvoice(client, invoiceId);
     if (!items.length) {
-      throw new AppError(
-        ERROR_CODES.BIZ_INVOICE_EMPTY,
-        undefined,
-        { status: 409 },
-      );
+      throw new AppError(ERROR_CODES.BIZ_INVOICE_EMPTY);
     }
 
     const shortfalls = await findStockShortfalls(client, items);
@@ -367,7 +362,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       throw new AppError(
         ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
         `Not enough stock for ${shortfalls.length} item(s).`,
-        { status: 409, details: { shortfalls } },
+        { details: { shortfalls } },
       );
     }
 
@@ -411,9 +406,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     for (const pm of payments) {
       if (pm.method === 'credit') {
         if (!invoice.customer_id) {
-          throw new AppError(ERROR_CODES.BIZ_GUEST_NO_CREDIT, undefined, {
-            status: 409,
-          });
+          throw new AppError(ERROR_CODES.BIZ_GUEST_NO_CREDIT);
         }
         creditUsed += money(pm.amount);
       }

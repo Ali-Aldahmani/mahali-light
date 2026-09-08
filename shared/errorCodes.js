@@ -261,6 +261,31 @@ const ERROR_DEFS = {
     status: 422,
     severity: 'warning',
   },
+  [ERROR_CODES.BIZ_INVALID_STATE]: {
+    message: 'This action is not allowed in the current state.',
+    status: 409,
+    severity: 'warning',
+  },
+  [ERROR_CODES.BIZ_INVOICE_EMPTY]: {
+    message: 'Cannot confirm an empty invoice.',
+    status: 422,
+    severity: 'warning',
+  },
+  [ERROR_CODES.BIZ_INVOICE_LOCKED]: {
+    message: 'This invoice can no longer be edited.',
+    status: 409,
+    severity: 'warning',
+  },
+  [ERROR_CODES.BIZ_GUEST_NO_CREDIT]: {
+    message: 'Credit payments require a registered customer.',
+    status: 422,
+    severity: 'warning',
+  },
+  [ERROR_CODES.BIZ_EDIT_REQUEST_ALREADY_REVIEWED]: {
+    message: 'This edit request has already been reviewed.',
+    status: 409,
+    severity: 'warning',
+  },
   [ERROR_CODES.BIZ_INVOICE_ALREADY_PAID]: {
     message: 'This invoice is already fully paid.',
     status: 422,

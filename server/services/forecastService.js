@@ -437,8 +437,8 @@ async function getReorderForVariant(variantId) {
     [variantId],
   );
   if (!rows.length) {
-    // Fall back to a fresh calc when no row exists yet.
-    return calculateReorderRecommendation(variantId);
+    // Read-only: persistence is POST /api/forecast/recalculate + monthly job.
+    return null;
   }
   const r = rows[0];
   return {
@@ -506,8 +506,8 @@ async function getAnnualPlanForVariant(variantId, year) {
     [variantId, targetYear],
   );
   if (!rows.length) {
-    // Generate on demand the first time someone opens this view.
-    return calculateAnnualStockPlan(variantId, targetYear);
+    // Read-only: persistence is POST /api/forecast/recalculate + monthly job.
+    return null;
   }
   const { rows: vrows } = await query(
     `SELECT v.id, p.name AS product_name, v.sku
@@ -591,11 +591,6 @@ async function runAllForecasts({ aggregate = true, actor = null } = {}) {
 // =======================================================================
 let timer = null;
 
-// setTimeout delays above this (~24.8 days) are silently clamped to 1ms by
-// Node, which would fire the "monthly" run almost immediately instead of
-// waiting. Chain shorter waits until the real target is within range.
-const MAX_TIMEOUT_MS = 2147483647;
-
 function msUntilNextRun() {
   const now = new Date();
   const next = new Date(now);
@@ -613,10 +608,6 @@ function msUntilNextRun() {
 function scheduleNextRun() {
   const delay = msUntilNextRun();
   if (timer) clearTimeout(timer);
-  if (delay > MAX_TIMEOUT_MS) {
-    timer = setTimeout(scheduleNextRun, MAX_TIMEOUT_MS);
-    return;
-  }
   timer = setTimeout(async () => {
     try {
       const result = await runAllForecasts({ aggregate: true });

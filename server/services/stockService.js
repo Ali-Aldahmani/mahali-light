@@ -152,7 +152,7 @@ async function applyStockMovement(params) {
         throw new AppError(
           ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
           `Cannot quarantine ${amount}; only ${before} on hand.`,
-          { status: 409, details: { available: before, requested: amount } },
+          { details: { available: before, requested: amount } },
         );
       }
       after = before - amount;
@@ -163,7 +163,6 @@ async function applyStockMovement(params) {
         throw new AppError(
           ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
           `Cannot release ${amount}; only ${beforeQuarantine} in quarantine.`,
-          { status: 409 },
         );
       }
       after = before + amount;
@@ -176,7 +175,6 @@ async function applyStockMovement(params) {
             ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
             `Not enough stock. Available: ${before}, requested: ${Math.abs(delta)}.`,
             {
-              status: 409,
               details: { available: before, requested: Math.abs(delta) },
             },
           );
@@ -185,7 +183,6 @@ async function applyStockMovement(params) {
         throw new AppError(
           ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
           'Stock cannot go below zero.',
-          { status: 409 },
         );
       }
     }

@@ -7,16 +7,42 @@ function money(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+function isIsoDateOnly(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [yy, mm, dd] = value.split('-').map(Number);
+  const dt = new Date(Date.UTC(yy, mm - 1, dd));
+  return (
+    dt.getUTCFullYear() === yy && dt.getUTCMonth() === mm - 1 && dt.getUTCDate() === dd
+  );
+}
+
+function assertSlice01DateRange(params = {}) {
+  const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+  const rawStart = params.start_date || params.startDate;
+  const rawEnd = params.end_date || params.endDate;
+  if (rawStart != null && rawStart !== '' && !isIsoDateOnly(String(rawStart).slice(0, 10))) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid date', {
+      status: 400,
+      field: 'start_date',
+    });
+  }
+  if (rawEnd != null && rawEnd !== '' && !isIsoDateOnly(String(rawEnd).slice(0, 10))) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid date', {
+      status: 400,
+      field: 'end_date',
+    });
+  }
+}
+
 function parseDateRange(params = {}) {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
   const defStart = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
   const defEnd = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
-  return {
-    startDate: (params.start_date || params.startDate || defStart).slice(0, 10),
-    endDate: (params.end_date || params.endDate || defEnd).slice(0, 10),
-  };
+  const startDate = (params.start_date || params.startDate || defStart).toString().slice(0, 10);
+  const endDate = (params.end_date || params.endDate || defEnd).toString().slice(0, 10);
+  return { startDate, endDate };
 }
 
 // Calculates the same-length window directly before [start, end] so reports
@@ -547,8 +573,13 @@ async function getEmployeePerformance({
 // =======================================================================
 // Peaks (hours / days / months)
 // =======================================================================
-async function getPeakHours({ startDate, endDate } = {}) {
-  const range = parseDateRange({ start_date: startDate, end_date: endDate });
+async function getPeakHours(params = {}) {
+  assertSlice01DateRange(params);
+  const range = parseDateRange(params);
+  if (range.startDate > range.endDate) {
+    const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+    throw new AppError(ERROR_CODES.VAL_INVALID_DATE_RANGE, undefined, { status: 400 });
+  }
   const { rows } = await query(
     `SELECT EXTRACT(HOUR FROM confirmed_at)::int AS hour,
             COUNT(*)::int AS invoice_count,
@@ -776,8 +807,13 @@ async function getProductSeasonality(productId, { years = 2 } = {}) {
 // =======================================================================
 // Dashboard / overview KPIs
 // =======================================================================
-async function getKPIs({ startDate, endDate } = {}) {
-  const range = parseDateRange({ start_date: startDate, end_date: endDate });
+async function getKPIs(params = {}) {
+  assertSlice01DateRange(params);
+  const range = parseDateRange(params);
+  if (range.startDate > range.endDate) {
+    const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+    throw new AppError(ERROR_CODES.VAL_INVALID_DATE_RANGE, undefined, { status: 400 });
+  }
   const prev = previousRange(range);
 
   // Bulk fetch — six counts in one round trip via CTE.
@@ -1047,4 +1083,5 @@ module.exports = {
   parseDateRange,
   previousRange,
   percentChange,
+  assertSlice01DateRange,
 };

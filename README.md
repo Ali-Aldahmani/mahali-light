@@ -1,238 +1,423 @@
-# A1 Smart Light
+# Bytecra POS
 
-Point-of-sale for an electrical shop in the UAE. **Several Windows PCs** share one database: one **server PC** runs the API and PostgreSQL; every **till** runs the A1 Smart Light window (Electron).
+Point of sale for an electrical shop (UAE). One **server PC** runs everything
+in Docker; every **till/cashier PC** is just a browser pointed at the server
+over the shop's LAN. Several tills share one PostgreSQL database.
+
+## 1. Project overview
+
+- **Next.js (App Router, TypeScript)** — the real, native browser POS frontend
+  (cashiers open a URL). It is a standalone application under `web/` with its
+  own routes, components, stores, and services, and does not use
+  `react-router-dom`. See `docs/web-migration/` for the migration record.
+- **Express** — permanent core API (JWT, RBAC, invoices, inventory, finance).
+- **PostgreSQL 16** — permanent database.
+- **Socket.io** — realtime events (stock, force-logout, notifications), hosted on Express.
+- **Hardware Agent** (optional, per till) — silent thermal print / local printers. Not required for ordinary use.
+- **FastAPI** (optional) — future ML/AI only. **Not** part of normal POS startup and **not** a replacement for Express.
+
+The old React/Vite SPA and the Electron desktop shell that used to wrap it
+have been removed from this repo (see
+`docs/web-migration/VITE_ARCHIVE_STATUS.md`) — `web/` fully replaces them.
+Normal tills do **not** install Node, Python, or PostgreSQL — only a browser.
+
+## 2. Architecture
 
 ```text
-Till POS-1  ─┐
-Till POS-2  ─┼── LAN ──►  Server PC (Docker: API + PostgreSQL)
-Till POS-3  ─┘
+LAN browsers (tills)  →  Next.js (:80)  →  Express API (:3000)  →  PostgreSQL
+                               │                    │
+                               │                    └── Socket.io (browsers also connect to :3000)
+                               │
+                      optional Hardware Agent on a till (127.0.0.1 only)
+
+optional: docker compose --profile ml  →  FastAPI (future ML)
 ```
 
-If the **server PC is off**, tills cannot sell. Docker (the database + API) and the server PC's own copy of the app can both be set to start automatically when the PC turns on — see [1.9](#19-optional-make-everything-start-automatically) below.
+Everything above the "LAN browsers" line runs in Docker **on one machine**
+(the server PC). Nothing below it is installed on tills.
 
 ---
 
-## Which instructions should I follow?
+## PART A — Set up the server PC
 
-| I am… | Do this |
-|--------|---------|
-| Setting up the **shop** (Windows server + tills) | Start at **[Shop setup](#shop-setup-do-this-in-order)** below. Details: [docker/README.md](docker/README.md) |
-| Installing extra **tills only** | Jump to **[Part 2 — Client PC setup](#part-2--client-pc-setup-every-till)** |
-| Developing on a **Mac / laptop** | Jump to **[Developers](#developers-mac--laptop)** |
+This is the machine that stays on and runs the shop. Do this once.
 
-Do **not** run the live shop with `npm run dev`. That is for development only.
+### A.1 What the server PC needs
 
----
+- Windows 10/11, macOS, or Linux, with **at least 4 GB RAM** free and a wired
+  Ethernet connection recommended (Wi‑Fi works, but a wired server is more
+  reliable for a till system).
+- **Docker** (Docker Desktop on Windows/macOS, Docker Engine + the Compose
+  plugin on Linux). This is the only software prerequisite — you do **not**
+  need to install Node.js, Python, or PostgreSQL yourself; Docker provides all
+  of that inside containers.
+- A **reserved/static LAN IP** for this PC (see A.5).
+- The project files, either via `git clone` or by copying the folder.
 
-## Shop setup (do this in order)
+### A.2 Install Docker on the server PC
 
-### What you need
+Pick your OS:
 
-- One Windows 11 Pro **server PC** that stays on during opening hours
-- Other tills: 64-bit Windows 10/11, same Wi-Fi or Ethernet
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) on the **server only** (Linux engine)
-- This repository on the server (Git clone or ZIP), e.g. `C:\A1SmartLight`
-
-Setup has two parts, done in order: **Part 1** sets up the one server PC (fixed IP, Docker backend, then the app in server mode). **Part 2** installs the app on every other till (no Docker). Finish Part 1 completely — including running migrations and testing a sale on the server — before starting Part 2.
-
-Two layers to keep straight: **Docker** is the invisible database + API — it has no window, nothing to click, and it must run on the server PC no matter what. **The app (`.exe`)** is the window a person actually uses — it's empty and useless without Docker running somewhere to talk to. The server PC needs Docker always; it only needs the app *too* if someone will also sell from that same PC.
-
----
-
-## Part 1 — Server PC setup
-
-Everything in this part runs **on the server PC**.
-
-### 1.1 Give the server PC a fixed IP address
-
-Every till needs to reach the server at the same network address every time — if that address changes (which normal Wi-Fi/DHCP addresses can, e.g. after a router reboot), every till breaks until you fix it. Pick **one** of these:
-
-**Option A — router reservation (recommended, safer)**. This locks the address in on the router, so nothing on the PC itself can misconfigure it.
-
-1. On the server PC, open PowerShell and run:
+**Windows 10/11**
+1. Download Docker Desktop: <https://www.docker.com/products/docker-desktop/>
+2. Run the installer. If prompted, enable **WSL 2** (the installer offers to
+   do this for you — accept it).
+3. Reboot if asked.
+4. Launch Docker Desktop and wait for the whale icon in the system tray to
+   say "Docker Desktop is running".
+5. Open PowerShell and confirm:
    ```powershell
-   ipconfig /all
+   docker --version
+   docker compose version
    ```
-   Note the **IPv4 Address** and **Physical Address** (MAC, looks like `AA-BB-CC-11-22-33`) of your active adapter.
-2. Log into your router (usually `http://192.168.1.1` or `http://192.168.0.1` in a browser — login is often printed on the router itself).
-3. Find **"DHCP Reservation"**, **"Address Reservation"**, or **"Static Lease"** (wording varies by brand). Enter the server's MAC address and the IP it should always get — its current IP is usually fine, you're just locking it in.
-4. Save. The server PC now keeps that address permanently, even after restarts.
+   Both must print a version number.
 
-**Option B — set it manually on Windows** (if you don't have router access):
+**macOS**
+1. Download Docker Desktop: <https://www.docker.com/products/docker-desktop/>
+2. Drag it into `Applications`, then launch it.
+3. Open Terminal and confirm:
+   ```bash
+   docker --version
+   docker compose version
+   ```
 
-1. **Settings → Network & Internet →** your connection **→ Properties**.
-2. Under **IP assignment**, click **Edit → Manual**, turn on **IPv4**.
-3. Fill in: **IP address** (e.g. `192.168.1.100` — pick something outside your router's normal DHCP range so nothing else grabs it later), **Subnet mask** `255.255.255.0`, **Gateway** = your router's IP (e.g. `192.168.1.1`), **Preferred DNS** `8.8.8.8`.
-4. Save.
-
-   ⚠️ If you pick an IP another device is already using, you'll get a conflict and lose network access — Option A avoids this risk entirely.
-
-**Write this IP address down** — you'll enter it in step 1.4 below and on every till in Part 2.
-
-### 1.2 Install Docker Desktop
-
-Download from [docker.com](https://www.docker.com/products/docker-desktop/) and install — **server PC only**, with the Linux engine (the default).
-
-### 1.3 Get the project files onto the server
-
-Git clone or copy this repository, e.g. into `C:\A1SmartLight`.
-
-### 1.4 Configure environment
-
-```powershell
-Copy-Item .env.example .env
-notepad .env
+**Linux (Ubuntu/Debian example)**
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"
+# log out and back in, then:
+docker --version
+docker compose version
 ```
 
-Set at least (do not leave `CHANGE_ME` / `REPLACE_ME`):
+If either `docker --version` or `docker compose version` fails, stop here and
+fix Docker first — nothing else in this guide will work without it.
 
-- `JWT_SECRET` and `MAHALI_BACKUP_SECRET` (generate with the commands shown inside `.env.example`)
-- `POSTGRES_PASSWORD` (strong), `POSTGRES_USER`, `POSTGRES_DB`
-- `API_PORT=3000`
-- `SERVER_IP=` the fixed IP address from step 1.1
-- `SERVER_USE_HTTPS=true` for more than one till
+### A.3 Get the project onto the server PC
 
-### 1.5 Open the firewall (API only — not the database)
+Choose **one**:
 
-```powershell
-New-NetFirewallRule -DisplayName "A1 Smart Light API" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+```bash
+# Option 1 — clone with git
+git clone <your-repo-url> BytecraPOS
+cd BytecraPOS
 ```
 
-Do **not** open port 5432 — PostgreSQL is never published to the LAN; only the API port needs to be reachable.
+```bash
+# Option 2 — you already have the folder (e.g. copied via USB/network share)
+cd /path/to/BytecraPOS
+```
 
-### 1.6 Build and start the backend (Docker)
+Recommended locations: `C:\BytecraPOS` on Windows, `/opt/bytecra-pos` on
+Linux/macOS.
 
-```powershell
+### A.4 Configure the environment file
+
+```bash
+cp .env.example .env
+```
+
+On Windows PowerShell: `Copy-Item .env.example .env`
+
+Open `.env` in a text editor and set at least these values:
+
+| Variable | Meaning | Example |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | Strong database password (pick your own) | `Sup3rSecret!` |
+| `POSTGRES_USER` / `POSTGRES_DB` | Database role and name (defaults are fine) | `mahali` / `mahali_light` |
+| `JWT_SECRET` | Random 48+ byte hex string — **generate one, don't type your own words** | see command below |
+| `MAHALI_BACKUP_SECRET` | Random 32+ byte hex string for NAS backup credential encryption | see command below |
+| `SERVER_IP` | This PC's LAN IP (find it in A.5) | `192.168.1.50` |
+| `WEB_PORT` | Port the POS website listens on. `80` is normal; use `8080` if `80` is taken | `80` |
+| `API_PORT` | Port the API + Socket.io listens on; must be open on the firewall | `3000` |
+| `SERVER_USE_HTTPS` | Leave `false` for plain HTTP over Docker unless you've added TLS certs | `false` |
+
+Generate the two secrets (run on any machine with Node.js — your laptop is
+fine, you're just generating random text):
+
+```bash
+node -e "require('crypto').randomBytes(48,(e,b)=>console.log(b.toString('hex')))"   # → JWT_SECRET
+node -e "require('crypto').randomBytes(32,(e,b)=>console.log(b.toString('hex')))"   # → MAHALI_BACKUP_SECRET
+```
+
+Paste each output into the matching line in `.env`.
+
+### A.5 Find this PC's LAN IP (needed for `SERVER_IP` above)
+
+- **Windows**: open PowerShell, run `ipconfig`, look for "IPv4 Address" under
+  your active Ethernet or Wi‑Fi adapter.
+- **macOS/Linux**: run `ifconfig` or `ip addr`, look for the address on your
+  active network interface (usually starts with `192.168.` or `10.`).
+
+Then, on your router's admin page, **reserve that IP** for this PC's MAC
+address (a "DHCP reservation" or "static lease") so it never changes. Make
+sure this PC and every till are on the **same** Wi‑Fi/VLAN.
+
+---
+
+## PART B — The Docker setup (what's actually running)
+
+This project ships two Dockerfiles and one Compose file that wires them
+together. You don't need to edit these files for normal use — this section
+just explains what they do, so `docker compose up` isn't a black box.
+
+### B.1 `Dockerfile` (repo root) — the Express API image
+
+Multi-stage build: installs production Node dependencies (including native
+modules like `bcrypt` and `sharp`), then a runtime stage with Chromium
+(for PDF generation) and the PostgreSQL 16 client tools (for backups). Runs
+`server/index.js`. Exposes port `3000` inside the container.
+
+### B.2 `web/Dockerfile` — the Next.js frontend image
+
+Multi-stage build: installs `web/`'s own dependencies, runs `next build`
+(with full TypeScript checking — the build fails if there are type errors),
+then copies only the resulting standalone server into a slim runtime image.
+It does **not** touch `src/` (the old Vite app) at all — this image is built
+entirely from `web/`. Exposes port `3000` inside the container.
+
+### B.3 `docker-compose.yml` — how the pieces fit together
+
+| Service | Image built from | Published port (`.env` var) | Purpose |
+| --- | --- | --- | --- |
+| `postgres` | official `postgres:16-bookworm` | *(not published — LAN can't reach it)* | The database. Data persists in the `postgres_data` volume. |
+| `express-api` | `Dockerfile` | `${API_PORT:-3000}` | The core API + Socket.io. Waits for `postgres` to be healthy before starting. |
+| `nextjs` | `web/Dockerfile` | `${WEB_PORT:-80}` | The POS website. Waits for `express-api` to be healthy, then proxies `/api/*` and `/files/*` to it internally. |
+| `fastapi` | `backend-fastapi/Dockerfile` | `${FASTAPI_PORT:-8000}` | **Optional**, only starts with `--profile ml`. Future ML only — exposes `GET /health` today. |
+
+Note that `postgres` has **no `ports:` published to the host** — only
+containers on the internal `bytecrapos` Docker network can reach it. This is
+intentional: the database is never exposed to the LAN.
+
+### B.4 Build and start the containers
+
+From the project root on the server PC:
+
+```bash
 docker compose build
 docker compose up -d
 docker compose ps
 ```
 
-Both `api` and `postgres` should show **healthy**. If not, check `docker compose logs api`.
+Wait a minute, then check `docker compose ps` again — `postgres`,
+`express-api`, and `nextjs` should all show **healthy**. `fastapi` must
+**not** appear at all (it's opt-in only).
 
-### 1.7 Apply the database schema
+If a service shows `unhealthy` or keeps restarting, see the Troubleshooting
+table in Part D before continuing.
 
-```powershell
-docker compose run --rm api npm run migrate
-```
+### B.5 Apply the database schema
 
-Safe to run more than once — already-applied changes are skipped. Full command reference (backup, restore, update, HTTPS): **[docker/README.md](docker/README.md)**.
-**Never** run `docker compose down -v` — that deletes the database volume (all your data).
-
-Do **not** `npm run seed` on a live shop. Production does not create `admin` / `admin123`. You create the real admin account in the app's setup wizard (next step).
-
-### 1.8 Install the app on the server PC
-
-Only needed if someone will also sell from this same PC (see the note at the top of Part 1) — otherwise Docker alone is enough to serve every other till.
-
-Build the Windows installer (on the server, or any Windows machine with this repo, then copy the `.exe` over):
-
-```powershell
-npm install
-npm run build
-npm run build:electron
-```
-
-Installer: `release\A1SmartLight-Setup-*.exe`
-
-Install it **on the server**, open **A1 Smart Light**, choose **This is the SERVER PC**, create a **strong admin** password, finish the wizard, sign in. It connects to `127.0.0.1` (itself) automatically — no IP to type in here.
-
-### 1.9 (Optional) Make everything start automatically
-
-So that if the PC restarts (update, power cut, etc.), the shop comes back online without anyone touching a keyboard.
-
-**Docker Desktop → starts on login** (containers come back on their own after this, since `docker-compose.yml` already sets `restart: unless-stopped` on both services):
-
-1. Open Docker Desktop → gear icon (**Settings**) → **General**.
-2. Enable **"Start Docker Desktop when you sign in to your computer."**
-3. Save.
-
-**Windows → logs in automatically** (Docker Desktop only starts *after* a Windows sign-in, so without this, the PC sits at the login screen after a power loss until someone logs in by hand):
-
-1. Press `Win + R`, type `netplwiz`, Enter.
-2. Uncheck **"Users must enter a password to use this computer."**
-3. Click **Apply**, confirm that account's password once.
-
-   ⚠️ **Security tradeoff**: this means anyone who can physically power on the PC gets in with no login screen at all. Fine for a server in a back office; skip this if the PC is anywhere publicly accessible.
-
-**The app → opens itself too** (optional, only relevant if you installed it in step 1.8):
-
-1. Press `Win + R`, type `shell:startup`, Enter.
-2. Drop a shortcut to `A1 Smart Light.exe` into that folder.
-
-With all three: PC turns on → Windows logs in by itself → Docker starts → containers come back up → the app opens, ready for someone to sign in.
-
-### 1.10 Test it
-
-Do one sale right there on the server PC (if you installed the app in step 1.8) or from a till once Part 2 is done, to confirm Docker and the app are talking to each other correctly before relying on it live.
-
----
-
-## Part 2 — Client PC setup (every till)
-
-No Docker on tills — repeat these steps on **each** other PC.
-
-1. Copy the **same** `.exe` built in step 1.8 and install it.
-2. Open A1 Smart Light → **This is a CLIENT PC**.
-3. Server IP = the fixed address from step 1.1 (never `localhost`).
-4. Click **Test connection** — it must succeed before continuing.
-5. Give it a unique PC name (`POS-2`, `POS-3`, …).
-6. Sign in with a user created on the server.
-
-If HTTPS is on (`SERVER_USE_HTTPS=true`), `%APPDATA%\A1 Smart Light\appConfig.json` on that till must have `"serverUseHttps": true` and the same `serverPort` as `API_PORT`.
-
----
-
-## Before live sales
-
-On **server + at least two tills**, check: login, one sale, stock updating on the other screen, print, backup. Full list: [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md).
-
----
-
-## Daily use
-
-- Leave the **server PC** on. If you set up step 1.9, it recovers on its own after a restart.
-- Staff only open **A1 Smart Light** on each till.
-- If something is down: on the server run `docker compose ps` and `docker compose logs api`.
-
-| Task | Command (server, project folder) |
-|------|----------------------------------|
-| Status | `docker compose ps` |
-| Logs | `docker compose logs -f api` |
-| Restart | `docker compose restart` |
-| Stop (keep data) | `docker compose down` |
-
----
-
-## Developers (Mac / laptop)
+Safe to run every time (it only applies new migrations):
 
 ```bash
-cp .env.example .env   # set JWT_SECRET; local Postgres on PGHOST=localhost
-npm install
-npm run migrate
-npm run dev            # Vite + API + Electron
+docker compose run --rm express-api npm run migrate
 ```
 
-If port 3000 is already used, set `PORT` in `.env` (this machine often uses 3000 for other apps). Local notes: [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md).
+### B.6 Open the firewall
 
-Dev seed may create `admin` / `admin123`. Production seed does **not**.
+The server PC's firewall must allow incoming connections on:
+- **`WEB_PORT`** (default `80`) — so tills can load the website.
+- **`API_PORT`** (default `3000`) — so the browser can talk to the API and
+  Socket.io.
+
+Do **not** open port `5432` (PostgreSQL) — it isn't published anyway.
+
+Windows example (PowerShell, run as Administrator):
+```powershell
+New-NetFirewallRule -DisplayName "Bytecra POS Web" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "Bytecra POS API" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+```
+
+### B.7 First login
+
+On the server PC (or any till), open a browser to:
+
+```
+http://SERVER_IP
+```
+
+(e.g. `http://192.168.1.50`, or `http://192.168.1.50:8080` if you set
+`WEB_PORT=8080`).
+
+You'll land on the **setup wizard** — production does **not** ship a default
+`admin`/`admin123` account. Follow the 8 steps (store profile, VAT, network
+mode, admin account, cash drawer, bank account) to finish setup, then log in.
+
+Follow live logs any time with:
+```bash
+docker compose logs -f
+```
+
+**Server setup is done.** The server PC should now be left running.
 
 ---
 
-## Other docs
+## PART C — Set up each Client (till) PC
 
-| Doc | When |
-|-----|------|
-| [docker/README.md](docker/README.md) | Shop server: Docker, env, backup, restore, HTTPS, checklist |
-| [docs/SHOP_MULTI_PC.md](docs/SHOP_MULTI_PC.md) | Same shop layout **without** Docker (PM2 + Postgres on Windows) |
-| [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) | Long Windows install reference |
-| [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md) | Go-live tests |
-| [docs/RELEASE.md](docs/RELEASE.md) | Building the installer / GitHub release |
+Client PCs are the cash-register computers cashiers actually use. They need
+**no installation at all** unless they also need silent thermal printing.
 
-PM2 (`npm run pm2:start`) is only if you are **not** using Docker.
+### C.1 Plain client (browser only — most tills)
+
+1. Connect the till to the same LAN/Wi‑Fi as the server PC.
+2. Open Chrome or Edge (a current version).
+3. Go to `http://SERVER_IP` (the address from Part A/B — ask whoever set up
+   the server, or check the router's DHCP reservation list).
+4. Log in with the account created during setup.
+5. Use the POS.
+
+That's it — no repository, no Docker, no database, no Node.js on this
+machine. Bookmark the URL for convenience. Ordinary PDF printing (invoices,
+receipts) works through the browser's own print dialog — no extra software
+needed.
+
+### C.2 Client with a thermal printer (Hardware Agent)
+
+Only needed on tills that must print **silently** to a local thermal/receipt
+printer without the browser's print dialog popping up.
+
+1. Get the project files onto this till (same as A.3), or just the
+   `hardware-agent/` folder.
+2. Install Node.js on this till (only this till, only for this purpose).
+3. Start the agent:
+   ```bash
+   cd hardware-agent
+   npm start
+   ```
+4. The first run creates a pairing token file:
+   - Windows: `%USERPROFILE%\.bytecra-hardware-agent\pairing-token`
+   - macOS/Linux: `~/.bytecra-hardware-agent/pairing-token`
+5. Open the token file, copy its contents.
+6. In the POS (this till's browser session), go to **Settings → Printers**
+   and paste the token in.
+
+The agent listens on `127.0.0.1:17473` only — it is never reachable from
+other machines on the LAN. See `docs/web-migration/HARDWARE_AGENT_SECURITY.md`
+for the full security model.
 
 ---
 
-## Stack (short)
+## PART D — Operations
 
-Electron on each till · Express + Socket.io API · PostgreSQL 16 · JWT. Tills never connect to Postgres; they only call the API on the server LAN IP.
+### D.1 Everyday Docker commands (run on the server PC, from the project root)
+
+```bash
+docker compose ps                              # status of all services
+docker compose logs -f                         # follow all logs
+docker compose logs -f express-api nextjs postgres   # follow specific services
+docker compose up -d                           # start (or apply changes after a build)
+docker compose down                            # stop everything (data is kept)
+docker compose build                           # rebuild images after pulling new code
+```
+
+Optional ML sidecar: `docker compose --profile ml up -d`
+
+### D.2 Updating to a new version
+
+1. **Back up the database first** (D.4).
+2. Pull/copy the new code into the project folder.
+3. ```bash
+   docker compose build
+   docker compose up -d
+   docker compose run --rm express-api npm run migrate
+   docker compose ps
+   ```
+4. Open the web UI and confirm it loads.
+
+Never delete the `postgres_data` volume as part of an update.
+
+### D.3 PostgreSQL persistence
+
+Data lives in the Docker volume `postgres_data`.
+
+- `docker compose down` stops containers; **data remains**.
+- `docker compose down -v` **deletes the database**. Never run this on a live shop.
+
+### D.4 Backup
+
+The app writes scheduled backups (triggered from **Settings → Backup** in
+the POS) to the `api_backups` volume (`/app/backups` inside `express-api`).
+
+Manual one-off dump:
+```bash
+docker compose exec postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > shop-$(date +%Y%m%d).dump
+```
+On Windows, read the user/db values from `.env` and redirect the output to a
+file on the server's disk.
+
+### D.5 Restore
+
+Restoring **overwrites live data**. Stop writes, take a fresh backup first,
+then restore with `pg_restore` into the `postgres` service (or use the
+in-app restore for app-format backup jobs). The system never restores
+automatically on container start.
+
+### D.6 Health checks
+
+```bash
+docker compose ps
+curl -sS http://127.0.0.1/                 # Next.js (or :WEB_PORT)
+curl -sS http://127.0.0.1:3000/api/health  # Express
+# optional ML sidecar
+curl -sS http://127.0.0.1:8000/health
+```
+
+Express health JSON includes `data.status: ok`. Postgres health is Compose's
+built-in `pg_isready` check.
+
+### D.7 Troubleshooting
+
+| Symptom | What to run / check |
+| --- | --- |
+| Browser can't open the server | Ping `SERVER_IP`; check `WEB_PORT`; firewall rules from B.6 |
+| Wrong/changed IP | Re-check with `ipconfig`/`ip addr`; update `SERVER_IP` in `.env`, then `docker compose up -d` to recreate `express-api` |
+| Port already in use | Change `WEB_PORT` / `API_PORT` in `.env`, then `docker compose up -d` |
+| Postgres unhealthy | `docker compose logs postgres` |
+| API restarting in a loop | `docker compose logs express-api` — usually `JWT_SECRET`, DB password, or a failed migration |
+| UI loads but API calls fail with CORS errors | `SERVER_IP` in `.env` must match the host used in the browser's address bar |
+| Socket.io shows disconnected | Firewall must allow `API_PORT` (3000); confirm `NEXT_PUBLIC_EXPRESS_PORT` matches `API_PORT` |
+| Login fails | Confirm the setup wizard was completed; check caps lock; look for a "session expired" modal |
+| Printing doesn't work | Browser PDF print vs. Hardware Agent — check agent logs and `lpstat -p` on that till |
+| Everything crash-looping | `docker compose logs --tail 100`; fix the cause in `.env`; do **not** use `-v` |
+
+### D.8 Hardware Agent (reference)
+
+Needed only for **local silent** printing on a specific till. Not needed to
+view the POS or to print via the browser dialog. Security model: binds to
+`127.0.0.1` only, requires a pairing token, only ever prints a specific
+invoice/receipt by UUID (no arbitrary shell/printer commands). Full detail in
+`docs/web-migration/HARDWARE_AGENT_SECURITY.md`.
+
+### D.9 FastAPI / ML (reference)
+
+Optional and off by default. Start it with `docker compose --profile ml up -d`.
+It exposes `GET /health` today and nothing else — Express remains the POS
+backend for everything. A normal `docker compose up -d` (no `--profile ml`)
+never starts this service.
+
+---
+
+## PART E — Local development (not for the live shop)
+
+For working on the code, on a laptop — not the shop's server PC:
+
+```bash
+cp .env.example .env   # use local JWT/Postgres values
+npm install
+npm run dev:server     # Express, on :3002 by default
+cd web && npm install && npm run dev   # Next.js App Router (TypeScript), on :3001
+```
+
+`web/` is a self-contained TypeScript Next.js project (its own
+`package.json`, `tsconfig.json`, `node_modules`). `npm run build` inside
+`web/` runs `next build` with full type-checking (`ignoreBuildErrors:
+false`) and produces a standalone server (`.next/standalone/web/server.js`),
+which is exactly what `web/Dockerfile` packages for production.
+
+Never run local dev processes as the live shop — the live shop is always
+`docker compose up -d` (Part B).
+
+More ops notes: `docker/README.md`. Architecture and migration record:
+`docs/web-migration/` (start with `FRONTEND_MIGRATION_INVENTORY.md` and
+`NEXTJS_NATIVE_PARITY.md`).
