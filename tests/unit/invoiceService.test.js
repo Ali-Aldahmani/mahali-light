@@ -115,6 +115,39 @@ describe('computeTotals', () => {
     expect(result.total).toBe(89.25);
   });
 
+  it('stacks a percent-based line discount (resolved via computeLineFigures) with an invoice-level discount and tax', () => {
+    // computeTotals itself only ever reads discount_amount directly — it
+    // never looks at discount_percent (see its itemDiscount reduce below).
+    // In production, a percent-based line discount is resolved to an
+    // amount by computeLineFigures when the item is persisted
+    // (invoiceService.replaceItems), and computeTotals later aggregates
+    // that already-resolved amount from the stored row. This chains the
+    // two functions the same way, rather than passing discount_percent
+    // straight into computeTotals, where it would silently be ignored —
+    // distinct from "applies invoice-level discount stacked on top of item
+    // discounts" above, which only ever exercised the discount_amount
+    // path end to end.
+    const line = computeLineFigures({ quantity: 2, unit_price: 100, discount_percent: 10 });
+    expect(line.discountAmount).toBe(20); // 10% of 200
+
+    const result = computeTotals({
+      items: [{ quantity: 2, unit_price: 100, discount_amount: line.discountAmount }],
+      payments: [],
+      invoiceDiscount: 15,
+    });
+
+    // subtotal=200, itemDiscount=20, invDisc=15, total discount=35
+    // taxable = 200 - 35 = 165
+    // tax = 165 * 5% = 8.25
+    // total = 173.25
+    expect(result.subtotal).toBe(200);
+    expect(result.discountAmount).toBe(35);
+    expect(result.invoiceDiscount).toBe(15);
+    expect(result.taxableAmount).toBe(165);
+    expect(result.taxAmount).toBe(8.25);
+    expect(result.total).toBe(173.25);
+  });
+
   it('reports partial payment correctly', () => {
     const result = computeTotals({
       items: [{ quantity: 1, unit_price: 100, discount_amount: 0 }],

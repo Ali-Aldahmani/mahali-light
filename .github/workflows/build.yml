@@ -49,6 +49,9 @@ jobs:
           INVOICE_TEST_PG_PASSWORD: postgres
           RUN_PG_CONCURRENCY: 1
 
+      - name: Run frontend tests
+        run: npm --prefix web test
+
       - name: Build frontend
         run: npm run build
         env:
