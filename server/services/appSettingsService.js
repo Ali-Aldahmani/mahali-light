@@ -165,6 +165,10 @@ async function getPublicSettings() {
     vat_enabled: s.vat_enabled,
     vat_rate: s.vat_rate,
     language: s.language,
+    // The actually-running version, not a value baked into the frontend
+    // bundle at build time — a self-update swaps this file and restarts
+    // the process, so it stays correct across updates.
+    app_version: require('../../package.json').version,
   };
 }
 
