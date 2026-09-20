@@ -20,7 +20,9 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install
+          npm --prefix web install
 
       - name: Lint frontend
         run: npm run lint
