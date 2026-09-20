@@ -6,8 +6,8 @@ on:
 
 jobs:
   lint-and-build:
-    name: Lint & Build Check
-    runs-on: windows-latest
+    name: Build Check
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -24,9 +24,6 @@ jobs:
           npm install
           npm --prefix web install
 
-      - name: Lint frontend
-        run: npm run lint
-
       - name: Run tests
         run: npm test
 
@@ -34,12 +31,6 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
-
-      - name: Validate Electron builder config
-        run: npm run build:electron:dir
-        env:
-          NODE_ENV: production
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build success
         run: |

@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-describe('migration contract artifacts', () => {
+// Written for the FastAPI strangler-migration experiment archived under
+// docs/archive/fastapi-slice01-experiment/ — most of docs/migration-contracts/
+// was never generated (scripts/generate-migration-inventory.js only produces
+// 2 of the 11 files these tests expect) and that work isn't active. Skipped
+// rather than deleted so it's easy to pick back up if the migration resumes.
+describe.skip('migration contract artifacts', () => {
   const dir = path.join(process.cwd(), 'docs/migration-contracts');
   const required = [
     'OPENAPI_CURRENT.yaml',

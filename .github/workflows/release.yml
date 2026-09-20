@@ -13,9 +13,9 @@ on:
         default: '1.0.0'
 
 jobs:
-  build-windows:
-    name: Build Windows Installer
-    runs-on: windows-latest
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
@@ -29,74 +29,40 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Fix Python distutils (removed in Python 3.12)
-        run: pip install setuptools
-
       - name: Install dependencies
         run: |
           npm install
           npm --prefix web install
 
-      - name: Convert icon PNG to ICO
-        run: magick assets/icon.png -define icon:auto-resize=256,128,64,48,32,16 assets/icon.ico
+      - name: Run tests
+        run: npm test
 
       - name: Build frontend
         run: npm run build
         env:
           NODE_ENV: production
-          VITE_APP_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version || github.sha }}
 
-      - name: Build Electron Windows installer
-        run: npm run build:electron
-        env:
-          NODE_ENV: production
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-
-      - name: List release folder
-        run: dir release
-        shell: cmd
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: BytecraPOS-Windows-${{ github.sha }}
-          path: |
-            release/*.exe
-            release/*.exe.blockmap
-            release/latest.yml
-          retention-days: 30
-
+      # Docker-first deployment (see README.md) — there is no separate
+      # installer to build or attach. This just tags a validated commit as a
+      # release; Settings → About → Check for updates pulls this tag's
+      # source archive directly.
       - name: Create GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: Bytecra POS ${{ github.ref_name }}
+          name: Mahali Light POS ${{ github.ref_name }}
+          generate_release_notes: true
           body: |
-            ## Bytecra POS ${{ github.ref_name }}
+            ## Mahali Light POS ${{ github.ref_name }}
 
-            ### Installation
-            1. Download the `.exe` file below
-            2. Run as Administrator
-            3. Follow the setup wizard
-            4. On first PC: select **SERVER** mode
-            5. On other PCs: select **CLIENT** mode and enter the server IP
+            Docker-first deployment — see [README.md](../../blob/main/README.md) for setup.
 
-            ### What's new
-            See auto-generated release notes and commit history.
-
-            ### System requirements
-            - Windows 10 or later (64-bit)
-            - 4 GB RAM minimum
-            - PostgreSQL 15 (server PC only)
-            - LAN connection between PCs
+            No separate installer: existing deployments can update in place
+            from **Settings → About → Check for updates** (Admin only), or
+            pull this tag and run `docker compose up -d --build`.
 
             ---
             **Publisher:** Ali Aldahmani · **Bytecra**
-          files: |
-            release/*.exe
-            release/latest.yml
           draft: false
           prerelease: false
         env:
