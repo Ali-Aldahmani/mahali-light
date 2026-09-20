@@ -82,6 +82,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.UPDATE_CHECK_URL;
+  delete process.env.UPDATE_TOKEN;
   vi.unstubAllGlobals();
 });
 
@@ -114,14 +115,26 @@ describe('checkForUpdates', () => {
     expect(result.latestVersion).toBe(current);
   });
 
-  it('throws SYS_UPDATES_UNREACHABLE on a non-OK upstream response', async () => {
+it('throws SYS_UPDATES_UNREACHABLE on a non-OK upstream response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+    }));
+
+    await expect(service.checkForUpdates()).rejects.toMatchObject({
+      code: 'SYS_UPDATES_UNREACHABLE',
+    });
+  });
+
+  it('treats a 404 as "no releases published yet", not an outage', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
     }));
 
     await expect(service.checkForUpdates()).rejects.toMatchObject({
-      code: 'SYS_UPDATES_UNREACHABLE',
+      code: 'BIZ_INVALID_STATE',
+      status: 404,
     });
   });
 
@@ -160,6 +173,20 @@ describe('checkForUpdates', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('sends a bearer token when UPDATE_TOKEN is set', async () => {
+    process.env.UPDATE_TOKEN = 'ghp_token123';
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => OK_RELEASE,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await service.checkForUpdates();
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(opts.headers.Authorization).toBe('Bearer ghp_token123');
+  });
+
   it('points downloadUrl at the GitHub tag tarball for JSON endpoints', async () => {
     delete process.env.UPDATE_CHECK_URL;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -171,6 +198,22 @@ describe('checkForUpdates', () => {
     const result = await service.checkForUpdates();
     expect(result.downloadUrl).toBe(
       'https://github.com/Ali-Aldahmani/mahali-light/archive/refs/tags/v9.9.9.tar.gz',
+    );
+  });
+
+  it('requests the releases API with the owner/repo slash unescaped', async () => {
+    delete process.env.UPDATE_CHECK_URL;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => OK_RELEASE,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await service.checkForUpdates();
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      'https://api.github.com/repos/Ali-Aldahmani/mahali-light/releases/latest',
     );
   });
 

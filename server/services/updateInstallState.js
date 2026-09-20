@@ -40,6 +40,9 @@ function readStatus() {
       startedAt: null,
       finishedAt: null,
       error: null,
+      progress: null,
+      bytesDownloaded: null,
+      bytesTotal: null,
     };
   }
 }

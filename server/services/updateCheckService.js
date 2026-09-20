@@ -74,19 +74,29 @@ function compareVersions(a, b) {
   return p.pre ? -1 : 1;
 }
 
+// https://api.github.com/repos/<owner>/<repo>/releases/latest
+function releasesApiUrlFor(repo) {
+  const [owner, name] = String(repo).split('/');
+  const encoded = `${encodeURIComponent(owner || '')}/${encodeURIComponent(name || '')}`;
+  return `https://api.github.com/repos/${encoded}/releases/latest`;
+}
+
 async function fetchLatest() {
   const override = process.env.UPDATE_CHECK_URL;
-  const url =
-    override ||
-    `https://api.github.com/repos/${encodeURIComponent(repoName())}/releases/latest`;
+  const url = override || releasesApiUrlFor(repoName());
 
   let res;
   try {
+    const headers = {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'mahali-light-pos',
+    };
+    // Private repositories return 404 from the releases API without a token.
+    if (process.env.UPDATE_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.UPDATE_TOKEN}`;
+    }
     res = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'mahali-light-pos',
-      },
+      headers,
       signal: AbortSignal.timeout(
         Number(process.env.UPDATE_FETCH_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
       ),
@@ -100,6 +110,13 @@ async function fetchLatest() {
   }
 
   if (!res.ok) {
+    if (res.status === 404) {
+      throw new AppError(
+        ERROR_CODES.BIZ_INVALID_STATE,
+        'No published releases found on the update server yet.',
+        { status: 404, details: { hint: 'Check UPDATE_REPO / UPDATE_CHECK_URL, or publish a release.' } },
+      );
+    }
     throw new AppError(
       ERROR_CODES.SYS_UPDATES_UNREACHABLE,
       `Update server responded with HTTP ${res.status}.`,
@@ -186,11 +203,14 @@ function startInstall(version) {
     startedAt: new Date().toISOString(),
     finishedAt: null,
     error: null,
+    progress: 0,
+    bytesDownloaded: 0,
+    bytesTotal: null,
   });
 
   const script = path.resolve(__dirname, '..', '..', 'scripts', 'applyUpdate.js');
-  // detached + unref so the runner survives the API process being killed by
-  // PM2 during the final swap.
+  // detached + unref so the runner survives the API process being killed
+  // when it signals the container to restart during the final swap.
   const child = spawn(process.execPath, [script, v], {
     detached: true,
     stdio: 'ignore',
@@ -208,23 +228,23 @@ function getInstallStatus() {
   return readStatus();
 }
 
-function isSubPath(parent, child) {
-  const rel = path.relative(parent, child);
-  return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel));
-}
-
+// The runner swaps files into place and signals the container to restart
+// (Docker's `restart: unless-stopped` then boots a fresh process) but it
+// cannot reliably run any more of its own code once that signal lands — the
+// whole container's process tree, including the detached runner itself,
+// goes down with it. So the *new* process finalizes its own install: if it
+// boots and its own package.json version matches what the runner staged,
+// the swap clearly succeeded.
 function finalizeIfNeeded() {
   const st = readStatus();
   if (st.state !== 'restarting' || !st.version) return;
-  const releasePath = releasePathFor(st.version);
-  // The new process boots with cwd = the release dir (ecosystem cwd), so a
-  // match means the swap completed and we are running the new code.
-  if (isSubPath(process.cwd(), releasePath)) {
+  if (currentVersion() === st.version) {
     writeStatus({
       state: 'done',
       message: 'Update installed.',
       finishedAt: new Date().toISOString(),
       error: null,
+      progress: 100,
     });
     releaseLock();
   }

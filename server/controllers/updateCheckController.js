@@ -4,8 +4,19 @@ const { ok } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const updateCheckService = require('../services/updateCheckService');
 
+function requireAdmin(req) {
+  if (req.user.role !== 'Admin') {
+    throw new AppError(
+      ERROR_CODES.AUTH_NO_PERMISSION,
+      'Only administrators can manage app updates.',
+      { status: 403, details: { permission: 'admin' } },
+    );
+  }
+}
+
 async function check(req, res, next) {
   try {
+    requireAdmin(req);
     const result = await updateCheckService.checkForUpdates();
     return ok(res, result);
   } catch (err) {
@@ -15,6 +26,7 @@ async function check(req, res, next) {
 
 async function getStatus(req, res, next) {
   try {
+    requireAdmin(req);
     return ok(res, updateCheckService.getInstallStatus());
   } catch (err) {
     next(err);
@@ -23,13 +35,7 @@ async function getStatus(req, res, next) {
 
 async function install(req, res, next) {
   try {
-    if (req.user.role !== 'Admin') {
-      throw new AppError(
-        ERROR_CODES.AUTH_NO_PERMISSION,
-        'Only administrators can install updates.',
-        { status: 403, details: { permission: 'admin' } },
-      );
-    }
+    requireAdmin(req);
 
     // Never trust the client's version: only the latest version discovered by
     // the check endpoint may be installed.

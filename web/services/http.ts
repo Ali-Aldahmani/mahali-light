@@ -6,7 +6,7 @@ import { useUiErrorStore } from '@/store/uiErrorStore';
 import { toast } from '@/store/toastStore';
 import { addBreadcrumb } from './breadcrumbService';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.3.0';
 
 const http = axios.create({
   timeout: 15000,

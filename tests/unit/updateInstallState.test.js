@@ -27,6 +27,9 @@ describe('updateInstallState (status file)', () => {
       startedAt: null,
       finishedAt: null,
       error: null,
+      progress: null,
+      bytesDownloaded: null,
+      bytesTotal: null,
     });
   });
 

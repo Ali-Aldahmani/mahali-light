@@ -41,6 +41,12 @@ const INSTALL_LABELS: Record<string, string> = {
   restarting: 'Restarting server…',
 };
 
+function formatBytes(n: number | null | undefined): string {
+  if (!n || n <= 0) return '';
+  const mb = n / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`;
+}
+
 export default function SettingsHubPage() {
   const [section, setSection] = useState('store');
   const [draft, setDraft] = useState<Record<string, any> | null>(null);
@@ -88,9 +94,14 @@ export default function SettingsHubPage() {
         if (st.state === 'done' || st.state === 'failed') {
           stopPolling();
           if (st.state === 'done') {
-            toast.success(`Update v${st.version} installed.`);
-            setUpdateInfo(null);
-            setInstallStatus(null);
+            toast.success(`Update v${st.version} installed. Reloading…`);
+            // The server just restarted on new code; force a full reload
+            // and send everyone back through login rather than trusting
+            // whatever session state the old bundle was holding.
+            setTimeout(() => {
+              useAuthStore.getState().logoutLocal();
+              window.location.href = '/login';
+            }, 1500);
           } else {
             toast.error(st.error || 'Update install failed.');
           }
@@ -98,10 +109,11 @@ export default function SettingsHubPage() {
       } catch (_e) {
         // Server is mid-restart — keep polling until it responds again.
       }
-    }, 2500);
+    }, 1000);
   }
 
   async function handleCheckUpdate() {
+    if (role !== 'Admin') return;
     setCheckingUpdate(true);
     try {
       const res = await checkForAppUpdates();
@@ -129,6 +141,9 @@ export default function SettingsHubPage() {
         startedAt: new Date().toISOString(),
         finishedAt: null,
         error: null,
+        progress: 0,
+        bytesDownloaded: 0,
+        bytesTotal: null,
       });
       pollInstallStatus();
     } catch (err: any) {
@@ -258,53 +273,70 @@ export default function SettingsHubPage() {
               <p className="text-lg font-semibold text-ink">Mahali Light POS</p>
               <p className="text-sm text-ink-muted">Built by Bytecra</p>
               <AppVersion />
-              <Button
-                size="sm"
-                variant="secondary"
-                className="mt-3"
-                loading={checkingUpdate}
-                onClick={handleCheckUpdate}
-              >
-                Check for updates
-              </Button>
 
-              {updateInfo?.updateAvailable && updateInfo.latestVersion && (
-                <div className="mt-4 rounded-lg border border-accent/30 bg-accent-light p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-accent">
-                        Update available: v{updateInfo.latestVersion}
-                      </p>
-                      <p className="text-xs text-ink-muted">
-                        Current: v{updateInfo.currentVersion}
-                        {updateInfo.releaseUrl && ' — released on the public repo.'}
-                      </p>
+              {role === 'Admin' && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="mt-3"
+                    loading={checkingUpdate}
+                    disabled={installStatus !== null && UPDATE_ACTIVE_STATES.includes(installStatus.state)}
+                    onClick={handleCheckUpdate}
+                  >
+                    Check for updates
+                  </Button>
+
+                  {updateInfo?.updateAvailable && updateInfo.latestVersion && (
+                    <div className="mt-4 rounded-lg border border-accent/30 bg-accent-light p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-accent">
+                            Update available: v{updateInfo.latestVersion}
+                          </p>
+                          <p className="text-xs text-ink-muted">
+                            Current: v{updateInfo.currentVersion}
+                            {updateInfo.releaseUrl && ' — released on the public repo.'}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={installStatus !== null && UPDATE_ACTIVE_STATES.includes(installStatus.state)}
+                          onClick={handleInstallUpdate}
+                        >
+                          Install update
+                        </Button>
+                      </div>
+                      {installStatus &&
+                        (UPDATE_ACTIVE_STATES.includes(installStatus.state) ? (
+                          installStatus.state === 'downloading' && installStatus.progress !== null ? (
+                            <div className="mt-3">
+                              <div className="h-2 w-full overflow-hidden rounded-full bg-ink/10">
+                                <div
+                                  className="h-full rounded-full bg-accent transition-all duration-300"
+                                  style={{ width: `${installStatus.progress}%` }}
+                                />
+                              </div>
+                              <p className="mt-1 text-xs text-ink-muted">
+                                Downloading update… {installStatus.progress}%
+                                {installStatus.bytesTotal
+                                  ? ` (${formatBytes(installStatus.bytesDownloaded)} / ${formatBytes(installStatus.bytesTotal)})`
+                                  : ''}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-ink">
+                              {INSTALL_LABELS[installStatus.state] || installStatus.message}
+                            </p>
+                          )
+                        ) : installStatus.state === 'failed' ? (
+                          <p className="mt-2 text-sm text-danger">
+                            {installStatus.error || 'Update install failed.'}
+                          </p>
+                        ) : null)}
                     </div>
-                    {role === 'Admin' ? (
-                      <Button
-                        size="sm"
-                        disabled={installStatus !== null && UPDATE_ACTIVE_STATES.includes(installStatus.state)}
-                        onClick={handleInstallUpdate}
-                      >
-                        Install update
-                      </Button>
-                    ) : (
-                      <p className="text-xs text-ink-muted">
-                        Ask an administrator to install this update.
-                      </p>
-                    )}
-                  </div>
-                  {installStatus &&
-                    (UPDATE_ACTIVE_STATES.includes(installStatus.state) ? (
-                      <p className="mt-2 text-sm text-ink">
-                        {INSTALL_LABELS[installStatus.state] || installStatus.message}
-                      </p>
-                    ) : installStatus.state === 'failed' ? (
-                      <p className="mt-2 text-sm text-danger">
-                        {installStatus.error || 'Update install failed.'}
-                      </p>
-                    ) : null)}
-                </div>
+                  )}
+                </>
               )}
             </SettingsSection>
           )}

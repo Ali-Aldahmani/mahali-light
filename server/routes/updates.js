@@ -5,9 +5,8 @@ const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 
 // Reached by the "Check for updates" / "Install update" controls in
-// Settings → About. Version info is not sensitive, so any authenticated
-// user may check; installing is restricted to the Admin role in the
-// controller so it stays gated without a new permission row.
+// Settings → About. All three actions are restricted to the Admin role
+// (enforced in the controller) so it stays gated without a new permission row.
 router.use(requireAuth());
 
 router.get('/check', controller.check);

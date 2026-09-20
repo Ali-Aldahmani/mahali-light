@@ -2,13 +2,20 @@
 'use strict';
 
 /**
- * Detached self-update runner for PM2 deployments.
+ * Detached self-update runner for the Docker Compose deployment.
  *
  * Spawned by POST /api/app-updates/install. The API process owns the install
- * lock and writes the "downloading" status before spawning us; we drive the
- * rest and finally restart PM2 (which kills the old API, not us — we run
- * detached). On success the new process boots from the release dir and
- * finalizes the status via GET /api/app-updates/status.
+ * lock and writes the "downloading" status before spawning us. We download,
+ * verify and (optionally) `npm ci` the new release, then swap its files
+ * (server/, shared/, package.json, node_modules) into place over the live
+ * app directory and signal the container's PID 1 to exit.
+ *
+ * We do NOT mark the install "done" ourselves: once PID 1 exits, Docker
+ * tears down the whole container's process tree — including this detached
+ * runner — so there is no guarantee any code after that signal actually
+ * runs. Instead the freshly booted process finalizes its own install (see
+ * finalizeIfNeeded in updateCheckService.js) once its package.json version
+ * matches what we staged.
  *
  *   usage: node scripts/applyUpdate.js <version>
  *
@@ -18,8 +25,10 @@
  *   UPDATE_EXPECTED_SHA256    optional hex sha256 the tarball must match
  *   UPDATE_SKIP_NPM_CI=1      skip `npm ci --omit=dev` (air-gapped install)
  *   UPDATE_NPM_CI_ARGS        extra npm ci args (e.g. "--offline")
- *   PM2_BIN                   path to pm2 (default: pm2 from PATH)
  *   UPDATE_ROOT               staging root (default <project>/.updates)
+ *   UPDATE_APP_ROOT           live app root to swap files into (default
+ *                             <project>/, i.e. /app in the container) —
+ *                             overridable so tests never touch a real checkout
  */
 
 const fs = require('fs');
@@ -39,10 +48,7 @@ const {
   verifyReleaseDir,
 } = require('../server/services/updateInstallState.js');
 
-const PROJECT_ROOT = path.resolve(__dirname, '..');
-const ROOT_ECO = path.join(PROJECT_ROOT, 'ecosystem.config.js');
-const ROOT_ENV = path.join(PROJECT_ROOT, '.env');
-const PM2_BIN = process.env.PM2_BIN || 'pm2';
+const PROJECT_ROOT = process.env.UPDATE_APP_ROOT || path.resolve(__dirname, '..');
 
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
@@ -77,13 +83,22 @@ function fileUrlToPath(url) {
   return p;
 }
 
-function download(url, destFile, expectedSha) {
+function download(url, destFile, expectedSha, onProgress) {
   return new Promise((resolve, reject) => {
     // Local tarball (file://) — supported so installs can be staged offline
     // and so the pipeline is testable without network access.
     if (url.startsWith('file://')) {
       const hash = crypto.createHash('sha256');
-      const rs = fs.createReadStream(fileUrlToPath(url));
+      const srcPath = fileUrlToPath(url);
+      const total = (() => {
+        try {
+          return fs.statSync(srcPath).size;
+        } catch (_e) {
+          return 0;
+        }
+      })();
+      let downloaded = 0;
+      const rs = fs.createReadStream(srcPath);
       const out = fs.createWriteStream(destFile);
       const finish = () => {
         const sha = hash.digest('hex');
@@ -92,7 +107,11 @@ function download(url, destFile, expectedSha) {
         }
         resolve({ size: fs.statSync(destFile).size, sha });
       };
-      rs.on('data', (d) => hash.update(d));
+      rs.on('data', (d) => {
+        hash.update(d);
+        downloaded += d.length;
+        onProgress?.(downloaded, total);
+      });
       rs.pipe(out);
       out.on('finish', () => {
         out.close();
@@ -109,7 +128,17 @@ function download(url, destFile, expectedSha) {
 
     const get = (u) => {
       https
-        .get(u, { headers: { 'User-Agent': 'mahali-light-pos' } }, (res) => {
+        .get(
+          u,
+          {
+            headers: {
+              'User-Agent': 'mahali-light-pos',
+              ...(process.env.UPDATE_TOKEN
+                ? { Authorization: `Bearer ${process.env.UPDATE_TOKEN}` }
+                : {}),
+            },
+          },
+          (res) => {
           if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
             res.resume();
             if (++redirects > 5) return reject(new Error('Too many redirects.'));
@@ -119,7 +148,13 @@ function download(url, destFile, expectedSha) {
             res.resume();
             return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
           }
-          res.on('data', (d) => hash.update(d));
+          const total = Number(res.headers['content-length']) || 0;
+          let downloaded = 0;
+          res.on('data', (d) => {
+            hash.update(d);
+            downloaded += d.length;
+            onProgress?.(downloaded, total);
+          });
           res.pipe(out);
           out.on('finish', () => {
             out.close();
@@ -174,6 +209,106 @@ function run(cmd, args, { cwd = PROJECT_ROOT, timeoutMs = 600000 } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Progress reporting
+// ---------------------------------------------------------------------------
+// Throttled so a fast local connection doesn't hammer the status file with a
+// write on every chunk; always lets a changed whole percentage through.
+function makeProgressReporter() {
+  let lastWriteAt = 0;
+  let lastPct = -1;
+  return (downloaded, total) => {
+    const pct = total > 0 ? Math.min(99, Math.floor((downloaded / total) * 100)) : null;
+    const now = Date.now();
+    if (pct === lastPct && now - lastWriteAt < 250) return;
+    lastWriteAt = now;
+    lastPct = pct;
+    writeStatus({
+      state: 'downloading',
+      progress: pct,
+      bytesDownloaded: downloaded,
+      bytesTotal: total || null,
+    });
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Swap in the new release (Docker-native: no PM2, no separate release cwd —
+// the new files simply become the live app under PROJECT_ROOT)
+// ---------------------------------------------------------------------------
+function isRunningInDocker() {
+  try {
+    return fs.existsSync('/.dockerenv');
+  } catch (_e) {
+    return false;
+  }
+}
+
+// Moves src to dest. Prefers a fast, atomic rename, but files that have
+// never been touched since the image was built still live in a read-only
+// overlay2 layer — some overlay2/kernel combinations (observed under Docker
+// Desktop's WSL2 backend) refuse to rename those with EXDEV even though
+// src and dest are both under /app, because the rename would require an
+// implicit copy-up the kernel won't do for us. Fall back to an explicit
+// copy + remove in that case.
+function moveInto(src, dest) {
+  try {
+    fs.renameSync(src, dest);
+  } catch (err) {
+    if (err.code !== 'EXDEV') throw err;
+    fs.cpSync(src, dest, { recursive: true });
+    fs.rmSync(src, { recursive: true, force: true });
+  }
+}
+
+// Moves each entry from releaseDir over the matching live path, backing up
+// whatever it replaces so a mid-swap failure can be rolled back cleanly.
+// `server` and `package.json` must be present in the release; the rest are
+// swapped only if the release actually has them (e.g. UPDATE_SKIP_NPM_CI
+// means no node_modules was produced).
+function swapInNewRelease(releaseDir) {
+  const REQUIRED = ['server', 'package.json'];
+  const OPTIONAL = ['shared', 'package-lock.json', 'node_modules'];
+  const backupSuffix = `.update-rollback-${Date.now()}`;
+  const swapped = []; // { live, backup: string|null }
+
+  const swapOne = (name, required) => {
+    const incoming = path.join(releaseDir, name);
+    if (!fs.existsSync(incoming)) {
+      if (required) throw new Error(`release is missing ${name}`);
+      return;
+    }
+    const live = path.join(PROJECT_ROOT, name);
+    const backup = live + backupSuffix;
+    const backedUp = fs.existsSync(live);
+    if (backedUp) moveInto(live, backup);
+    try {
+      moveInto(incoming, live);
+    } catch (err) {
+      if (backedUp) moveInto(backup, live);
+      throw err;
+    }
+    swapped.push({ live, backup: backedUp ? backup : null });
+  };
+
+  try {
+    for (const name of REQUIRED) swapOne(name, true);
+    for (const name of OPTIONAL) swapOne(name, false);
+  } catch (err) {
+    // Undo whatever already swapped, most recent first.
+    for (const { live, backup } of swapped.reverse()) {
+      fs.rmSync(live, { recursive: true, force: true });
+      if (backup && fs.existsSync(backup)) moveInto(backup, live);
+    }
+    throw err;
+  }
+
+  // Swap succeeded — drop the backups we made along the way.
+  for (const { backup } of swapped) {
+    if (backup) fs.rmSync(backup, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
@@ -202,10 +337,16 @@ async function main() {
   log(`Downloading ${tarballUrl}`);
   try {
     fs.rmSync(tmpTarball, { force: true });
-    await download(tarballUrl, tmpTarball, process.env.UPDATE_EXPECTED_SHA256);
+    await download(
+      tarballUrl,
+      tmpTarball,
+      process.env.UPDATE_EXPECTED_SHA256,
+      makeProgressReporter(),
+    );
   } catch (err) {
     fail(readStatus(), `Download failed: ${err.message}`);
   }
+  writeStatus({ progress: 100 });
   log('Download complete.');
 
   // ---------- 2. Extract + verify ----------
@@ -218,11 +359,6 @@ async function main() {
 
     const check = verifyReleaseDir(releaseDir, version);
     if (!check.ok) fail(readStatus(), check.reason);
-
-    // Copy .env if the deployment keeps one at the project root.
-    if (fs.existsSync(ROOT_ENV)) {
-      fs.copyFileSync(ROOT_ENV, path.join(releaseDir, '.env'));
-    }
   } catch (err) {
     fail(readStatus(), `File preparation failed: ${err.message}`);
   }
@@ -232,72 +368,69 @@ async function main() {
     try {
       log('Running npm ci --omit=dev');
       writeStatus({ state: 'installing', message: 'Installing dependencies…' });
-      const args = ['ci', '--omit=dev'].concat(
-        (process.env.UPDATE_NPM_CI_ARGS || '').split(' ').filter(Boolean),
-      );
-      const npm = await run('npm', args, { cwd: releaseDir, timeoutMs: 900000 });
-      if (npm.code !== 0) {
-        fail(readStatus(), `npm ci failed: ${(npm.err || npm.out).slice(0, 800)}`);
+      const extraArgs = (process.env.UPDATE_NPM_CI_ARGS || '').split(' ').filter(Boolean);
+      const ci = await run('npm', ['ci', '--omit=dev'].concat(extraArgs), {
+        cwd: releaseDir,
+        timeoutMs: 900000,
+      });
+      if (ci.code !== 0) {
+        // `npm ci` requires package.json and package-lock.json to match
+        // byte-for-byte, which can fail across npm versions even when both
+        // files are genuinely consistent (e.g. how optional per-platform
+        // packages like esbuild's are recorded changed between npm
+        // releases). The running container's npm is fixed at image build
+        // time but release lockfiles come from whatever npm the release was
+        // built with, so this drift is expected to recur — fall back to a
+        // regular install rather than failing every such release.
+        log(`npm ci failed, falling back to npm install: ${(ci.err || ci.out).slice(0, 400)}`);
+        writeStatus({ message: 'Resolving dependency updates…' });
+        const install = await run(
+          'npm',
+          ['install', '--omit=dev', '--no-audit', '--no-fund'].concat(extraArgs),
+          { cwd: releaseDir, timeoutMs: 900000 },
+        );
+        if (install.code !== 0) {
+          fail(readStatus(), `npm install failed: ${(install.err || install.out).slice(0, 800)}`);
+        }
       }
     } catch (err) {
-      fail(readStatus(), `npm ci crashed: ${err.message}`);
+      fail(readStatus(), `Dependency install crashed: ${err.message}`);
     }
   }
 
-  // ---------- 4. Swap + restart via PM2 ----------
-  writeStatus({ state: 'swapping', message: 'Replacing application files…' });
-  const ecoPath = path.join(releaseDir, 'ecosystem.config.js');
-  const eco = `module.exports = {
-  apps: [{
-    name: 'mahali-light',
-    script: 'server/index.js',
-    cwd: ${JSON.stringify(releaseDir)},
-    watch: false,
-    autorestart: true,
-    restart_delay: 8000,
-    max_restarts: 10,
-    min_uptime: '30s',
-    log_date_format: 'YYYY-MM-DD HH:mm:ss',
-    error_file: 'logs/pm2-error.log',
-    out_file: 'logs/pm2-out.log',
-    merge_logs: true,
-    env: { NODE_ENV: 'production' },
-  }],
-};
-`;
+  // ---------- 4. Swap the new files into place ----------
+  writeStatus({ state: 'swapping', message: 'Replacing application files…', progress: 100 });
+  log('Swapping in new release files…');
   try {
-    fs.writeFileSync(ecoPath, eco);
+    swapInNewRelease(releaseDir);
   } catch (err) {
-    fail(readStatus(), `Could not write ecosystem config: ${err.message}`);
+    fail(readStatus(), `Swap failed: ${err.message}`);
+  }
+  log('Swap complete.');
+  try {
+    fs.rmSync(releaseDir, { recursive: true, force: true });
+  } catch (_e) {
+    /* best-effort cleanup of the staging dir; the swap already succeeded */
   }
 
+  // ---------- 5. Restart ----------
+  // We stop here, deliberately. process.exit()/further writes from this
+  // process are not reliable once PID 1 goes down (see the comment above
+  // finalizeIfNeeded in updateCheckService.js) — the new process reports
+  // its own success on boot.
   writeStatus({ state: 'restarting', message: 'Restarting server…' });
-  log('Restarting via PM2…');
-  try {
-    // Ignore a failed delete (app may be named differently or missing).
-    await run(PM2_BIN, ['delete', 'mahali-light'], { timeoutMs: 30000 });
-    const start = await run(PM2_BIN, ['start', ecoPath], { timeoutMs: 60000 });
-    if (start.code !== 0) {
-      // Roll back to the pre-existing config so the POS stays online.
-      if (fs.existsSync(ROOT_ECO)) {
-        log('Start failed; rolling back to previous ecosystem.');
-        await run(PM2_BIN, ['start', ROOT_ECO], { timeoutMs: 60000 });
+  if (isRunningInDocker()) {
+    log(`Update ${version} staged. Restarting container…`);
+    setTimeout(() => {
+      try {
+        process.kill(1, 'SIGTERM');
+      } catch (err) {
+        log(`Could not signal PID 1 to restart: ${err.message}`);
       }
-      fail(readStatus(), `pm2 start failed: ${(start.err || start.out).slice(0, 800)}`);
-    }
-    await run(PM2_BIN, ['save'], { timeoutMs: 30000 }); // persist boot autostart
-  } catch (err) {
-    fail(readStatus(), `PM2 restart failed: ${err.message}`);
+    }, 800);
+  } else {
+    log(`Update ${version} staged, but this process is not running inside Docker — restart the app manually to pick it up.`);
   }
-
-  writeStatus({
-    state: 'done',
-    message: 'Update installed.',
-    finishedAt: new Date().toISOString(),
-    error: null,
-  });
-  releaseLock();
-  log(`Update ${version} installed successfully.`);
 }
 
 main().catch((err) => fail(readStatus(), err.message));

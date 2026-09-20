@@ -27,6 +27,10 @@ export interface UpdateInstallStatus {
   startedAt: string | null;
   finishedAt: string | null;
   error: string | null;
+  /** 0-99 while downloading, null once the byte-level phase is over. */
+  progress: number | null;
+  bytesDownloaded: number | null;
+  bytesTotal: number | null;
 }
 
 export const UPDATE_ACTIVE_STATES: UpdateState[] = [

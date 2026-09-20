@@ -62,9 +62,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY server ./server
 COPY shared ./shared
+COPY scripts ./scripts
 COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN mkdir -p /data/uploads /data/tls /app/backups /app/logs \
+    && sed -i 's/\r$//' /entrypoint.sh \
     && chmod +x /entrypoint.sh \
     && chown -R node:node /app /data
 
