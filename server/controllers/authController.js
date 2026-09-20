@@ -107,6 +107,17 @@ async function login(req, res, next) {
     const token = signToken({ sub: user.id, username: user.username });
 
     await withTransaction(async (client) => {
+      // Close any session already open for this user on this PC (e.g. a
+      // second tab logging in independently, or a crashed session that
+      // never called logout) before opening a new one — otherwise both
+      // stay "online" forever and the same person shows up twice in the
+      // presence list.
+      await client.query(
+        `UPDATE user_sessions
+            SET logout_at = NOW(), logout_type = 'replaced', status = 'offline'
+          WHERE user_id = $1 AND pc_identifier = $2 AND logout_at IS NULL`,
+        [user.id, pcIdentifier],
+      );
       await client.query(
         `INSERT INTO user_sessions
            (user_id, pc_identifier, ip_address, token_hash, status)
