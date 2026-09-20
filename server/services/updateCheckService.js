@@ -91,8 +91,11 @@ async function fetchLatest() {
       Accept: 'application/vnd.github+json',
       'User-Agent': 'mahali-light-pos',
     };
-    // Private repositories return 404 from the releases API without a token.
-    if (process.env.UPDATE_TOKEN) {
+    // Private repositories return 404 from the releases API without a
+    // token — but only send it to the GitHub API itself. A UPDATE_CHECK_URL
+    // override pointed at a plain CDN/.tar.gz link would otherwise get a
+    // bearer token it never asked for.
+    if (process.env.UPDATE_TOKEN && new URL(url).hostname === 'api.github.com') {
       headers.Authorization = `Bearer ${process.env.UPDATE_TOKEN}`;
     }
     res = await fetch(url, {

@@ -173,7 +173,8 @@ it('throws SYS_UPDATES_UNREACHABLE on a non-OK upstream response', async () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('sends a bearer token when UPDATE_TOKEN is set', async () => {
+  it('sends a bearer token to the GitHub API host when UPDATE_TOKEN is set', async () => {
+    delete process.env.UPDATE_CHECK_URL; // falls back to api.github.com
     process.env.UPDATE_TOKEN = 'ghp_token123';
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -185,6 +186,21 @@ it('throws SYS_UPDATES_UNREACHABLE on a non-OK upstream response', async () => {
     await service.checkForUpdates();
     const [, opts] = fetchMock.mock.calls[0];
     expect(opts.headers.Authorization).toBe('Bearer ghp_token123');
+  });
+
+  it('does not send the bearer token to a non-GitHub UPDATE_CHECK_URL override', async () => {
+    process.env.UPDATE_CHECK_URL = 'https://updates.example.test/latest';
+    process.env.UPDATE_TOKEN = 'ghp_token123';
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => OK_RELEASE,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await service.checkForUpdates();
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(opts.headers.Authorization).toBeUndefined();
   });
 
   it('points downloadUrl at the GitHub tag tarball for JSON endpoints', async () => {

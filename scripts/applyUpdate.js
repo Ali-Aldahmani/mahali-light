@@ -127,13 +127,19 @@ function download(url, destFile, expectedSha, onProgress) {
     let redirects = 0;
 
     const get = (u) => {
+      // UPDATE_TOKEN is for the GitHub REST API (private-repo releases
+      // metadata). Sending it to github.com's archive endpoint or its
+      // codeload.github.com redirect — both used for the actual tarball —
+      // makes GitHub respond 404 instead of just ignoring it, so it's only
+      // ever attached when the request is actually going to the API host.
+      const isApiHost = new URL(u).hostname === 'api.github.com';
       https
         .get(
           u,
           {
             headers: {
               'User-Agent': 'mahali-light-pos',
-              ...(process.env.UPDATE_TOKEN
+              ...(isApiHost && process.env.UPDATE_TOKEN
                 ? { Authorization: `Bearer ${process.env.UPDATE_TOKEN}` }
                 : {}),
             },
