@@ -387,6 +387,16 @@ function printDbHelp(err) {
   console.error('');
 }
 
+// Docker sends SIGTERM to PID 1 on `docker stop` / `compose down`, and the
+// self-update flow (scripts/applyUpdate.js) signals PID 1 the same way to
+// restart the container after swapping in new files. A process running as
+// PID 1 of its container's PID namespace is a kernel special case: any
+// signal with no explicit handler is silently IGNORED rather than taking
+// its normal default action, so without this both paths would just hang
+// until Docker's grace period expires and force-kills the container.
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
+
 bootstrap().catch((err) => {
   console.error('[server] failed to start', err);
   printDbHelp(err);
