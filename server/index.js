@@ -9,7 +9,7 @@ const morgan = require('morgan');
 const compression = require('compression');
 
 const { loadTlsOptions } = require('./utils/tlsCert');
-const { waitForDatabase } = require('./db/postgres');
+const { waitForDatabase, query } = require('./db/postgres');
 const { extraOrigins, isAllowedOrigin } = require('./utils/corsOrigins');
 const { runMigrations } = require('./db/migrate');
 const { run: runSeed } = require('./db/seed');
@@ -273,12 +273,25 @@ async function bootstrap() {
   app.use('/files', createFilesRouter());
 
   app.get('/api/health', async (_req, res) => {
+    // A bare 200 here doesn't mean anything an orchestrator cares about —
+    // Docker's healthcheck/restart policy and any future monitoring rely
+    // on this actually reflecting whether the API can serve requests, so
+    // it has to touch the database. Timeout-bounded so a hung (not just
+    // down) database fails this quickly instead of hanging the check.
+    const dbCheck = query('SELECT 1').then(
+      () => true,
+      () => false,
+    );
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(false), 3000));
+    const dbOk = await Promise.race([dbCheck, timeout]);
+
     const payload = {
-      status: 'ok',
+      status: dbOk ? 'ok' : 'degraded',
       service: 'mahali-light',
       time: new Date().toISOString(),
+      database: dbOk ? 'up' : 'unreachable',
     };
-    res.json({ success: true, data: payload });
+    res.status(dbOk ? 200 : 503).json({ success: dbOk, data: payload });
   });
 
   app.use('/api/auth', authRouter);

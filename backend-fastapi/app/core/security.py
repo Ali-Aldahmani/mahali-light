@@ -115,15 +115,13 @@ def authenticate_bearer(db: Session, authorization: str | None) -> dict[str, Any
     if not user.get("is_active"):
         raise AppError("AUTH_ACCOUNT_INACTIVE")
 
+    # No last_activity_at touch here on purpose: this service is documented
+    # and tested (test_no_writes.py) as read-only, and Express already
+    # keeps that column fresh via its own REST middleware and the socket
+    # heartbeat — a session used only through FastAPI without any Express
+    # activity isn't a real usage pattern (login/logout always go through
+    # Express), so there's nothing to lose by not writing it here too.
     user["session_id"] = str(sess["id"])
-    try:
-        db.execute(
-            text("UPDATE user_sessions SET last_activity_at = NOW() WHERE id = :id"),
-            {"id": sess["id"]},
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
     return user
 
 
