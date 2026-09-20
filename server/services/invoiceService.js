@@ -118,7 +118,7 @@ function computeLineFigures(item) {
 // Batch approach: two queries load ALL variants + attributes at once (via
 // ANY($1)) instead of 2 queries per item, cutting a 20-item invoice from
 // 40 queries + inserts down to 2 + 20 inserts.
-async function replaceItems(client, invoiceId, items, { append = false, startPosition = 0 } = {}) {
+async function replaceItems(client, invoiceId, items, { append = false, startPosition = 0, allowPriceOverride = false } = {}) {
   if (!append) {
     await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [invoiceId]);
   }
@@ -170,9 +170,15 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
     }
     const variantAttrs = attrMap.get(raw.variant_id) || {};
 
+    // Price is server-authoritative: a client-supplied unit_price is only
+    // honoured for callers holding invoice.override_price (checked by the
+    // caller and passed in as allowPriceOverride). Everyone else always
+    // gets the product's current selling_price, no matter what they send —
+    // the discount fields remain the normal, unprivileged way to mark down
+    // a line.
     const item = {
       quantity: money(raw.quantity),
-      unit_price: money(raw.unit_price ?? v.selling_price),
+      unit_price: money(allowPriceOverride && raw.unit_price != null ? raw.unit_price : v.selling_price),
       discount_amount: money(raw.discount_amount || 0),
       discount_percent: Number(raw.discount_percent || 0),
     };
@@ -997,6 +1003,11 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
           if (newQty > 0) {
             await replaceItems(client, req.invoice_id, [requested], {
               append: true, startPosition: currentItems.length + requestedVariants.size,
+              // The requested price already went through invoice.edit_approve
+              // review (route-gated), a distinct elevated permission from
+              // baseline invoice.create — unlike the draft-editing call
+              // sites, this one is trusted to set an intentional price.
+              allowPriceOverride: true,
             });
           }
           continue;

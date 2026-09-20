@@ -3,6 +3,26 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { ROLE_RANK } = require('../../shared/authzPolicy');
+
+// System role names ("Admin" chief among them) are trusted by name in
+// several security-sensitive checks (isAdminActor, ADMIN_EXCLUSIVE_PERMISSIONS
+// gates). A custom role renamed to one of these would pass those checks for
+// anyone assigned to it, so no role — system or custom — may take one of
+// these names, case-insensitively.
+const RESERVED_ROLE_NAMES = new Set(Object.keys(ROLE_RANK).map((n) => n.toLowerCase()));
+
+function assertNotReservedName(name, currentName) {
+  if (!name) return;
+  if (currentName && name === currentName) return; // no-op rename, always fine
+  if (RESERVED_ROLE_NAMES.has(name.trim().toLowerCase())) {
+    throw new AppError(
+      ERROR_CODES.ROLE_IS_SYSTEM,
+      `"${name}" is a reserved role name.`,
+      { status: 400, field: 'name' },
+    );
+  }
+}
 
 const createSchema = z.object({
   name: z.string().min(1).max(50),
@@ -82,6 +102,7 @@ async function getOne(req, res, next) {
 async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
+    assertNotReservedName(body.name);
 
     const role = await withTransaction(async (client) => {
       const { rows } = await client.query(
@@ -134,6 +155,7 @@ async function update(req, res, next) {
     if (rows[0].is_system && body.name && body.name !== rows[0].name) {
       throw new AppError(ERROR_CODES.ROLE_IS_SYSTEM, 'Cannot rename a system role.', { status: 400 });
     }
+    assertNotReservedName(body.name, rows[0].name);
 
     const sets = [];
     const params = [];

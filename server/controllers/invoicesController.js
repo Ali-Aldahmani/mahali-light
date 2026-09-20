@@ -19,6 +19,11 @@ function canSeeCost(req) {
   return p.includes('product.view_cost') || p.includes('*');
 }
 
+function canOverridePrice(req) {
+  const p = req.user?.permissions || [];
+  return p.includes('invoice.override_price') || p.includes('*');
+}
+
 function canDirectCancel(req) {
   const p = req.user?.permissions || [];
   return p.includes('invoice.cancel');
@@ -361,6 +366,7 @@ async function create(req, res, next) {
             discount_percent: i.discountPercent,
             serial_number: i.serialNumber,
           })),
+          { allowPriceOverride: canOverridePrice(req) },
         );
       }
 
@@ -450,6 +456,7 @@ async function updateItems(req, res, next) {
           discount_percent: i.discountPercent,
           serial_number: i.serialNumber,
         })),
+        { allowPriceOverride: canOverridePrice(req) },
       );
 
       await recalculateAndPersistTotals(client, id);

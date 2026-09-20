@@ -9,6 +9,7 @@ const {
   assertCanAssignRole,
   assertCanChangeRole,
   assertCanSetEffectivePermissions,
+  assertCanManageTarget,
 } = require('../../shared/authzPolicy.js');
 const { ROLE_DEFAULTS } = require('../../shared/permissions.js');
 
@@ -122,6 +123,63 @@ describe('AUTHZ-004 role assignment', () => {
         newRoleName: 'Manager',
       }),
     ).not.toThrow();
+  });
+});
+
+// MED-03: usersController.forceLogout now calls assertCanManageTarget the
+// same way role/permission changes already did, so a Manager (who holds
+// user.force_logout by default) cannot forcibly disconnect the Admin.
+describe('assertCanManageTarget (force-logout rank check)', () => {
+  it('Manager cannot manage/force-logout Admin', () => {
+    expectDenied(
+      () =>
+        assertCanManageTarget({
+          actor: manager(['user.force_logout']),
+          targetRoleName: 'Admin',
+          targetUserId: 'admin-1',
+        }),
+      'hierarchy',
+    );
+  });
+
+  it('Manager can manage/force-logout Cashier (strictly lower rank)', () => {
+    expect(() =>
+      assertCanManageTarget({
+        actor: manager(['user.force_logout']),
+        targetRoleName: 'Cashier',
+        targetUserId: 'csh-1',
+      }),
+    ).not.toThrow();
+  });
+
+  it('Manager cannot manage a peer Manager', () => {
+    expectDenied(
+      () =>
+        assertCanManageTarget({
+          actor: manager(['user.force_logout']),
+          targetRoleName: 'Manager',
+          targetUserId: 'mgr-2',
+        }),
+      'hierarchy',
+    );
+  });
+
+  it('Admin can manage anyone, including another Admin', () => {
+    expect(() =>
+      assertCanManageTarget({ actor: admin(), targetRoleName: 'Admin', targetUserId: 'admin-2' }),
+    ).not.toThrow();
+  });
+
+  it('blocks self-targeting regardless of role', () => {
+    expectDenied(
+      () =>
+        assertCanManageTarget({
+          actor: { ...admin(), id: 'self' },
+          targetRoleName: 'Admin',
+          targetUserId: 'self',
+        }),
+      'self_modification',
+    );
   });
 });
 

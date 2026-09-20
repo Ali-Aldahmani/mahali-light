@@ -166,7 +166,7 @@ async function broadcast(req, res, next) {
 // =======================================================================
 async function approvalCounts(req, res, next) {
   try {
-    ok(res, await approvalsService.getCounts());
+    ok(res, await approvalsService.getCounts(req.user?.permissions || []));
   } catch (err) {
     next(err);
   }
@@ -175,7 +175,7 @@ async function approvalCounts(req, res, next) {
 async function approvalQueue(req, res, next) {
   try {
     const limit = Number(req.query.limit) || 10;
-    ok(res, await approvalsService.getQueue({ limit }));
+    ok(res, await approvalsService.getQueue({ limit, permissions: req.user?.permissions || [] }));
   } catch (err) {
     next(err);
   }

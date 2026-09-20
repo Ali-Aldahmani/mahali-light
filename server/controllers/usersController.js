@@ -8,6 +8,7 @@ const {
   assertCanAssignRole,
   assertCanChangeRole,
   assertCanSetEffectivePermissions,
+  assertCanManageTarget,
 } = require('../../shared/authzPolicy');
 
 async function loadRoleName(roleId) {
@@ -311,6 +312,23 @@ async function softDelete(req, res, next) {
 async function forceLogout(req, res, next) {
   try {
     const { id } = req.params;
+
+    // Same hierarchy rule as changing a user's role/permissions: an actor
+    // may only manage (here, disconnect) a strictly-lower-ranked user,
+    // unless the actor is Admin. Without this, any role holding
+    // user.force_logout — Manager does by default — could forcibly
+    // disconnect the Admin.
+    const { rows: targetRows } = await query(
+      `SELECT r.name AS role_name FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.id = $1`,
+      [id],
+    );
+    assertCanManageTarget({
+      actor: req.user,
+      targetRoleName: targetRows[0]?.role_name || null,
+      targetUserId: id,
+    });
 
     const { rows: sessions } = await query(
       `SELECT id, pc_identifier FROM user_sessions

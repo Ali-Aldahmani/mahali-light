@@ -8,6 +8,7 @@ const PERMISSIONS = {
     editRequest: 'invoice.edit_request',
     editApprove: 'invoice.edit_approve',
     editDirect: 'invoice.edit_direct',
+    overridePrice: 'invoice.override_price',
     cancel: 'invoice.cancel',
     refund: 'invoice.refund',
     print: 'invoice.print',

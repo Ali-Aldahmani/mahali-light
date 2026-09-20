@@ -350,4 +350,29 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     expect((await request(app).get('/files/pdfs/invoices/private.pdf').auth(token, { type: 'bearer' })).status).toBe(404);
     expect((await request(app).get('/files/products/%2e%2e%2fpdfs%2finvoices%2fprivate.pdf')).status).not.toBe(200);
   });
+
+  it('CRIT-01 ignores a client-supplied unit price without invoice.override_price, honours it with the flag', async () => {
+    const v = await variant({ price: 100 });
+    const inv = (await db.query(`INSERT INTO invoices (invoice_number,tax_rate,invoice_discount)
+      VALUES ($1,0,0) RETURNING *`, [randomUUID()])).rows[0];
+
+    // Default caller (no allowPriceOverride) — a fabricated low price must
+    // be ignored in favour of the product's real selling_price, no matter
+    // what the client sent. This is the actual server-side fix for CRIT-01.
+    await db.withTransaction(async (client) => {
+      await invoices.replaceItems(client, inv.id, [{ variant_id: v.id, quantity: 1, unit_price: 0.01 }]);
+    });
+    let item = (await db.query('SELECT unit_price FROM invoice_items WHERE invoice_id=$1', [inv.id])).rows[0];
+    expect(Number(item.unit_price)).toBe(100);
+
+    // A caller the controller has verified holds invoice.override_price
+    // (passed through as allowPriceOverride: true) can still set a
+    // deliberate custom price — the elevated/edit-approve path this audit
+    // found already relies on, e.g. applyEditRequest.
+    await db.withTransaction(async (client) => {
+      await invoices.replaceItems(client, inv.id, [{ variant_id: v.id, quantity: 1, unit_price: 75 }], { allowPriceOverride: true });
+    });
+    item = (await db.query('SELECT unit_price FROM invoice_items WHERE invoice_id=$1', [inv.id])).rows[0];
+    expect(Number(item.unit_price)).toBe(75);
+  });
 });
