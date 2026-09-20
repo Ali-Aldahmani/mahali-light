@@ -462,3 +462,6 @@ Never run local dev processes as the live shop — the live shop is always
 More ops notes: `docker/README.md`. Architecture and migration record:
 `docs/web-migration/` (start with `FRONTEND_MIGRATION_INVENTORY.md` and
 `NEXTJS_NATIVE_PARITY.md`).
+
+Invoice integrity changes, payment idempotency migration, private-file access,
+and PostgreSQL regression-test instructions: [docs/INVOICE_INTEGRITY_FIXES.md](docs/INVOICE_INTEGRITY_FIXES.md).

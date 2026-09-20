@@ -197,6 +197,24 @@ function POSPageContent() {
   // ---- Submission ------------------------------------------------------
   async function submitInvoice() {
     if (!totals.items.length) return;
+    const totalCents = Math.round(totals.total * 100);
+    const nonCashCents = payments.filter((p) => p.method !== 'cash')
+      .reduce((sum, p) => sum + Math.round(Number(p.amount) * 100), 0);
+    if (nonCashCents > totalCents) {
+      toast.error('Bank and credit payments cannot exceed the invoice total.');
+      return;
+    }
+    // Cash tender can include change; only the retained amount is a payment.
+    let cashRemaining = totalCents - nonCashCents;
+    const allocations = payments.map((p) => {
+      if (p.method !== 'cash') return p;
+      const cents = Math.min(Math.round(Number(p.amount) * 100), cashRemaining);
+      cashRemaining -= cents;
+      return { ...p, amount: cents / 100 };
+    });
+    if (cashRemaining > 0 && selectedCustomer) {
+      allocations.push({ id: 'remaining-customer-credit', method: 'credit', amount: cashRemaining / 100 });
+    }
     if (Math.abs(totals.balanceDue) > 0.001 && totals.balanceDue > 0) {
       // The cashier explicitly left a balance → goes onto customer credit
       // if a registered customer is selected, otherwise block.
@@ -223,6 +241,7 @@ function POSPageContent() {
         pcIdentifier,
         notes: usePosStore.getState().notes || null,
         invoiceDiscount,
+        taxRate: totals.taxRate,
         items: totals.items.map((it: any) => ({
           variantId: it.variantId,
           quantity: Number(it.quantity),
@@ -233,9 +252,10 @@ function POSPageContent() {
       });
       const invoiceId = created.id;
 
-      for (const pm of payments) {
+      for (const pm of allocations) {
         if (!pm.amount || Number(pm.amount) <= 0) continue;
         await addInvoicePayment(invoiceId, {
+          idempotencyKey: pm.id,
           method: pm.method,
           amount: Number(pm.amount),
         });

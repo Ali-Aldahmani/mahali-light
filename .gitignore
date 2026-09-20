@@ -27,6 +27,9 @@ docker/postgres/backups/*
 # TLS certificates — auto-generated private keys must never be committed
 tls/
 
+# Self-update staging (downloaded releases are never committed)
+.updates/
+
 # Logs (includes PM2 logs written to logs/)
 logs/
 *.log

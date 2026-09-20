@@ -118,10 +118,10 @@ function computeLineFigures(item) {
 // Batch approach: two queries load ALL variants + attributes at once (via
 // ANY($1)) instead of 2 queries per item, cutting a 20-item invoice from
 // 40 queries + inserts down to 2 + 20 inserts.
-async function replaceItems(client, invoiceId, items) {
-  await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [
-    invoiceId,
-  ]);
+async function replaceItems(client, invoiceId, items, { append = false, startPosition = 0 } = {}) {
+  if (!append) {
+    await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [invoiceId]);
+  }
 
   const validItems = items.filter((i) => i.variant_id);
   if (!validItems.length) return;
@@ -158,7 +158,7 @@ async function replaceItems(client, invoiceId, items) {
     attrs[r.name] = r.unit ? `${r.value}${r.unit}` : r.value;
   }
 
-  let position = 0;
+  let position = startPosition;
   for (const raw of validItems) {
     const v = variantMap.get(raw.variant_id);
     if (!v) {
@@ -254,6 +254,11 @@ async function recalculateAndPersistTotals(
       invoiceDiscount != null ? invoiceDiscount : invRows[0].invoice_discount,
     taxRate: taxRate != null ? taxRate : invRows[0].tax_rate,
   });
+
+  if (totals.amountPaid > totals.total) {
+    throw new AppError(ERROR_CODES.BIZ_PAYMENT_EXCEEDS_BALANCE,
+      'Recorded payments exceed the invoice total.', { status: 409 });
+  }
 
   await client.query(
     `UPDATE invoices
@@ -356,6 +361,11 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     if (!items.length) {
       throw new AppError(ERROR_CODES.BIZ_INVOICE_EMPTY);
     }
+    const totals = await recalculateAndPersistTotals(client, invoiceId);
+    if (totals.balanceDue > 0) {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+        'Allocate the full invoice total to cash, bank, or customer credit before confirming.');
+    }
 
     const shortfalls = await findStockShortfalls(client, items);
     if (shortfalls.length) {
@@ -454,8 +464,6 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
         treasuryPostings.push({ method: 'bank', ...posted });
       }
     }
-
-    const totals = await recalculateAndPersistTotals(client, invoiceId);
 
     // Compute COGS (cost × qty across all items) for the sale's journal pass.
     let cogsAmount = 0;
@@ -687,8 +695,13 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
         { status: 409 },
       );
     }
+    if (!['draft', 'confirmed'].includes(invoice.status)) {
+      throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED, 'This invoice cannot be cancelled.', { status: 409 });
+    }
+    await assertNoCommittedReturns(client, invoiceId);
 
     const stockEmits = [];
+    const treasuryPostings = [];
     if (invoice.status === 'confirmed') {
       const items = await loadItemsForInvoice(client, invoiceId);
       for (const it of items) {
@@ -731,14 +744,51 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
         );
         const credit = money(paymentRows[0].credit_used);
         if (credit > 0) {
+          const { rows: customers } = await client.query(
+            `SELECT credit_balance FROM customers WHERE id = $1 FOR UPDATE`, [invoice.customer_id],
+          );
+          if (!customers.length || money(customers[0].credit_balance) < credit) {
+            throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+              'Credit has already been collected. Use the return/refund workflow to settle this invoice.');
+          }
           await client.query(
             `UPDATE customers
-                SET credit_balance = GREATEST(0, credit_balance - $1),
+                SET credit_balance = credit_balance - $1,
                     updated_at = NOW()
               WHERE id = $2`,
             [credit, invoice.customer_id],
           );
         }
+      }
+
+      // Reverse the actual postings, including the bank account selected at
+      // confirmation time. The store's default account may have changed since.
+      const { rows: cashPostings } = await client.query(
+        `SELECT amount FROM cash_drawer_transactions
+          WHERE reference_type = 'invoice' AND reference_id = $1 AND direction = 'in'
+          ORDER BY timestamp, id`, [invoiceId],
+      );
+      const { rows: bankPostings } = await client.query(
+        `SELECT amount, bank_account_id FROM bank_transactions
+          WHERE reference_type = 'invoice' AND reference_id = $1 AND direction = 'in'
+          ORDER BY bank_account_id, timestamp, id`, [invoiceId],
+      );
+      for (const posting of cashPostings) {
+        const posted = await cashService.recordCashOut({
+          client, transactionType: 'refund', amount: posting.amount,
+          referenceType: 'invoice_cancel', referenceId: invoiceId, employeeId,
+          notes: `Cancellation of ${invoice.invoice_number}`,
+        });
+        treasuryPostings.push({ method: 'cash', ...posted });
+      }
+      for (const posting of bankPostings) {
+        const posted = await bankService.recordBankOut({
+          client, bankAccountId: posting.bank_account_id,
+          transactionType: 'refund', amount: posting.amount,
+          referenceType: 'invoice_cancel', referenceId: invoiceId, employeeId,
+          description: `Cancellation of ${invoice.invoice_number}`, allowOverdraft: true,
+        });
+        treasuryPostings.push({ method: 'bank', ...posted });
       }
     }
 
@@ -769,7 +819,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
       [invoiceId, employeeId, reason || 'Cancelled.'],
     );
 
-    return { invoice, stockEmits };
+    return { invoice, stockEmits, treasuryPostings };
   });
 
   await logActivity({
@@ -782,6 +832,16 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
 
   if (io) {
     for (const e of result.stockEmits) io.emit(e.event, e.payload);
+    for (const posting of result.treasuryPostings) {
+      const event = posting.method === 'cash' ? 'cash_balance_updated' : 'bank_balance_updated';
+      const payload = {
+        bankAccountId: posting.accountId, bankName: posting.bankName,
+        newBalance: posting.balanceAfter, delta: posting.delta,
+        transactionType: 'refund', changedBy: employeeId, at: new Date().toISOString(),
+      };
+      io.to('role:Manager').emit(event, payload);
+      io.to('role:Admin').emit(event, payload);
+    }
     const payload = {
       invoiceId,
       invoiceNumber: result.invoice.invoice_number,
@@ -837,8 +897,8 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
 //
 // For confirmed invoices, item changes trigger stock deltas: increase qty →
 // extra sale movement (with stock check), decrease qty → return_in movement.
-// Credit payment totals are NOT touched automatically — the cashier should
-// add or void payments separately after the edit is applied.
+// Settled totals cannot change without an explicit collection/refund workflow.
+// Equal-total corrections repost the sale and COGS; treasury stays unchanged.
 async function applyEditRequest({ requestId, managerId, io = null }) {
   const result = await withTransaction(async (client) => {
     const { rows: reqRows } = await client.query(
@@ -869,7 +929,7 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
       });
     }
     const invoice = invRows[0];
-    if (invoice.has_return || invoice.status === 'cancelled') {
+    if (invoice.has_return || !['draft', 'confirmed'].includes(invoice.status)) {
       throw new AppError(
         ERROR_CODES.BIZ_INVOICE_LOCKED,
         'Invoice can no longer be edited.',
@@ -879,20 +939,32 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
 
     const changes = req.changes || {};
     const stockEmits = [];
+    const financialChange = Array.isArray(changes.items) || changes.invoiceDiscount != null;
+    if (financialChange) await assertNoCommittedReturns(client, req.invoice_id);
 
-    // ---- Item changes (only meaningful for confirmed invoices) -----------
-    if (Array.isArray(changes.items) && invoice.status === 'confirmed') {
+    // ---- Item changes; confirmed invoices also move stock ----------------
+    if (Array.isArray(changes.items)) {
       const { rows: currentItems } = await client.query(
         `SELECT * FROM invoice_items WHERE invoice_id = $1`,
         [req.invoice_id],
       );
       const byVariant = new Map(currentItems.map((r) => [r.variant_id, r]));
+      const requestedVariants = new Set();
       for (const requested of changes.items) {
+        if (requestedVariants.has(requested.variant_id) ||
+            currentItems.filter((it) => it.variant_id === requested.variant_id).length > 1) {
+          throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+            'Edit requests must identify an unambiguous, unique variant.');
+        }
+        requestedVariants.add(requested.variant_id);
         const cur = byVariant.get(requested.variant_id);
         const newQty = money(requested.quantity);
+        if (!Number.isFinite(Number(requested.quantity)) || newQty < 0) {
+          throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid item quantity.');
+        }
         const oldQty = cur ? Number(cur.quantity) : 0;
         const delta = money(newQty - oldQty);
-        if (Math.abs(delta) > 0.0001) {
+        if (invoice.status === 'confirmed' && Math.abs(delta) > 0.0001) {
           if (delta > 0) {
             const { variant } = await applyStockMovement({
               client,
@@ -921,6 +993,14 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
             stockEmits.push({ event: 'stock_updated', payload: emitPayload(variant, 'return_in', managerId, req.invoice_id) });
           }
         }
+        if (!cur) {
+          if (newQty > 0) {
+            await replaceItems(client, req.invoice_id, [requested], {
+              append: true, startPosition: currentItems.length + requestedVariants.size,
+            });
+          }
+          continue;
+        }
         const newPrice =
           requested.unit_price != null ? money(requested.unit_price) : Number(cur?.unit_price);
         const newDisc =
@@ -928,8 +1008,12 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
             ? money(requested.discount_amount)
             : Number(cur?.discount_amount || 0);
 
-        const lineSubtotal = money(newQty * newPrice);
-        const lineTotal = money(lineSubtotal - newDisc);
+        if (!Number.isFinite(newPrice) || newPrice < 0 || !Number.isFinite(newDisc) || newDisc < 0) {
+          throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid item price or discount.');
+        }
+        const { lineSubtotal, lineTotal, discountAmount } = computeLineFigures({
+          quantity: newQty, unit_price: newPrice, discount_amount: newDisc,
+        });
 
         if (cur) {
           if (newQty <= 0) {
@@ -942,7 +1026,7 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
                   SET quantity = $1, unit_price = $2, discount_amount = $3,
                       line_subtotal = $4, line_total = $5
                 WHERE id = $6`,
-              [newQty, newPrice, newDisc, lineSubtotal, lineTotal, cur.id],
+              [newQty, newPrice, discountAmount, lineSubtotal, lineTotal, cur.id],
             );
           }
         }
@@ -964,6 +1048,25 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
     }
 
     const totals = await recalculateAndPersistTotals(client, req.invoice_id);
+    if (invoice.status === 'confirmed' && financialChange) {
+      if (totals.total !== money(invoice.total) || totals.amountPaid !== totals.total) {
+        throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED,
+          'Changing a confirmed invoice total requires a return or cancellation and reissue.', { status: 409 });
+      }
+      const items = await loadItemsForInvoice(client, req.invoice_id);
+      if (!items.length) throw new AppError(ERROR_CODES.BIZ_INVOICE_EMPTY);
+      const payments = await loadPaymentsForInvoice(client, req.invoice_id);
+      const date = new Date().toISOString().slice(0, 10);
+      await journalService.reverseSaleEntries(client, req.invoice_id, {
+        invoiceNumber: invoice.invoice_number, date, userId: managerId,
+      });
+      await journalService.postSaleEntry(client, {
+        invoiceId: req.invoice_id, invoiceNumber: invoice.invoice_number, date,
+        subtotal: totals.taxableAmount, taxAmount: totals.taxAmount, payments,
+        cogsAmount: money(items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.cost_price_at_time), 0)),
+        userId: managerId,
+      });
+    }
 
     await client.query(
       `UPDATE invoice_edit_requests
@@ -1048,6 +1151,18 @@ function emitPayload(variant, type, employeeId, refId) {
     referenceType: 'invoice_edit',
     referenceId: refId,
   };
+}
+
+// Caller holds the invoice lock, also used by return creation/approval.
+async function assertNoCommittedReturns(client, invoiceId) {
+  const { rows } = await client.query(
+    `SELECT id FROM return_requests WHERE reference_type = 'invoice'
+      AND reference_id = $1 AND status IN ('pending', 'approved') LIMIT 1`, [invoiceId],
+  );
+  if (rows.length) {
+    throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED,
+      'Resolve existing return requests before cancelling or editing this invoice.', { status: 409 });
+  }
 }
 
 // Reject an edit request.

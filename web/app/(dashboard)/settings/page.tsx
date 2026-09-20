@@ -1,16 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import SettingsSection from '@/components/settings/SettingsSection';
 import Input from '@/components/ui/Input';
 import Textarea from '@/components/ui/Textarea';
 import AppVersion from '@/components/settings/AppVersion';
+import Button from '@/components/ui/Button';
 import { useAppSettingsStore } from '@/store/appSettingsStore';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import { fileUrl } from '@/lib/config';
+import {
+  checkForAppUpdates,
+  getUpdateInstallStatus,
+  installAppUpdate,
+  UPDATE_ACTIVE_STATES,
+  type UpdateCheckResult,
+  type UpdateInstallStatus,
+} from '@/services/updateService';
 
 const NAV: { id: string; label: string; link?: string }[] = [
   { id: 'store', label: 'Store profile' },
@@ -25,10 +34,21 @@ const NAV: { id: string; label: string; link?: string }[] = [
   { id: 'about', label: 'About' },
 ];
 
+const INSTALL_LABELS: Record<string, string> = {
+  downloading: 'Downloading update…',
+  installing: 'Installing files…',
+  swapping: 'Replacing application files…',
+  restarting: 'Restarting server…',
+};
+
 export default function SettingsHubPage() {
   const [section, setSection] = useState('store');
   const [draft, setDraft] = useState<Record<string, any> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
+  const [installStatus, setInstallStatus] = useState<UpdateInstallStatus | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const settings = useAppSettingsStore((s) => s.settings);
   const fetchSettings = useAppSettingsStore((s) => s.fetch);
   const save = useAppSettingsStore((s) => s.save);
@@ -44,7 +64,77 @@ export default function SettingsHubPage() {
     if (settings) setDraft({ ...settings });
   }, [settings]);
 
+  useEffect(() => {
+    return () => {
+      if (pollTimer.current) clearInterval(pollTimer.current);
+    };
+  }, []);
+
   const patch = (p: Record<string, any>) => setDraft((d) => ({ ...d, ...p }));
+
+  function stopPolling() {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }
+
+  async function pollInstallStatus() {
+    stopPolling();
+    pollTimer.current = setInterval(async () => {
+      try {
+        const st = await getUpdateInstallStatus();
+        setInstallStatus(st);
+        if (st.state === 'done' || st.state === 'failed') {
+          stopPolling();
+          if (st.state === 'done') {
+            toast.success(`Update v${st.version} installed.`);
+            setUpdateInfo(null);
+            setInstallStatus(null);
+          } else {
+            toast.error(st.error || 'Update install failed.');
+          }
+        }
+      } catch (_e) {
+        // Server is mid-restart — keep polling until it responds again.
+      }
+    }, 2500);
+  }
+
+  async function handleCheckUpdate() {
+    setCheckingUpdate(true);
+    try {
+      const res = await checkForAppUpdates();
+      setUpdateInfo(res);
+      if (!res.updateAvailable) {
+        toast.success(`You're up to date (v${res.currentVersion}).`);
+      }
+    } catch (err: any) {
+      setUpdateInfo(null);
+      toast.error(err?.message || 'Unable to check for updates.');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
+  async function handleInstallUpdate() {
+    const version = updateInfo?.latestVersion;
+    if (!version) return;
+    try {
+      await installAppUpdate(version);
+      setInstallStatus({
+        state: 'downloading',
+        version,
+        message: 'Downloading update…',
+        startedAt: new Date().toISOString(),
+        finishedAt: null,
+        error: null,
+      });
+      pollInstallStatus();
+    } catch (err: any) {
+      toast.error(err?.message || 'Unable to start the update.');
+    }
+  }
 
   async function handleSave(sec: string) {
     if (!canEdit) return;
@@ -168,6 +258,54 @@ export default function SettingsHubPage() {
               <p className="text-lg font-semibold text-ink">Mahali Light POS</p>
               <p className="text-sm text-ink-muted">Built by Bytecra</p>
               <AppVersion />
+              <Button
+                size="sm"
+                variant="secondary"
+                className="mt-3"
+                loading={checkingUpdate}
+                onClick={handleCheckUpdate}
+              >
+                Check for updates
+              </Button>
+
+              {updateInfo?.updateAvailable && updateInfo.latestVersion && (
+                <div className="mt-4 rounded-lg border border-accent/30 bg-accent-light p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-accent">
+                        Update available: v{updateInfo.latestVersion}
+                      </p>
+                      <p className="text-xs text-ink-muted">
+                        Current: v{updateInfo.currentVersion}
+                        {updateInfo.releaseUrl && ' — released on the public repo.'}
+                      </p>
+                    </div>
+                    {role === 'Admin' ? (
+                      <Button
+                        size="sm"
+                        disabled={installStatus !== null && UPDATE_ACTIVE_STATES.includes(installStatus.state)}
+                        onClick={handleInstallUpdate}
+                      >
+                        Install update
+                      </Button>
+                    ) : (
+                      <p className="text-xs text-ink-muted">
+                        Ask an administrator to install this update.
+                      </p>
+                    )}
+                  </div>
+                  {installStatus &&
+                    (UPDATE_ACTIVE_STATES.includes(installStatus.state) ? (
+                      <p className="mt-2 text-sm text-ink">
+                        {INSTALL_LABELS[installStatus.state] || installStatus.message}
+                      </p>
+                    ) : installStatus.state === 'failed' ? (
+                      <p className="mt-2 text-sm text-danger">
+                        {installStatus.error || 'Update install failed.'}
+                      </p>
+                    ) : null)}
+                </div>
+              )}
             </SettingsSection>
           )}
         </div>

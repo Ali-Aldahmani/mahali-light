@@ -6,15 +6,11 @@ const { logActivity } = require('../utils/activityLog');
 const {
   recalculateAndPersistTotals,
 } = require('../services/invoiceService');
-const {
-  assertWithinCreditLimit,
-} = require('../services/customerService');
-const cashService = require('../services/cashService');
-const bankService = require('../services/bankService');
 
 const createSchema = z.object({
+  idempotencyKey: z.string().trim().min(1).max(128),
   method: z.enum(['cash', 'bank', 'credit']),
-  amount: z.number().positive(),
+  amount: z.number().finite().positive().multipleOf(0.01),
   bankAccountId: z.string().uuid().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
 });
@@ -49,15 +45,14 @@ async function list(req, res, next) {
   }
 }
 
-// Add a payment to an invoice. For credit payments, validates that the
-// customer exists and that the new charge stays within their credit limit.
-// On confirmed invoices, the customer's credit_balance is updated immediately
-// to reflect the additional credit charge. On drafts, credit is only applied
-// at confirmation time so we just record the row.
+// Record a draft allocation. Confirmation posts its financial effects.
 async function create(req, res, next) {
   try {
     const { id: invoiceId } = req.params;
-    const body = createSchema.parse(req.body || {});
+    const body = createSchema.parse({
+      ...req.body,
+      idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
+    });
 
     const result = await withTransaction(async (client) => {
       const { rows: invRows } = await client.query(
@@ -70,12 +65,34 @@ async function create(req, res, next) {
         });
       }
       const inv = invRows[0];
-      if (inv.status === 'cancelled') {
+      const { rows: existing } = await client.query(
+        `SELECT * FROM invoice_payments WHERE invoice_id = $1 AND idempotency_key = $2`,
+        [invoiceId, body.idempotencyKey],
+      );
+      if (existing.length) {
+        const payment = existing[0];
+        if (payment.method !== body.method || Number(payment.amount) !== body.amount ||
+            (payment.bank_account_id || null) !== (body.bankAccountId || null) ||
+            (payment.notes || null) !== (body.notes || null)) {
+          throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+            'This payment key was already used with different payment details.', { status: 409 });
+        }
+        return { payment, invoice: inv, replayed: true };
+      }
+      // Confirmed invoices are fully allocated (cash/bank/credit). Collections
+      // against credit belong to customer payments, not a second sale payment.
+      if (inv.status !== 'draft') {
         throw new AppError(
           ERROR_CODES.BIZ_INVOICE_LOCKED,
-          'Cannot add payments to a cancelled invoice.',
+          'Payments can only be added to a draft invoice. Use customer collections for credit repayments.',
           { status: 409 },
         );
+      }
+
+      const totals = await recalculateAndPersistTotals(client, invoiceId);
+      if (Math.round(body.amount * 100) > Math.round(totals.balanceDue * 100)) {
+        throw new AppError(ERROR_CODES.BIZ_PAYMENT_EXCEEDS_BALANCE,
+          'Payment exceeds the invoice balance.', { status: 409 });
       }
 
       if (body.method === 'credit') {
@@ -84,15 +101,12 @@ async function create(req, res, next) {
             status: 409,
           });
         }
-        if (inv.status === 'confirmed') {
-          await assertWithinCreditLimit(client, inv.customer_id, body.amount);
-        }
       }
 
       const { rows: insertRows } = await client.query(
         `INSERT INTO invoice_payments
-           (invoice_id, method, amount, bank_account_id, employee_id, notes)
-         VALUES ($1,$2,$3,$4,$5,$6)
+           (invoice_id, method, amount, bank_account_id, employee_id, notes, idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING id`,
         [
           invoiceId,
@@ -101,48 +115,9 @@ async function create(req, res, next) {
           body.bankAccountId || null,
           req.user.id,
           body.notes || null,
+          body.idempotencyKey,
         ],
       );
-
-      // For confirmed invoices, apply credit-balance side-effects right away.
-      if (inv.status === 'confirmed' && body.method === 'credit') {
-        await client.query(
-          `UPDATE customers
-              SET credit_balance = credit_balance + $1,
-                  updated_at = NOW()
-            WHERE id = $2`,
-          [body.amount, inv.customer_id],
-        );
-      }
-
-      // Treasury: book the cash / bank movement immediately for confirmed
-      // invoices. Drafts only post once the invoice is confirmed (handled in
-      // invoiceService.confirmInvoice).
-      let treasury = null;
-      if (inv.status === 'confirmed') {
-        if (body.method === 'cash') {
-          treasury = await cashService.recordCashIn({
-            client,
-            transactionType: 'sale',
-            amount: body.amount,
-            referenceType: 'invoice',
-            referenceId: invoiceId,
-            employeeId: req.user.id,
-            notes: `Payment for ${inv.invoice_number}`,
-          });
-        } else if (body.method === 'bank') {
-          treasury = await bankService.recordBankIn({
-            client,
-            bankAccountId: body.bankAccountId || null,
-            transactionType: 'sale',
-            amount: body.amount,
-            referenceType: 'invoice',
-            referenceId: invoiceId,
-            employeeId: req.user.id,
-            description: `Payment for ${inv.invoice_number}`,
-          });
-        }
-      }
 
       await recalculateAndPersistTotals(client, invoiceId);
 
@@ -164,8 +139,10 @@ async function create(req, res, next) {
           WHERE p.id = $1`,
         [insertRows[0].id],
       );
-      return { payment: full[0], invoice: inv, treasury };
+      return { payment: full[0], invoice: inv };
     });
+
+    if (result.replayed) return ok(res, shape(result.payment));
 
     await logActivity({
       entityType: 'invoice',
@@ -174,53 +151,6 @@ async function create(req, res, next) {
       performedBy: req.user.id,
       newValue: { method: body.method, amount: body.amount },
     });
-
-    const io = req.app.get('io');
-    if (io && result.treasury) {
-      const at = new Date().toISOString();
-      if (body.method === 'cash') {
-        const payload = {
-          newBalance: result.treasury.balanceAfter,
-          delta: result.treasury.delta,
-          transactionType: 'sale',
-          changedBy: req.user.id,
-          at,
-        };
-        io.to('role:Manager').emit('cash_balance_updated', payload);
-        io.to('role:Admin').emit('cash_balance_updated', payload);
-      } else if (body.method === 'bank') {
-        const payload = {
-          bankAccountId: result.treasury.accountId,
-          bankName: result.treasury.bankName,
-          newBalance: result.treasury.balanceAfter,
-          delta: result.treasury.delta,
-          transactionType: 'sale',
-          changedBy: req.user.id,
-          at,
-        };
-        io.to('role:Manager').emit('bank_balance_updated', payload);
-        io.to('role:Admin').emit('bank_balance_updated', payload);
-      }
-    }
-    if (io && result.invoice.customer_id && body.method === 'credit' && result.invoice.status === 'confirmed') {
-      const { rows: cRows } = await query(
-        `SELECT name, credit_balance FROM customers WHERE id = $1`,
-        [result.invoice.customer_id],
-      );
-      if (cRows.length) {
-        const payload = {
-          customerId: result.invoice.customer_id,
-          customerName: cRows[0].name,
-          newBalance: Number(cRows[0].credit_balance),
-          deltaAmount: Number(body.amount),
-          method: 'invoice_credit',
-          changedBy: req.user.id,
-          at: new Date().toISOString(),
-        };
-        io.to('role:Manager').emit('customer_balance_updated', payload);
-        io.to('role:Admin').emit('customer_balance_updated', payload);
-      }
-    }
 
     return created(res, shape(result.payment));
   } catch (err) {

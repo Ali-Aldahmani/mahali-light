@@ -131,6 +131,8 @@ export interface Invoice {
 }
 
 export interface InvoiceItem {
+  refundableLineValue?: number;
+  committedReturnValue?: number;
   id: string;
   productId?: string | null;
   variantId?: string | null;

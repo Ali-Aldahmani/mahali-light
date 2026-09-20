@@ -1,5 +1,5 @@
 import { FileText, ImageIcon, Download, Trash2 } from 'lucide-react';
-import { fileUrl } from '@/lib/config';
+import { usePrivateFileUrl } from './PrivateFileLink';
 
 function inferType(path?: string | null) {
   if (!path) return 'unknown';
@@ -38,7 +38,7 @@ export default function AttachmentCard({
   onDelete?: () => void;
 }) {
   const type = inferType(path);
-  const url = path ? fileUrl(path) : null;
+  const url = usePrivateFileUrl(path);
   const Icon = type === 'image' ? ImageIcon : FileText;
 
   return (

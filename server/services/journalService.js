@@ -325,16 +325,14 @@ async function postSaleEntry(client, {
     lines.push({ accountId: await getAccountIdByCode('2002', client), debit: 0, credit: tax });
   }
 
-  if (!lines.length) return null; // Nothing to post (zero-total invoice).
-
-  const saleEntry = await postJournalEntryWith(client, {
+  const saleEntry = lines.length ? await postJournalEntryWith(client, {
     referenceType: 'invoice',
     referenceId: invoiceId,
     date,
     description: `Sale ${invoiceNumber}`,
     lines,
     userId,
-  });
+  }) : null;
 
   // COGS pass: DR COGS, CR Inventory. Always uses the invoice's date.
   if (money(cogsAmount) > 0) {
@@ -364,18 +362,39 @@ async function postSaleEntry(client, {
 
 async function reverseSaleEntries(client, invoiceId, { invoiceNumber, date, userId }) {
   const { rows } = await client.query(
-    `SELECT id FROM journal_entries
-      WHERE reference_type = 'invoice' AND reference_id = $1
-      ORDER BY created_at ASC`,
+    `SELECT l.account_id, SUM(l.debit - l.credit)::numeric AS balance
+       FROM journal_entries e JOIN journal_lines l ON l.journal_entry_id = e.id
+      WHERE e.reference_type = 'invoice' AND e.reference_id = $1
+      GROUP BY l.account_id`,
     [invoiceId],
   );
-  for (const r of rows) {
-    await reverseJournalEntryWith(client, r.id, {
-      description: `Cancellation of ${invoiceNumber}`,
-      date,
-      userId,
-    });
-  }
+  // Reverse the remaining net footprint, including earlier corrections.
+  // Reversing each historical entry separately grows exponentially on edits.
+  const lines = rows.filter((r) => money(r.balance) !== 0).map((r) => ({
+    accountId: r.account_id,
+    debit: Math.max(0, -money(r.balance)),
+    credit: Math.max(0, money(r.balance)),
+  }));
+  if (!lines.length) return null;
+  return postJournalEntryWith(client, {
+    referenceType: 'invoice', referenceId: invoiceId,
+    description: `Reversal of ${invoiceNumber}`, date, userId, lines,
+  });
+}
+
+// Returning sold units restores their original inventory cost. Replacement
+// sales then consume their own cost, so an exchange records only the net COGS.
+async function postReturnedInventoryEntry(client, { returnOrderId, returnOrderNumber, amount, date, userId }) {
+  const value = money(amount);
+  if (value <= 0) return null;
+  return postJournalEntryWith(client, {
+    referenceType: 'return_order', referenceId: returnOrderId, date, userId,
+    description: `Inventory returned for ${returnOrderNumber}`,
+    lines: [
+      { accountId: await getAccountIdByCode('1004', client), debit: value, credit: 0 },
+      { accountId: await getAccountIdByCode('5001', client), debit: 0, credit: value },
+    ],
+  });
 }
 
 // Customer pays down their credit balance: DR cash/bank, CR receivable.
@@ -1008,6 +1027,7 @@ module.exports = {
   invalidateAccountsCache,
   // Domain helpers
   postSaleEntry,
+  postReturnedInventoryEntry,
   reverseSaleEntries,
   postCustomerPaymentEntry,
   reverseCustomerPaymentEntries,

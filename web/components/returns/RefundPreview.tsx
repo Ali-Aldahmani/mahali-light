@@ -4,7 +4,7 @@ import { formatCurrency } from '@/lib/utils/format';
 const METHOD_META = {
   cash: { label: 'Cash', icon: Banknote, tone: 'text-success' },
   bank: { label: 'Bank transfer', icon: Landmark, tone: 'text-accent' },
-  credit: { label: 'Store credit', icon: CreditCard, tone: 'text-warning' },
+  credit: { label: 'Reduce outstanding credit', icon: CreditCard, tone: 'text-warning' },
 };
 
 export default function RefundPreview({
@@ -81,7 +81,7 @@ export default function RefundPreview({
           <div>
             <div className="text-ink-muted">After refund</div>
             <div className="font-semibold text-ink">
-              {formatCurrency(Number(customerBalanceBefore) + creditDelta)}
+              {formatCurrency(Number(customerBalanceBefore) - creditDelta)}
             </div>
           </div>
         </div>

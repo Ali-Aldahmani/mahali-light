@@ -26,7 +26,7 @@ import { getBill, cancelBill, pauseBill, resumeBill } from '@/services/billServi
 import { useAuthStore } from '@/store/authStore';
 import { onBillEvent } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
-import { fileUrl } from '@/lib/config';
+import PrivateFileLink from '@/components/ui/PrivateFileLink';
 
 function aed(n: any) {
   return `AED ${Number(n || 0).toFixed(2)}`;
@@ -293,14 +293,11 @@ function BillDetailPageInner() {
                   </td>
                   <td className="px-4 py-2">
                     {p.receiptAttachment ? (
-                      <a
-                        href={fileUrl(p.receiptAttachment)}
-                        target="_blank"
-                        rel="noreferrer"
+                      <PrivateFileLink path={p.receiptAttachment}
                         className="inline-flex items-center gap-1 text-accent hover:underline"
                       >
                         <ExternalLink size={14} /> View
-                      </a>
+                      </PrivateFileLink>
                     ) : (
                       <span className="text-xs text-ink-muted">—</span>
                     )}

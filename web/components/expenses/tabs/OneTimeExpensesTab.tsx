@@ -12,7 +12,7 @@ import { listExpenses, deleteExpense, getExpenseSummary } from '@/services/expen
 import { listCategories } from '@/services/expenseCategoryService';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
-import { fileUrl } from '@/lib/config';
+import PrivateFileLink from '@/components/ui/PrivateFileLink';
 
 function aed(n: any) {
   return `AED ${Number(n || 0).toFixed(2)}`;
@@ -179,14 +179,11 @@ export default function OneTimeExpensesTab({
       header: 'Receipt',
       render: (r: any) =>
         r.receiptAttachment ? (
-          <a
-            href={fileUrl(r.receiptAttachment)}
-            target="_blank"
-            rel="noreferrer"
+          <PrivateFileLink path={r.receiptAttachment}
             className="inline-flex items-center gap-1 text-accent hover:underline"
           >
             <ExternalLink size={14} /> View
-          </a>
+          </PrivateFileLink>
         ) : (
           <span className="text-xs text-ink-muted">—</span>
         ),

@@ -1,7 +1,7 @@
 import { Banknote, Building2, FileSpreadsheet, Receipt, Trash2 } from 'lucide-react';
 import Table, { type TableColumn } from './Table';
 import { formatCurrency } from '@/lib/utils/format';
-import { fileUrl } from '@/lib/config';
+import PrivateFileLink from '@/components/ui/PrivateFileLink';
 
 const METHOD_META = {
   cash: { Icon: Banknote, label: 'Cash' },
@@ -74,16 +74,12 @@ export default function PaymentHistoryTable({
       render: (r) => (
         <div className="inline-flex items-center justify-end gap-1">
           {r.receiptAttachment && (
-            <a
-              href={fileUrl(r.receiptAttachment)}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
+            <PrivateFileLink path={r.receiptAttachment}
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-muted hover:bg-surface-2"
               title="View receipt"
             >
               <Receipt size={14} />
-            </a>
+            </PrivateFileLink>
           )}
           {onDelete && (
             <button

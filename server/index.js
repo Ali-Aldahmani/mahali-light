@@ -16,7 +16,7 @@ const { run: runSeed } = require('./db/seed');
 const { run: runSeedProducts } = require('./db/seedProducts');
 const { run: runSeedSettings } = require('./db/seedSettings');
 const { attachSocket } = require('./socket');
-const { getUploadsRoot } = require('./utils/paths');
+const { createFilesRouter } = require('./routes/files');
 
 const authRouter = require('./routes/auth');
 const usersRouter = require('./routes/users');
@@ -64,6 +64,7 @@ const bugReportsRouter = require('./routes/bugReports');
 const appSettingsRouter = require('./routes/appSettings');
 const setupRouter = require('./routes/setup');
 const searchRouter = require('./routes/search');
+const updatesRouter = require('./routes/updates');
 const { isServerMode } = require('./utils/serverMode');
 
 const {
@@ -269,15 +270,7 @@ async function bootstrap() {
   // response (the middleware itself allows a small read-only allow-list).
   app.use(maintenanceMode.middleware());
 
-  // Serve uploaded images.
-  app.use(
-    '/files',
-    express.static(getUploadsRoot(), {
-      maxAge: '7d',
-      etag: true,
-      index: false,
-    }),
-  );
+  app.use('/files', createFilesRouter());
 
   app.get('/api/health', async (_req, res) => {
     const payload = {
@@ -337,6 +330,7 @@ async function bootstrap() {
   app.use('/api/app-settings', appSettingsRouter);
   app.use('/api/setup', setupRouter);
   app.use('/api/search', searchRouter);
+  app.use('/api/app-updates', updatesRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

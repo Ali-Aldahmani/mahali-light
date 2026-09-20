@@ -121,6 +121,9 @@ const ERROR_CODES = {
   SYS_BACKUP_FAILED: 'SYS_BACKUP_FAILED',
   SYS_DISK_LOW: 'SYS_DISK_LOW',
   SYS_RESTORE_IN_PROGRESS: 'SYS_RESTORE_IN_PROGRESS',
+  SYS_UPDATES_UNREACHABLE: 'SYS_UPDATES_UNREACHABLE',
+  SYS_UPDATE_IN_PROGRESS: 'SYS_UPDATE_IN_PROGRESS',
+  SYS_UPDATE_INSTALL_FAILED: 'SYS_UPDATE_INSTALL_FAILED',
 
   // Generic (legacy)
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -468,6 +471,22 @@ const ERROR_DEFS = {
     message: 'System restore is in progress.',
     status: 503,
     severity: 'critical',
+  },
+  [ERROR_CODES.SYS_UPDATES_UNREACHABLE]: {
+    message:
+      'Could not reach the update server. Check the internet connection.',
+    status: 502,
+    severity: 'warning',
+  },
+  [ERROR_CODES.SYS_UPDATE_IN_PROGRESS]: {
+    message: 'An update is already being installed. Please wait.',
+    status: 409,
+    severity: 'warning',
+  },
+  [ERROR_CODES.SYS_UPDATE_INSTALL_FAILED]: {
+    message: 'The update could not be installed. Please try again.',
+    status: 500,
+    severity: 'error',
   },
   [ERROR_CODES.INTERNAL_ERROR]: {
     message: 'Something went wrong on the server.',

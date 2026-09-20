@@ -10,6 +10,9 @@
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
+    "dev": "node scripts/dev.js",
+    "start": "node server/index.js",
+    "build": "npm run build:server && npm --prefix web run build",
     "dev:web": "npm --prefix web run dev",
     "dev:server": "nodemon --watch server --watch shared server/index.js",
     "build:server": "node -e \"console.log('Server runs from source; no bundle step required.')\"",

@@ -274,10 +274,12 @@ async function assertWithinCreditLimit(client, customerId, addedCredit) {
   if (!customerId || !addedCredit || Number(addedCredit) <= 0) return;
   const { rows } = await client.query(
     `SELECT credit_balance, credit_limit, name
-       FROM customers WHERE id = $1`,
+       FROM customers WHERE id = $1 FOR UPDATE`,
     [customerId],
   );
-  if (!rows.length) return;
+  if (!rows.length) {
+    throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Customer not found.', { status: 404 });
+  }
   const limit = money(rows[0].credit_limit);
   if (limit <= 0) return; // unlimited
   const after = money(rows[0].credit_balance) + money(addedCredit);

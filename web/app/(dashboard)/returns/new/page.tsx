@@ -38,6 +38,18 @@ const REASON_OPTIONS: SelectOption[] = [
 
 const STEPS = ['Lookup', 'Items', 'Plan', 'Review'];
 
+function refundValueFor(item: InvoiceItem, quantity: number) {
+  if (item.refundableLineValue == null) return round2(item.unitPrice * quantity);
+  const budget = item.refundableLineValue;
+  const committedQty = Number(item.committedReturnQty || 0);
+  const committedValue = Number(item.committedReturnValue || 0);
+  const remaining = round2(budget - committedValue);
+  if (quantity === Number(item.quantity) - committedQty) return remaining;
+  return Math.max(0, Math.min(remaining,
+    Math.ceil(budget * 100 * quantity / item.quantity - 1e-8) / 100,
+    round2(round2(budget * (committedQty + quantity) / item.quantity) - committedValue)));
+}
+
 interface SelectedItemEntry {
   qty: number | string;
   condition: string;
@@ -49,6 +61,7 @@ interface SelectedItemEntry {
 }
 
 interface BackendItem {
+  totalValue?: number;
   invoiceItemId: string | null;
   productId?: string | null;
   variantId?: string | null;
@@ -142,7 +155,8 @@ function NewReturnRequestPageContent() {
         variantId: it.variantId,
         productName: it.productName,
         unitLabel: it.unitLabel,
-        unitPrice: it.unitPrice,
+        unitPrice: it.refundableLineValue != null ? it.refundableLineValue / it.quantity : it.unitPrice,
+        totalValue: refundValueFor(it, Number(selectedItems[it.id].qty)),
         quantity: Number(selectedItems[it.id].qty),
         condition: selectedItems[it.id].condition,
         serialNumber: selectedItems[it.id].serial || null,
@@ -152,7 +166,7 @@ function NewReturnRequestPageContent() {
   const totalValue = useMemo(
     () =>
       itemsForBackend.reduce(
-        (acc, it) => acc + Number(it.unitPrice || 0) * Number(it.quantity || 0),
+        (acc, it) => acc + (it.totalValue ?? Number(it.unitPrice || 0) * Number(it.quantity || 0)),
         0,
       ),
     [itemsForBackend],
@@ -642,7 +656,7 @@ function InvoiceItemsTable({
             const checked = !!sel;
             const maxQty = it.availableQty != null ? it.availableQty : it.quantity;
             const total =
-              checked && sel.qty ? Number(sel.qty) * Number(it.unitPrice) : 0;
+              checked && sel.qty ? refundValueFor(it, Number(sel.qty)) : 0;
             return (
               <tr key={it.id} className="border-t border-border align-top">
                 <td className="py-2 pr-3">
@@ -705,7 +719,7 @@ function InvoiceItemsTable({
                   />
                 </td>
                 <td className="py-2 pr-3 text-ink-muted">
-                  {formatCurrency(it.unitPrice)}
+                  {formatCurrency(it.refundableLineValue != null ? it.refundableLineValue / it.quantity : it.unitPrice)}
                 </td>
                 <td className="py-2 pr-3 font-medium">
                   {checked ? formatCurrency(total) : '—'}
@@ -842,7 +856,7 @@ function RefundPlanStep({
               options={[
                 { value: 'cash', label: 'Cash' },
                 { value: 'bank', label: 'Bank transfer' },
-                { value: 'credit', label: 'Store credit' },
+                { value: 'credit', label: 'Reduce outstanding credit' },
               ]}
             />
             <Input
@@ -875,7 +889,7 @@ function RefundPlanStep({
             + Bank
           </Button>
           <Button variant="secondary" onClick={() => addRow('credit')}>
-            + Store credit
+            + Reduce outstanding credit
           </Button>
         </div>
       </div>

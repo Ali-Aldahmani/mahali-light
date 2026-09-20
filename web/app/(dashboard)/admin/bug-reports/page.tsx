@@ -12,7 +12,7 @@ import {
   updateBugReport,
   addBugComment,
 } from '@/services/bugReportService';
-import { fileUrl } from '@/lib/config';
+import { usePrivateFileUrl } from '@/components/ui/PrivateFileLink';
 import { formatDateTime, timeAgo } from '@/lib/utils/format';
 import { toast } from '@/store/toastStore';
 
@@ -24,10 +24,7 @@ const STATUS_TONE: Record<string, string> = {
   wont_fix: 'muted',
 };
 
-function filesUrl(rel: string | null | undefined) {
-  if (!rel) return null;
-  return fileUrl(rel);
-}
+
 
 function BugReportsAdminPageInner() {
   const [rows, setRows] = useState<any[]>([]);
@@ -36,6 +33,7 @@ function BugReportsAdminPageInner() {
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
+  const screenshotUrl = usePrivateFileUrl(detail?.screenshot_path);
   const [comment, setComment] = useState('');
 
   const load = useCallback(async () => {
@@ -193,10 +191,10 @@ function BugReportsAdminPageInner() {
                 <p className="mt-2 text-sm text-ink-muted">{detail.what_happened}</p>
               </section>
               {detail.screenshot_path && (
-                <a href={filesUrl(detail.screenshot_path) || undefined} target="_blank" rel="noreferrer">
+                <a href={screenshotUrl} target="_blank" rel="noreferrer">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={filesUrl(detail.screenshot_path) || undefined}
+                    src={screenshotUrl}
                     alt="Screenshot"
                     className="max-h-64 rounded border border-border"
                   />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -956,6 +956,7 @@ function AddPaymentSlideOver({
   invoice: any;
   onAdded: () => void;
 }) {
+  const paymentKey = useRef<string | null>(null);
   const balance = Number(invoice?.balanceDue || 0);
   const [amount, setAmount] = useState<any>(balance);
   const [method, setMethod] = useState('cash');
@@ -979,11 +980,14 @@ function AddPaymentSlideOver({
     }
     setSaving(true);
     try {
+      paymentKey.current ||= `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       await addInvoicePayment(invoice.id, {
+        idempotencyKey: paymentKey.current,
         method,
         amount: amt,
         notes: notes || null,
       });
+      paymentKey.current = null;
       toast.success('Payment recorded.');
       onAdded?.();
     } catch (err: any) {

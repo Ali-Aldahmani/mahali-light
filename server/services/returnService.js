@@ -47,24 +47,24 @@ async function nextOrderNumber(client) {
 // Total qty of a single invoice item that has already been promised to other
 // return requests in pending / approved state. Used to enforce
 // BIZ_RETURN_QTY_EXCEEDED and BIZ_RETURN_ALREADY_EXISTS.
-async function loadCommittedReturnQty(client, invoiceItemId) {
+async function loadCommittedReturnTotals(client, invoiceItemId) {
   const { rows } = await client.query(
-    `SELECT COALESCE(SUM(rri.quantity), 0)::numeric AS qty
+    `SELECT COALESCE(SUM(rri.quantity), 0)::numeric AS qty,
+            COALESCE(SUM(rri.total_value), 0)::numeric AS value
        FROM return_request_items rri
        JOIN return_requests rr ON rr.id = rri.return_request_id
       WHERE rri.invoice_item_id = $1
         AND rr.status IN ('pending','approved')`,
     [invoiceItemId],
   );
-  return Number(rows[0].qty || 0);
+  return { quantity: Number(rows[0].qty || 0), value: money(rows[0].value) };
 }
 
 // Pull the invoice + items for validation. Throws if the invoice is cancelled
 // or missing.
 async function loadInvoiceForReturn(client, invoiceId) {
   const { rows } = await client.query(
-    `SELECT id, invoice_number, status, customer_id, total
-       FROM invoices WHERE id = $1`,
+    `SELECT * FROM invoices WHERE id = $1 FOR UPDATE`,
     [invoiceId],
   );
   if (!rows.length) {
@@ -78,9 +78,12 @@ async function loadInvoiceForReturn(client, invoiceId) {
       status: 409,
     });
   }
+  if (invoice.status !== 'confirmed') {
+    throw new AppError(ERROR_CODES.BIZ_INVALID_STATE, 'Only confirmed invoices can be returned.');
+  }
   const { rows: items } = await client.query(
     `SELECT * FROM invoice_items WHERE invoice_id = $1
-      ORDER BY position ASC, created_at ASC`,
+      ORDER BY position ASC, created_at ASC FOR UPDATE`,
     [invoiceId],
   );
   return { invoice, items };
@@ -88,15 +91,33 @@ async function loadInvoiceForReturn(client, invoiceId) {
 
 function totalsFor(items) {
   let total = 0;
-  for (const it of items) total += Number(it.total_value || 0);
+  for (const it of items) total += Number(it.totalValue ?? it.total_value ?? 0);
   return money(total);
+}
+
+// Allocate the actual paid invoice value (line discounts, invoice discount,
+// and tax included) in cents. Cumulative rounding preserves the invoice total.
+function refundableLineValues(invoice, items) {
+  const net = items.reduce((sum, it) => sum + Number(it.line_total), 0);
+  let cumulative = 0;
+  let allocated = 0;
+  return new Map(items.map((it) => {
+    cumulative += Number(it.line_total);
+    const through = net > 0 ? money(Number(invoice.total) * cumulative / net) : 0;
+    const value = money(through - allocated);
+    allocated = through;
+    return [it.id, value];
+  }));
 }
 
 // Validate the refund_plan adds up to the requested refund total. Returns the
 // normalised plan rows ready for persistence + execution.
-function validateRefundPlan(plan, expectedTotal) {
+function validateRefundPlan(plan, expectedTotal, { required = false } = {}) {
   if (!Array.isArray(plan) || plan.length === 0) {
-    // Empty plan is OK on creation — manager will edit when approving.
+    if (required && expectedTotal > 0) {
+      throw new AppError(ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH,
+        'A complete refund plan is required before approval.', { status: 409 });
+    }
     return null;
   }
   let sum = 0;
@@ -108,7 +129,7 @@ function validateRefundPlan(plan, expectedTotal) {
       );
     }
     const amount = money(p.amount);
-    if (amount <= 0) {
+    if (!Number.isFinite(Number(p.amount)) || amount <= 0) {
       throw new AppError(
         ERROR_CODES.VALIDATION_FAILED,
         'Refund amounts must be greater than zero.',
@@ -122,7 +143,7 @@ function validateRefundPlan(plan, expectedTotal) {
       notes: p.notes || null,
     };
   });
-  if (Math.abs(sum - expectedTotal) > 0.01) {
+  if (Math.round(sum * 100) !== Math.round(expectedTotal * 100)) {
     throw new AppError(ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH, undefined, {
       status: 409,
       details: { expectedTotal, planned: sum },
@@ -133,11 +154,17 @@ function validateRefundPlan(plan, expectedTotal) {
 
 function validateReplacementPlan(plan) {
   if (!plan) return null;
-  if (!Array.isArray(plan.items)) {
+  if (!Array.isArray(plan.items) || !plan.items.length) {
     throw new AppError(
       ERROR_CODES.VALIDATION_FAILED,
       'Replacement plan items must be an array.',
     );
+  }
+  for (const it of plan.items) {
+    if (!it.variantId || !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 || money(it.quantity) !== Number(it.quantity) ||
+        !Number.isFinite(Number(it.unitPrice)) || Number(it.unitPrice) < 0) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid replacement item.');
+    }
   }
   return {
     items: plan.items.map((it) => ({
@@ -218,7 +245,8 @@ async function lookupTransaction({ q, mode = 'auto', limit = 10 }) {
 
   const invoiceIds = rows.map((r) => r.id);
   const { rows: items } = await query(
-    `SELECT ii.*, COALESCE(SUM(rri.quantity), 0)::numeric AS committed_qty
+    `SELECT ii.*, COALESCE(SUM(rri.quantity), 0)::numeric AS committed_qty,
+            COALESCE(SUM(rri.total_value), 0)::numeric AS committed_value
        FROM invoice_items ii
        LEFT JOIN return_request_items rri
          ON rri.invoice_item_id = ii.id
@@ -233,6 +261,9 @@ async function lookupTransaction({ q, mode = 'auto', limit = 10 }) {
   );
 
   const itemsByInvoice = new Map();
+  const valuesByInvoice = new Map(rows.map((inv) => [inv.id,
+    refundableLineValues(inv, items.filter((it) => it.invoice_id === inv.id)),
+  ]));
   for (const it of items) {
     if (!itemsByInvoice.has(it.invoice_id)) itemsByInvoice.set(it.invoice_id, []);
     itemsByInvoice.get(it.invoice_id).push({
@@ -244,9 +275,11 @@ async function lookupTransaction({ q, mode = 'auto', limit = 10 }) {
       unitLabel: it.unit_label,
       quantity: Number(it.quantity),
       unitPrice: Number(it.unit_price),
+      refundableLineValue: valuesByInvoice.get(it.invoice_id).get(it.id),
       lineTotal: Number(it.line_total),
       serialNumber: it.serial_number || null,
       committedReturnQty: Number(it.committed_qty || 0),
+      committedReturnValue: Number(it.committed_value || 0),
       availableQty: Math.max(0, Number(it.quantity) - Number(it.committed_qty || 0)),
     });
   }
@@ -282,6 +315,8 @@ async function buildRequestItems(
 
   const itemsById = new Map();
   for (const it of invoiceItems || []) itemsById.set(it.id, it);
+  const values = invoice ? refundableLineValues(invoice, invoiceItems) : new Map();
+  const seenItems = new Set();
 
   const resolved = [];
   for (const raw of items) {
@@ -292,7 +327,7 @@ async function buildRequestItems(
       );
     }
     const qty = Number(raw.quantity);
-    if (!qty || qty <= 0) {
+    if (!Number.isFinite(qty) || qty <= 0 || money(qty) !== qty) {
       throw new AppError(
         ERROR_CODES.VALIDATION_FAILED,
         'Return quantity must be greater than zero.',
@@ -311,7 +346,11 @@ async function buildRequestItems(
       quantity: qty,
     };
 
-    if (referenceType === 'invoice' && raw.invoiceItemId) {
+    if (referenceType === 'invoice') {
+      if (!raw.invoiceItemId || seenItems.has(raw.invoiceItemId)) {
+        throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Each return must identify a unique invoice line.');
+      }
+      seenItems.add(raw.invoiceItemId);
       const inv = itemsById.get(raw.invoiceItemId);
       if (!inv) {
         throw new AppError(
@@ -326,7 +365,7 @@ async function buildRequestItems(
       item.unitPrice = Number(inv.unit_price);
       if (!item.serialNumber) item.serialNumber = inv.serial_number || null;
 
-      const committed = await loadCommittedReturnQty(client, raw.invoiceItemId);
+      const { quantity: committed, value: committedValue } = await loadCommittedReturnTotals(client, raw.invoiceItemId);
       const maxQty = Number(inv.quantity) - committed;
       if (qty > maxQty + 0.0001) {
         throw new AppError(
@@ -338,6 +377,17 @@ async function buildRequestItems(
           },
         );
       }
+      const lineValue = values.get(inv.id);
+      const remainingValue = money(lineValue - committedValue);
+      if (remainingValue < 0) {
+        throw new AppError(ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH, 'Existing returns exceed the discounted line value.');
+      }
+      item.totalValue = qty === maxQty ? remainingValue : Math.max(0, Math.min(
+        remainingValue,
+        Math.ceil(lineValue * 100 * qty / Number(inv.quantity) - 1e-8) / 100,
+        money(money(lineValue * (committed + qty) / Number(inv.quantity)) - committedValue),
+      ));
+      item.unitPrice = money(lineValue / Number(inv.quantity));
     }
 
     if (!item.productId || !item.productName) {
@@ -347,7 +397,7 @@ async function buildRequestItems(
       );
     }
 
-    item.totalValue = money(item.unitPrice * qty);
+    item.totalValue ??= money(item.unitPrice * qty);
     resolved.push(item);
   }
   return resolved;
@@ -394,6 +444,9 @@ async function createReturnRequest({
       status: 409,
     });
   }
+  if (returnType !== 'supplier_return' && referenceType !== 'invoice' && !noInvoiceReturn) {
+    throw new AppError(ERROR_CODES.BIZ_NO_INVOICE_NEEDS_APPROVAL);
+  }
 
   return withTransaction(async (client) => {
     let invoice = null;
@@ -402,7 +455,7 @@ async function createReturnRequest({
       const loaded = await loadInvoiceForReturn(client, referenceId);
       invoice = loaded.invoice;
       invoiceItems = loaded.items;
-      if (!customerId && invoice.customer_id) customerId = invoice.customer_id;
+      customerId = invoice.customer_id;
     }
 
     const resolvedItems = await buildRequestItems(client, {
@@ -413,14 +466,15 @@ async function createReturnRequest({
     });
 
     const totalValue = totalsFor(resolvedItems);
-    const validatedRefundPlan =
-      returnType === 'customer_refund'
-        ? validateRefundPlan(refundPlan, totalValue)
-        : null;
     const validatedReplacementPlan =
       returnType === 'customer_replace'
         ? validateReplacementPlan(replacementPlan)
         : null;
+    const replacementTotal = validatedReplacementPlan
+      ? money(validatedReplacementPlan.items.reduce((sum, it) => sum + it.lineTotal, 0)) : 0;
+    const validatedRefundPlan = returnType === 'supplier_return' ? null : validateRefundPlan(
+      refundPlan, returnType === 'customer_replace' ? Math.max(0, money(totalValue - replacementTotal)) : totalValue,
+    );
 
     const requestNumber = await nextRequestNumber(client);
 
@@ -565,29 +619,59 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
 
     // Reload invoice (if any) to grab the customer + status fresh.
     let invoice = null;
+    let originalItems = [];
     if (request.reference_type === 'invoice' && request.reference_id) {
-      const { rows: invRows } = await client.query(
-        `SELECT * FROM invoices WHERE id = $1`,
-        [request.reference_id],
-      );
-      if (!invRows.length) {
-        throw new AppError(
-          ERROR_CODES.RESOURCE_NOT_FOUND,
-          'Original invoice no longer exists.',
-          { status: 404 },
+      const loaded = await loadInvoiceForReturn(client, request.reference_id);
+      invoice = loaded.invoice;
+      originalItems = loaded.items;
+      const values = refundableLineValues(invoice, originalItems);
+      const seen = new Set();
+      for (const it of items) {
+        const original = originalItems.find((line) => line.id === it.invoice_item_id);
+        if (!original || seen.has(original.id)) {
+          throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid or duplicate invoice return line.');
+        }
+        seen.add(original.id);
+        const committed = await loadCommittedReturnTotals(client, original.id);
+        if (committed.quantity > Number(original.quantity)) {
+          throw new AppError(ERROR_CODES.BIZ_RETURN_QTY_EXCEEDED);
+        }
+        const { rows: used } = await client.query(
+          `SELECT COALESCE(SUM(rri.total_value), 0)::numeric AS value,
+                  COALESCE(SUM(rri.quantity), 0)::numeric AS qty
+             FROM return_request_items rri JOIN return_requests rr ON rr.id = rri.return_request_id
+            WHERE rri.invoice_item_id = $1 AND rr.status = 'approved'`, [original.id],
         );
+        const remainingValue = money(values.get(original.id) - Number(used[0].value));
+        const isFinal = money(Number(used[0].qty) + Number(it.quantity)) === Number(original.quantity);
+        const maxValue = isFinal ? remainingValue : Math.min(remainingValue,
+          Math.ceil(values.get(original.id) * 100 * Number(it.quantity) / Number(original.quantity) - 1e-8) / 100);
+        // Legacy requests may contain undiscounted prices: never execute them.
+        if (Number(it.total_value) > maxValue + 0.001) {
+          throw new AppError(ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH,
+            'Return value exceeds the discounted invoice value; recreate this request.');
+        }
       }
-      invoice = invRows[0];
-      if (invoice.status === 'cancelled') {
-        throw new AppError(ERROR_CODES.BIZ_INVOICE_CANCELLED, undefined, {
-          status: 409,
-        });
-      }
+    }
+    if (!items.length || items.some((it) => !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 ||
+        !Number.isFinite(Number(it.total_value)) || Number(it.total_value) < 0)) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Return has missing or invalid items.');
     }
 
     const totalValue = money(
       items.reduce((acc, it) => acc + Number(it.total_value || 0), 0),
     );
+    const replacementPlan = request.return_type === 'customer_replace'
+      ? validateReplacementPlan(request.replacement_plan) : null;
+    if (request.return_type === 'customer_replace' && !replacementPlan) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Replacement items are required.');
+    }
+    const replacementTotal = replacementPlan
+      ? money(replacementPlan.items.reduce((sum, it) => sum + it.lineTotal, 0)) : 0;
+    const expectedRefund = request.return_type === 'customer_replace'
+      ? Math.max(0, money(totalValue - replacementTotal)) : totalValue;
+    const refundPlan = request.return_type === 'supplier_return' ? null
+      : validateRefundPlan(request.refund_plan, expectedRefund, { required: true });
 
     // --- Build the return_order shell ----------------------------------
     const orderNumber = await nextOrderNumber(client);
@@ -758,17 +842,20 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       }
     }
 
+    if (invoice && request.return_type !== 'supplier_return') {
+      const returnedCost = money(items.reduce((sum, it) => {
+        if (stockActionFor(it.condition) === 'disposed') return sum;
+        const original = originalItems.find((line) => line.id === it.invoice_item_id);
+        return sum + Number(it.quantity) * Number(original.cost_price_at_time);
+      }, 0));
+      await journalService.postReturnedInventoryEntry(client, {
+        returnOrderId: orderId, returnOrderNumber: orderNumber, amount: returnedCost,
+        date: new Date().toISOString().slice(0, 10), userId: managerId,
+      });
+    }
+
     // --- Refund payments (customer flows only) -------------------------
     let refundTotal = 0;
-    let refundPlan = request.refund_plan || null;
-    // refund_plan is stored as JSONB, postgres driver auto-parses → already array
-    if (typeof refundPlan === 'string') {
-      try {
-        refundPlan = JSON.parse(refundPlan);
-      } catch (_e) {
-        refundPlan = null;
-      }
-    }
 
     if (
       request.return_type === 'customer_refund' ||
@@ -792,11 +879,19 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
             ],
           );
 
-          if (p.method === 'credit' && request.customer_id) {
-            // Credit refund increases the customer's credit balance.
+          if (p.method === 'credit') {
+            if (!request.customer_id) throw new AppError(ERROR_CODES.BIZ_GUEST_NO_CREDIT);
+            const { rows: customers } = await client.query(
+              `SELECT credit_balance FROM customers WHERE id = $1 FOR UPDATE`, [request.customer_id],
+            );
+            if (!customers.length || Number(customers[0].credit_balance) < amount) {
+              throw new AppError(ERROR_CODES.BIZ_PAYMENT_EXCEEDS_BALANCE,
+                'Credit refund exceeds the customer outstanding balance.');
+            }
+            // Receivable is reduced, matching the journal credit to 1003.
             await client.query(
               `UPDATE customers
-                  SET credit_balance = credit_balance + $1,
+                  SET credit_balance = credit_balance - $1,
                       updated_at = NOW()
                 WHERE id = $2`,
               [amount, request.customer_id],
@@ -868,14 +963,6 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
 
     // --- Replacement invoice (customer_replace) ------------------------
     let replacementInvoiceId = null;
-    let replacementPlan = request.replacement_plan || null;
-    if (typeof replacementPlan === 'string') {
-      try {
-        replacementPlan = JSON.parse(replacementPlan);
-      } catch (_e) {
-        replacementPlan = null;
-      }
-    }
 
     if (
       request.return_type === 'customer_replace' &&
@@ -887,8 +974,8 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
         customerId: request.customer_id,
         managerId,
         items: replacementPlan.items,
-        priceDifference: Number(replacementPlan.priceDifference || 0),
-        differenceDirection: replacementPlan.differenceDirection || 'none',
+        priceDifference: Math.max(0, money(replacementTotal - totalValue)),
+        differenceDirection: replacementTotal > totalValue ? 'customer_pays' : 'none',
         returnOrderNumber: orderNumber,
       });
       replacementInvoiceId = built.invoiceId;
@@ -1030,7 +1117,7 @@ async function buildReplacementInvoice(
   //   • differenceDirection = 'refund_to_customer'→ zero-value invoice; the
   //     refund_plan handles the excess refund separately
   let subtotal = 0;
-  for (const it of items) subtotal += Number(it.unitPrice) * Number(it.quantity);
+  for (const it of items) subtotal += money(Number(it.unitPrice) * Number(it.quantity));
   subtotal = money(subtotal);
 
   const total =
@@ -1045,10 +1132,10 @@ async function buildReplacementInvoice(
       invoice_discount
     ) VALUES (
       $1,$2,'confirmed','paid',
-      $3,0,0,0,0,
+      $3,$3::numeric-$4::numeric,0,$4,0,
       $4,$4,0,
       $5,$6,$7,$7,NOW(),
-      0
+      $3::numeric-$4::numeric
     ) RETURNING id`,
     [
       invoiceNumber,
@@ -1063,6 +1150,7 @@ async function buildReplacementInvoice(
   const invoiceId = inv[0].id;
 
   const stockEmits = [];
+  let cogsAmount = 0;
   for (const it of items) {
     if (!it.variantId) continue;
     const qty = Number(it.quantity) || 0;
@@ -1084,6 +1172,7 @@ async function buildReplacementInvoice(
       );
     }
     const v = vRows[0];
+    cogsAmount += Number(v.cost_price || 0) * qty;
     const unitPrice = money(
       it.unitPrice != null ? it.unitPrice : v.selling_price,
     );
@@ -1152,7 +1241,24 @@ async function buildReplacementInvoice(
         `Price-difference payment for ${returnOrderNumber}`,
       ],
     );
+    const posted = await cashService.recordCashIn({
+      client, transactionType: 'sale', amount: total,
+      referenceType: 'invoice', referenceId: invoiceId, employeeId: managerId,
+      notes: `Price-difference payment for ${returnOrderNumber}`,
+    });
+    stockEmits.push({
+      event: 'cash_balance_updated', audience: ['role:Manager', 'role:Admin'],
+      payload: { newBalance: posted.balanceAfter, delta: posted.delta,
+        transactionType: 'sale', changedBy: managerId, at: new Date().toISOString() },
+    });
   }
+
+  await journalService.postSaleEntry(client, {
+    invoiceId, invoiceNumber, date: new Date().toISOString().slice(0, 10),
+    subtotal: total, taxAmount: 0,
+    payments: total > 0 ? [{ method: 'cash', amount: total }] : [],
+    cogsAmount, userId: managerId,
+  });
 
   await client.query(
     `INSERT INTO invoice_history (invoice_id, action, performed_by, notes)
@@ -1308,6 +1414,8 @@ async function cancelReturnRequest({ requestId, userId, io = null }) {
 }
 
 module.exports = {
+  refundableLineValues,
+  validateRefundPlan,
   createReturnRequest,
   approveAndExecute,
   rejectReturnRequest,
