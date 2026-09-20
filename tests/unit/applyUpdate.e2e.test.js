@@ -106,9 +106,10 @@ describe('applyUpdate.js', () => {
     expect(fs.readFileSync(path.join(liveRoot, 'server', 'index.js'), 'utf8')).toContain('v9.9.9');
     expect(fs.readFileSync(path.join(liveRoot, 'shared', 'marker.js'), 'utf8')).toContain('v9.9.9');
 
-    // The staging release dir is cleaned up after a successful swap, and no
-    // rollback backups are left behind.
+    // The staging release dir and downloaded tarball are cleaned up after a
+    // successful swap, and no rollback backups are left behind.
     expect(fs.existsSync(path.join(updateRoot, 'releases', 'v9.9.9'))).toBe(false);
+    expect(fs.existsSync(path.join(updateRoot, 'tmp', 'update-9.9.9.tgz'))).toBe(false);
     const leftovers = fs.readdirSync(liveRoot).filter((f) => f.includes('.update-rollback-'));
     expect(leftovers).toEqual([]);
   });

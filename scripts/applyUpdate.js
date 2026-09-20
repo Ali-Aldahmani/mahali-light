@@ -415,8 +415,9 @@ async function main() {
   log('Swap complete.');
   try {
     fs.rmSync(releaseDir, { recursive: true, force: true });
+    fs.rmSync(tmpTarball, { force: true });
   } catch (_e) {
-    /* best-effort cleanup of the staging dir; the swap already succeeded */
+    /* best-effort cleanup of staging files; the swap already succeeded */
   }
 
   // ---------- 5. Restart ----------
