@@ -44,7 +44,7 @@ async function errorHandler(err, req, res, _next) {
   });
 
   if (status >= 500) {
-    console.error('[error]', err);
+    console.error(`[error] [${req.id || 'no-request-id'}]`, err);
   }
 
   res.status(status || 500).json({
@@ -54,6 +54,7 @@ async function errorHandler(err, req, res, _next) {
       message,
       details: details || null,
       field: field || null,
+      requestId: req.id || null,
     },
   });
 }

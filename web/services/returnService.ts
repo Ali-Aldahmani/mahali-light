@@ -1,4 +1,9 @@
 import { apiGet, apiGetWithMeta, apiPost, apiPut } from './http';
+import {
+  returnRequestSchema,
+  validateMoneyResponse,
+  type ReturnRequest,
+} from '@/lib/schemas/returnRequest';
 
 function toParams(obj: Record<string, any>): string {
   const p = new URLSearchParams();
@@ -17,12 +22,14 @@ export function getReturnRequest(id) {
   return apiGet(`/return-requests/${id}`);
 }
 
-export function createReturnRequest(body) {
-  return apiPost('/return-requests', body);
+export async function createReturnRequest(body): Promise<ReturnRequest> {
+  const data = await apiPost('/return-requests', body);
+  return validateMoneyResponse(returnRequestSchema, data, 'POST /return-requests');
 }
 
-export function approveReturnRequest(id, notes = null) {
-  return apiPut(`/return-requests/${id}/approve`, { notes });
+export async function approveReturnRequest(id, notes = null): Promise<ReturnRequest> {
+  const data = await apiPut(`/return-requests/${id}/approve`, { notes });
+  return validateMoneyResponse(returnRequestSchema, data, `PUT /return-requests/${id}/approve`);
 }
 
 export function rejectReturnRequest(id, rejectionReason) {

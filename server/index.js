@@ -73,6 +73,7 @@ const {
   registerProcessHandlers,
 } = require('./middleware/errors');
 const { authLimiter, apiLimiter } = require('./middleware/rateLimiter');
+const { requestId } = require('./middleware/requestId');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
 const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
 const { startDbCleanupJob } = require('./jobs/dbCleanup');
@@ -250,7 +251,13 @@ async function bootstrap() {
   );
   app.use(compression());
   app.use(express.json({ limit: '2mb' }));
-  app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+  app.use(requestId);
+  morgan.token('id', (req) => req.id);
+  app.use(
+    morgan(
+      process.env.NODE_ENV === 'production' ? 'combined :id' : ':id :method :url :status :response-time ms',
+    ),
+  );
 
   // Rate limiting — applied before any route handler so the window counters
   // are accurate regardless of which middleware runs next.
