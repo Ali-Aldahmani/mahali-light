@@ -68,7 +68,10 @@ export default function RestoreConfirmModal({
           </li>
           <li className="flex gap-2">
             <span>•</span>
-            <span>The server will restart. Active sessions will be disconnected.</span>
+            <span>
+              You must restart the server after restore completes. The API stays
+              in maintenance mode until then.
+            </span>
           </li>
           <li className="flex gap-2">
             <span>•</span>

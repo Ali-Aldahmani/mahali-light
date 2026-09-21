@@ -18,6 +18,7 @@ interface RestoreProgress {
   step: any;
   percent: number;
   message: string;
+  requiresRestart?: boolean;
 }
 
 interface BackupState {
@@ -51,7 +52,7 @@ interface BackupState {
   onBackupFailed: (payload: any) => void;
   onRestoreImminent: (payload: any) => void;
   onRestoreProgress: (payload: any) => void;
-  onRestoreCompleted: () => void;
+  onRestoreCompleted: (payload?: { message?: string; requiresRestart?: boolean }) => void;
   onDiskWarning: (payload: any) => void;
 }
 
@@ -217,19 +218,30 @@ export const useBackupStore = create<BackupState>()((set, get) => ({
         step: payload?.step,
         percent: Number(payload?.percent) || 0,
         message: payload?.message || '',
+        requiresRestart: payload?.requiresRestart,
       },
     });
   },
-  onRestoreCompleted: () => {
+  onRestoreCompleted: (payload) => {
+    const message =
+      payload?.message ||
+      'Restore complete. Restart the server before using the POS again.';
     set({
       restoreImminent: null,
-      restoreProgress: { step: 'done', percent: 100, message: 'Restore complete.' },
+      restoreProgress: {
+        step: 'done',
+        percent: 100,
+        message,
+        requiresRestart: payload?.requiresRestart !== false,
+      },
+      maintenance: {
+        active: true,
+        reason: message,
+        since: new Date().toISOString(),
+      },
     });
-    // Give the server a beat to disable maintenance, then refresh.
-    setTimeout(() => {
-      set({ maintenance: { active: false, reason: null, since: null } });
-      get().fetchJobs();
-    }, 3000);
+    get().fetchMaintenance();
+    get().fetchJobs();
   },
   onDiskWarning: (payload) => {
     if (!payload) return;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, Loader2, ShieldAlert } from 'lucide-react';
 import { useBackupStore } from '@/store/backupStore';
 import { cn } from '@/lib/utils/cn';
 
@@ -39,6 +39,8 @@ export default function RestoreOverlay() {
       <div className="w-full max-w-md rounded-card border border-border bg-surface p-6 shadow-pop">
         {showWarning ? (
           <PreRestore seconds={seconds} />
+        ) : progress?.step === 'done' ? (
+          <RestoreComplete progress={progress} />
         ) : (
           <LiveProgress progress={progress} />
         )}
@@ -59,8 +61,8 @@ function PreRestore({ seconds }) {
       </div>
       <p className="text-sm text-ink-muted">
         An administrator is about to restore the database from a backup. Please
-        save your work now. The application will reconnect automatically after
-        the restore is complete.
+        save your work now. The server will stay in maintenance mode until it is
+        restarted after the restore completes.
       </p>
       <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
         <div
@@ -95,6 +97,25 @@ function LiveProgress({ progress }) {
         />
       </div>
       <p className="text-right text-xs text-ink-muted">{percent}%</p>
+    </div>
+  );
+}
+
+function RestoreComplete({ progress }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 text-success">
+        <CheckCircle2 size={22} />
+        <h3 className="text-lg font-semibold">Restore complete</h3>
+      </div>
+      <p className="text-sm text-ink-muted">
+        {progress?.message ||
+          'Restore complete. Restart the server before using the POS again.'}
+      </p>
+      <p className="text-sm text-ink-muted">
+        The API stays in maintenance mode until the server process restarts so
+        no one can write to the restored database with stale connections.
+      </p>
     </div>
   );
 }

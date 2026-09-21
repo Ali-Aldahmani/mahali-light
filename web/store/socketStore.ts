@@ -522,7 +522,7 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       useBackupStore.getState().onRestoreProgress(payload);
     });
     socket.on('restore_completed', (payload) => {
-      useBackupStore.getState().onRestoreCompleted();
+      useBackupStore.getState().onRestoreCompleted(payload);
     });
     socket.on('disk_space_warning', (payload) => {
       useBackupStore.getState().onDiskWarning(payload);

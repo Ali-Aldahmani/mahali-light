@@ -477,13 +477,17 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
       performedBy: userId,
       newValue: { jobNumber: job.job_number },
     });
-    emit('restore_completed', { jobId });
-    emit('restore_progress', { step: 'done', percent: 100, message: 'Restore complete.' });
-    // Stay in maintenance mode until the operator restarts the server (the
-    // spec uses pm2 to manage this). We disable here so a manual run still
-    // recovers when pm2 is not in play.
-    setTimeout(() => maintenanceMode.disable(), 3000);
-    return { ok: true };
+    const restartMessage =
+      'Restore complete. Restart the server before using the POS again.';
+    maintenanceMode.enable(restartMessage);
+    emit('restore_completed', { jobId, requiresRestart: true, message: restartMessage });
+    emit('restore_progress', {
+      step: 'done',
+      percent: 100,
+      message: restartMessage,
+      requiresRestart: true,
+    });
+    return { ok: true, requiresRestart: true };
   } catch (err) {
     maintenanceMode.disable();
     await logActivity({
