@@ -273,7 +273,7 @@ const itemSchema = z.object({
   variantId: z.string().uuid().optional().nullable(),
   productName: z.string().max(200).optional().nullable(),
   unitLabel: z.string().max(20).optional().nullable(),
-  unitPrice: z.number().nonnegative(),
+  unitPrice: z.number().nonnegative().optional(),
   quantity: z.number().positive(),
   condition: z.enum(['good', 'defective', 'damaged']),
   serialNumber: z.string().max(100).optional().nullable(),
@@ -300,7 +300,6 @@ const replacementPlanSchema = z
         productId: z.string().uuid().optional().nullable(),
         productName: z.string().max(200).optional().nullable(),
         quantity: z.number().positive(),
-        unitPrice: z.number().nonnegative(),
       }),
     ),
     priceDifference: z.number().optional().nullable(),
@@ -337,6 +336,16 @@ const createSchema = z.object({
 async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
+    if (body.noInvoiceReturn || body.referenceType === 'manual') {
+      const perms = req.user?.permissions || [];
+      if (!perms.includes('return.approve') && !perms.includes('*')) {
+        throw new AppError(
+          ERROR_CODES.AUTH_NO_PERMISSION,
+          'No-invoice returns require the return.approve permission.',
+          { status: 403 },
+        );
+      }
+    }
     const io = req.app.get('io');
     const result = await returnService.createReturnRequest({
       ...body,

@@ -107,7 +107,7 @@ function NewReturnRequestPageContent() {
   function handleNoInvoice() {
     setInvoice(null);
     setNoInvoice(true);
-    setSelectedItems({ manual: { qty: 1, condition: 'good', productName: '', unitPrice: 0 } });
+    setSelectedItems({});
     setStep(1);
   }
 
@@ -135,41 +135,61 @@ function NewReturnRequestPageContent() {
   const itemsForBackend: BackendItem[] = useMemo(() => {
     if (noInvoice) {
       // Manual entries — flatten to backend shape.
-      return Object.entries(selectedItems).map(([key, v]) => ({
-        invoiceItemId: null,
-        productId: v.productId || null,
-        variantId: v.variantId || null,
-        productName: v.productName || `Manual item ${key}`,
-        unitPrice: Number(v.unitPrice || 0),
-        quantity: Number(v.qty || 1),
-        condition: v.condition || 'good',
-        serialNumber: v.serial || null,
-      }));
+      return Object.entries(selectedItems).map(([key, v]) => {
+        const quantity = Number(v.qty || 1);
+        const unitPrice = Number(v.unitPrice || 0);
+        return {
+          invoiceItemId: null,
+          productId: v.productId || null,
+          variantId: v.variantId || null,
+          productName: v.productName || `Manual item ${key}`,
+          quantity,
+          condition: v.condition || 'good',
+          serialNumber: v.serial || null,
+          unitPrice,
+          totalValue: round2(unitPrice * quantity),
+        };
+      });
     }
     if (!invoice) return [];
     return (invoice.items || [])
       .filter((it) => selectedItems[it.id])
-      .map((it) => ({
-        invoiceItemId: it.id,
-        productId: it.productId,
-        variantId: it.variantId,
-        productName: it.productName,
-        unitLabel: it.unitLabel,
-        unitPrice: it.refundableLineValue != null ? it.refundableLineValue / it.quantity : it.unitPrice,
-        totalValue: refundValueFor(it, Number(selectedItems[it.id].qty)),
-        quantity: Number(selectedItems[it.id].qty),
-        condition: selectedItems[it.id].condition,
-        serialNumber: selectedItems[it.id].serial || null,
-      }));
+      .map((it) => {
+        const quantity = Number(selectedItems[it.id].qty);
+        const totalValue = refundValueFor(it, quantity);
+        return {
+          invoiceItemId: it.id,
+          productId: it.productId,
+          variantId: it.variantId,
+          productName: it.productName,
+          unitLabel: it.unitLabel,
+          quantity,
+          condition: selectedItems[it.id].condition,
+          serialNumber: selectedItems[it.id].serial || null,
+          unitPrice: quantity > 0 ? round2(totalValue / quantity) : 0,
+          totalValue,
+        };
+      });
   }, [invoice, noInvoice, selectedItems]);
 
   const totalValue = useMemo(
     () =>
       itemsForBackend.reduce(
-        (acc, it) => acc + (it.totalValue ?? Number(it.unitPrice || 0) * Number(it.quantity || 0)),
+        (acc, it) => {
+          if (it.totalValue != null) return acc + it.totalValue;
+          if (noInvoice) {
+            const row = selectedItems[`manual-${it.variantId}`] || Object.values(selectedItems).find(
+              (v) => v.variantId === it.variantId,
+            );
+            return acc + Number(row?.unitPrice || 0) * Number(it.quantity || 0);
+          }
+          const src = invoice?.items?.find((line) => line.id === it.invoiceItemId);
+          if (!src) return acc;
+          return acc + refundValueFor(src, Number(it.quantity || 0));
+        },
         0,
       ),
-    [itemsForBackend],
+    [itemsForBackend, invoice, noInvoice, selectedItems],
   );
 
   // ---------------------------------------------------------------- Step 3
@@ -200,9 +220,8 @@ function NewReturnRequestPageContent() {
     if (itemsForBackend.length === 0) return false;
     if (requestNote.trim().length < 10) return false;
     if (noInvoice) {
-      // Need product name, qty, unit price > 0 for each manual line.
       return itemsForBackend.every(
-        (it) => it.productName && it.quantity > 0 && it.unitPrice > 0,
+        (it) => it.variantId && it.productName && it.quantity > 0,
       );
     }
     return true;
@@ -264,7 +283,6 @@ function NewReturnRequestPageContent() {
             productId: r.productId,
             productName: r.productName,
             quantity: Number(r.quantity),
-            unitPrice: Number(r.unitPrice),
           })),
           priceDifference: Math.abs(priceDifference),
           differenceDirection:
@@ -740,17 +758,49 @@ function ManualItemsEditor({
   items: Record<string, SelectedItemEntry>;
   setItems: React.Dispatch<React.SetStateAction<Record<string, SelectedItemEntry>>>;
 }) {
-  function addRow() {
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!searchQ || searchQ.trim().length < 2) {
+      setSearchResults([]);
+      return undefined;
+    }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const data = await searchProducts(searchQ, 20);
+        if (!cancelled) setSearchResults(data || []);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [searchQ]);
+
+  function addVariant(variant: any) {
+    const variantId = variant.variantId || variant.id;
+    const key = `manual-${variantId}`;
     setItems((prev) => ({
       ...prev,
-      [`manual-${Date.now()}`]: {
-        qty: 1,
-        condition: 'good',
-        productName: '',
-        unitPrice: 0,
+      [key]: {
+        qty: prev[key]?.qty || 1,
+        condition: prev[key]?.condition || 'good',
+        productId: variant.productId,
+        variantId,
+        productName: variant.productName || variant.name,
+        unitPrice: Number(variant.sellingPrice || 0),
       },
     }));
+    setSearchQ('');
+    setSearchResults([]);
   }
+
   function removeRow(key: string) {
     setItems((prev) => {
       const next = { ...prev };
@@ -758,6 +808,7 @@ function ManualItemsEditor({
       return next;
     });
   }
+
   function update(key: string, patch: Partial<SelectedItemEntry>) {
     setItems((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   }
@@ -765,28 +816,46 @@ function ManualItemsEditor({
   const rows = Object.entries(items);
   return (
     <div className="space-y-3">
+      <Input
+        placeholder="Search catalog products by name or SKU…"
+        value={searchQ}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQ(e.target.value)}
+      />
+      {searching && <div className="text-xs text-ink-muted">Searching…</div>}
+      {searchResults.length > 0 && (
+        <div className="space-y-1 rounded-lg border border-border bg-surface-2 p-2 max-h-60 overflow-y-auto">
+          {searchResults.map((v) => (
+            <button
+              key={v.variantId || v.id}
+              type="button"
+              onClick={() => addVariant(v)}
+              className="block w-full rounded-lg p-2 text-left text-sm hover:bg-surface"
+            >
+              <div className="font-medium text-ink">{v.productName || v.name}</div>
+              <div className="text-xs text-ink-muted">
+                {v.sku && `${v.sku} · `}
+                {formatCurrency(v.sellingPrice || 0)}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
       {rows.map(([key, row]) => (
         <div
           key={key}
           className="grid grid-cols-1 md:grid-cols-6 gap-2 rounded-lg bg-surface-2 p-3"
         >
-          <Input
-            containerClassName="md:col-span-2"
-            placeholder="Product name"
-            value={row.productName || ''}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => update(key, { productName: e.target.value })}
-          />
+          <div className="md:col-span-2 text-sm">
+            <div className="font-medium text-ink">{row.productName}</div>
+            <div className="text-xs text-ink-muted">
+              Catalog price {formatCurrency(Number(row.unitPrice || 0))}
+            </div>
+          </div>
           <Input
             type="number"
             placeholder="Qty"
             value={row.qty || ''}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => update(key, { qty: e.target.value })}
-          />
-          <Input
-            type="number"
-            placeholder="Unit price"
-            value={row.unitPrice || ''}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => update(key, { unitPrice: e.target.value })}
           />
           <Select
             value={row.condition || 'good'}
@@ -806,9 +875,11 @@ function ManualItemsEditor({
           </button>
         </div>
       ))}
-      <Button variant="secondary" onClick={addRow}>
-        Add another item
-      </Button>
+      {!rows.length && (
+        <p className="text-sm text-ink-muted">
+          Search and add catalog products being returned without a receipt.
+        </p>
+      )}
     </div>
   );
 }
@@ -1045,13 +1116,9 @@ function ReplaceStep({
                     value={row.quantity}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => update(row.id, { quantity: Number(e.target.value) })}
                   />
-                  <Input
-                    containerClassName="col-span-3"
-                    type="number"
-                    step="0.01"
-                    value={row.unitPrice}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => update(row.id, { unitPrice: Number(e.target.value) })}
-                  />
+                  <div className="col-span-3 text-sm text-ink-muted self-center">
+                    {formatCurrency(Number(row.unitPrice || 0))}
+                  </div>
                   <div className="col-span-1 text-sm text-right font-medium">
                     {formatCurrency(Number(row.quantity) * Number(row.unitPrice))}
                   </div>

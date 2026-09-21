@@ -152,32 +152,71 @@ function validateRefundPlan(plan, expectedTotal, { required = false } = {}) {
   return rows;
 }
 
-function validateReplacementPlan(plan) {
+async function loadCatalogVariant(client, variantId) {
+  const { rows } = await client.query(
+    `SELECT v.id, v.product_id, v.sku, v.selling_price, v.cost_price,
+            p.name AS product_name, p.unit_label
+       FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+      WHERE v.id = $1 AND v.is_active = true AND p.is_active = true`,
+    [variantId],
+  );
+  if (!rows.length) {
+    throw new AppError(
+      ERROR_CODES.RESOURCE_NOT_FOUND,
+      `Product variant ${variantId} not found.`,
+      { status: 404 },
+    );
+  }
+  return rows[0];
+}
+
+// Resolve replacement lines from catalog selling prices — never trust client unitPrice.
+async function resolveReplacementPlan(client, plan) {
   if (!plan) return null;
-  if (!Array.isArray(plan.items) || !plan.items.length) {
+  let parsed = plan;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (_e) {
+      throw new AppError(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Replacement plan is malformed.',
+      );
+    }
+  }
+  if (!Array.isArray(parsed.items) || !parsed.items.length) {
     throw new AppError(
       ERROR_CODES.VALIDATION_FAILED,
       'Replacement plan items must be an array.',
     );
   }
-  for (const it of plan.items) {
-    if (!it.variantId || !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 || money(it.quantity) !== Number(it.quantity) ||
-        !Number.isFinite(Number(it.unitPrice)) || Number(it.unitPrice) < 0) {
+  const items = [];
+  for (const it of parsed.items) {
+    if (
+      !it.variantId ||
+      !Number.isFinite(Number(it.quantity)) ||
+      Number(it.quantity) <= 0 ||
+      money(it.quantity) !== Number(it.quantity)
+    ) {
       throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid replacement item.');
     }
+    const v = await loadCatalogVariant(client, it.variantId);
+    const qty = Math.max(0, Number(it.quantity) || 0);
+    const unitPrice = money(v.selling_price);
+    items.push({
+      variantId: v.id,
+      productId: v.product_id,
+      productName: v.product_name,
+      quantity: qty,
+      unitPrice,
+      lineTotal: money(unitPrice * qty),
+    });
   }
   return {
-    items: plan.items.map((it) => ({
-      variantId: it.variantId,
-      productId: it.productId || null,
-      productName: it.productName || null,
-      quantity: Math.max(0, Number(it.quantity) || 0),
-      unitPrice: money(it.unitPrice),
-      lineTotal: money(Number(it.unitPrice) * (Number(it.quantity) || 0)),
-    })),
-    priceDifference: money(plan.priceDifference || 0),
-    differenceDirection: plan.differenceDirection || 'none',
-    // "customer_pays" or "refund_to_customer"
+    items,
+    priceDifference: money(parsed.priceDifference || 0),
+    differenceDirection: parsed.differenceDirection || 'none',
   };
 }
 
@@ -339,7 +378,7 @@ async function buildRequestItems(
       variantId: raw.variantId || null,
       productName: raw.productName || null,
       unitLabel: raw.unitLabel || 'pcs',
-      unitPrice: money(raw.unitPrice),
+      unitPrice: 0,
       condition: raw.condition,
       serialNumber: raw.serialNumber || null,
       warrantyId: raw.warrantyId || null,
@@ -399,6 +438,20 @@ async function buildRequestItems(
         money(money(lineValue * (committed + qty) / Number(inv.quantity)) - committedValue),
       ));
       item.unitPrice = money(lineValue / Number(inv.quantity));
+    } else {
+      if (!raw.variantId) {
+        throw new AppError(
+          ERROR_CODES.VALIDATION_FAILED,
+          'Manual returns must select a catalog product.',
+        );
+      }
+      const v = await loadCatalogVariant(client, raw.variantId);
+      item.productId = v.product_id;
+      item.variantId = v.id;
+      item.productName = v.product_name;
+      item.unitLabel = v.unit_label || 'pcs';
+      item.unitPrice = money(v.selling_price);
+      item.totalValue = money(item.unitPrice * qty);
     }
 
     if (!item.productId || !item.productName) {
@@ -479,7 +532,7 @@ async function createReturnRequest({
     const totalValue = totalsFor(resolvedItems);
     const validatedReplacementPlan =
       returnType === 'customer_replace'
-        ? validateReplacementPlan(replacementPlan)
+        ? await resolveReplacementPlan(client, replacementPlan)
         : null;
     const replacementTotal = validatedReplacementPlan
       ? money(validatedReplacementPlan.items.reduce((sum, it) => sum + it.lineTotal, 0)) : 0;
@@ -673,7 +726,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       items.reduce((acc, it) => acc + Number(it.total_value || 0), 0),
     );
     const replacementPlan = request.return_type === 'customer_replace'
-      ? validateReplacementPlan(request.replacement_plan) : null;
+      ? await resolveReplacementPlan(client, request.replacement_plan) : null;
     if (request.return_type === 'customer_replace' && !replacementPlan) {
       throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Replacement items are required.');
     }
@@ -1186,9 +1239,7 @@ async function buildReplacementInvoice(
     }
     const v = vRows[0];
     cogsAmount += Number(v.cost_price || 0) * qty;
-    const unitPrice = money(
-      it.unitPrice != null ? it.unitPrice : v.selling_price,
-    );
+    const unitPrice = money(v.selling_price);
 
     await client.query(
       `INSERT INTO invoice_items (
