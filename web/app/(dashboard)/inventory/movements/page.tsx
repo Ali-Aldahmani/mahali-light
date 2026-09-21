@@ -19,6 +19,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useAuthStore } from '@/store/authStore';
 import { formatDateTime, formatQty, formatCurrency } from '@/lib/utils/format';
 import { onStockUpdate } from '@/store/socketStore';
+import { toast } from '@/store/toastStore';
 
 const TYPE_FILTERS = [
   { value: 'all', label: 'All types' },
@@ -66,6 +67,7 @@ function StockMovementsPageContent() {
   const [rows, setRows] = useState<any[]>([]);
   const [meta, setMeta] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const debouncedSearch = useDebouncedValue(search, 300);
 
@@ -204,30 +206,66 @@ function StockMovementsPageContent() {
     return cols;
   }, [router, canSeeCost]);
 
-  function handleExport() {
-    const cols: { label: string; value: (r: any) => any }[] = [
-      { label: 'Timestamp', value: (r) => r.timestamp },
-      { label: 'Type', value: (r) => getMovementTypeLabel(r.movementType) },
-      { label: 'Product', value: (r) => r.productName },
-      { label: 'SKU', value: (r) => r.variantSku },
-      { label: 'Quantity', value: (r) => r.quantity },
-      { label: 'Before', value: (r) => r.qtyBefore },
-      { label: 'After', value: (r) => r.qtyAfter },
-      { label: 'Unit', value: (r) => r.unitLabel || '' },
-      { label: 'Reference', value: (r) => r.referenceType || '' },
-      { label: 'Employee', value: (r) => r.employeeUsername || 'system' },
-      { label: 'Notes', value: (r) => r.notes || '' },
-    ];
-    if (canSeeCost) {
-      cols.push(
-        { label: 'Cost price', value: (r) => r.costPrice ?? '' },
-        { label: 'Value impact', value: (r) => r.valueImpact ?? '' },
+  // Fetches every page of the current filter, not just what's on screen —
+  // an audit-trail export that silently truncated to the visible 50-row
+  // page would be unsafe to rely on for a real audit.
+  const EXPORT_PAGE_SIZE = 100;
+  const EXPORT_MAX_ROWS = 20000; // safety cap so a huge unfiltered export can't hang the tab
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const filters = {
+        limit: EXPORT_PAGE_SIZE,
+        search: debouncedSearch || undefined,
+        movementType: type === 'all' ? undefined : type,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      };
+      let all: any[] = [];
+      let exportPage = 1;
+      let total = Infinity;
+      while (all.length < total && all.length < EXPORT_MAX_ROWS) {
+        const res = await listMovements({ ...filters, page: exportPage });
+        const batch = res?.data || [];
+        if (!batch.length) break;
+        all = all.concat(batch);
+        total = Number(res?.meta?.total ?? all.length);
+        exportPage += 1;
+      }
+      if (total > EXPORT_MAX_ROWS) {
+        toast.error(
+          `Export capped at ${EXPORT_MAX_ROWS.toLocaleString()} of ${total.toLocaleString()} rows — narrow the date range for a complete export.`,
+        );
+      }
+
+      const cols: { label: string; value: (r: any) => any }[] = [
+        { label: 'Timestamp', value: (r) => r.timestamp },
+        { label: 'Type', value: (r) => getMovementTypeLabel(r.movementType) },
+        { label: 'Product', value: (r) => r.productName },
+        { label: 'SKU', value: (r) => r.variantSku },
+        { label: 'Quantity', value: (r) => r.quantity },
+        { label: 'Before', value: (r) => r.qtyBefore },
+        { label: 'After', value: (r) => r.qtyAfter },
+        { label: 'Unit', value: (r) => r.unitLabel || '' },
+        { label: 'Reference', value: (r) => r.referenceType || '' },
+        { label: 'Employee', value: (r) => r.employeeUsername || 'system' },
+        { label: 'Notes', value: (r) => r.notes || '' },
+      ];
+      if (canSeeCost) {
+        cols.push(
+          { label: 'Cost price', value: (r) => r.costPrice ?? '' },
+          { label: 'Value impact', value: (r) => r.valueImpact ?? '' },
+        );
+      }
+      downloadCsv(
+        `stock-movements-${new Date().toISOString().slice(0, 10)}.csv`,
+        toCsv(all, cols),
       );
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to export movements.');
+    } finally {
+      setExporting(false);
     }
-    downloadCsv(
-      `stock-movements-${new Date().toISOString().slice(0, 10)}.csv`,
-      toCsv(rows, cols),
-    );
   }
 
   return (
@@ -252,9 +290,9 @@ function StockMovementsPageContent() {
             variant="secondary"
             leftIcon={<Download className="h-4 w-4" />}
             onClick={handleExport}
-            disabled={!rows.length}
+            disabled={!rows.length || exporting}
           >
-            Export CSV
+            {exporting ? 'Exporting…' : 'Export CSV'}
           </Button>
         }
       />

@@ -246,7 +246,7 @@ async function getTopSuppliers({ startDate, endDate, limit = 10 } = {}) {
        SELECT s.id, s.name,
               COUNT(p.id)::int AS total_orders,
               COALESCE(SUM(p.total_cost), 0)::float8 AS total_spent,
-              AVG(EXTRACT(EPOCH FROM (p.received_date - p.order_date)) / 86400)::float8 AS avg_lead_time_days,
+              AVG(p.received_date - p.order_date)::float8 AS avg_lead_time_days,
               SUM(CASE WHEN p.received_date IS NOT NULL
                         AND p.received_date <= p.expected_date THEN 1 ELSE 0 END)::float8 AS on_time_count,
               SUM(CASE WHEN p.received_date IS NOT NULL
@@ -333,18 +333,26 @@ async function getWorstSuppliers(params) {
        SELECT s.id, s.name,
               COUNT(p.id)::int AS total_orders,
               COALESCE(SUM(p.total_cost), 0)::float8 AS total_spent,
-              AVG(EXTRACT(EPOCH FROM (p.received_date - p.order_date)) / 86400)::float8 AS avg_lead_time_days,
-              COUNT(p.id) FILTER (
-                WHERE p.balance_due > 0
-                  AND COALESCE(p.due_date, p.created_at::date) < CURRENT_DATE
-              )::int AS overdue_count,
-              COALESCE(SUM(CASE WHEN p.balance_due > 0
-                                 AND COALESCE(p.due_date, p.created_at::date) < CURRENT_DATE
-                                 THEN p.balance_due ELSE 0 END), 0)::float8 AS overdue_amount
+              AVG(p.received_date - p.order_date)::float8 AS avg_lead_time_days
          FROM suppliers s
          LEFT JOIN purchase_orders p ON p.supplier_id = s.id
                                     AND p.status <> 'cancelled'
+                                    AND p.created_at::date BETWEEN $1::date AND $2::date
         GROUP BY s.id, s.name
+     ),
+     overdue AS (
+       -- Overdue is a current-state fact, not scoped to the report's date
+       -- range — an order placed before the window that's still unpaid
+       -- today should still surface here regardless of what period is
+       -- being viewed.
+       SELECT p.supplier_id,
+              COUNT(*)::int AS overdue_count,
+              COALESCE(SUM(p.balance_due), 0)::float8 AS overdue_amount
+         FROM purchase_orders p
+        WHERE p.status <> 'cancelled'
+          AND p.balance_due > 0
+          AND COALESCE(p.due_date, p.created_at::date) < CURRENT_DATE
+        GROUP BY p.supplier_id
      ),
      defects AS (
        SELECT ro.supplier_id, COUNT(*)::int AS return_count,
@@ -355,12 +363,15 @@ async function getWorstSuppliers(params) {
         GROUP BY ro.supplier_id
      )
      SELECT po.*,
+            COALESCE(o.overdue_count, 0)::int AS overdue_count,
+            COALESCE(o.overdue_amount, 0)::float8 AS overdue_amount,
             COALESCE(d.return_count, 0)::int AS return_count,
             COALESCE(d.return_value, 0)::float8 AS return_value,
             CASE WHEN po.total_spent > 0
                  THEN (COALESCE(d.return_value, 0) / po.total_spent * 100)
                  ELSE 0 END AS defect_rate_pct
        FROM po
+       LEFT JOIN overdue o ON o.supplier_id = po.id
        LEFT JOIN defects d ON d.supplier_id = po.id
       WHERE po.total_orders > 0
       ORDER BY defect_rate_pct DESC, overdue_amount DESC
@@ -719,7 +730,12 @@ async function getPeakMonths({ year, compareYear } = {}) {
       series.push({ month: m, revenue: money(v.revenue), units: Math.round(v.units * 100) / 100 });
       total += v.revenue;
     }
-    return { series, total: money(total), avg: money(total / 12) };
+    // Divide by months actually elapsed, not a fixed 12 — otherwise the
+    // in-progress current year's average is deflated by its own unarrived
+    // months, making "peak month" trivially easy to trigger in January.
+    const now = new Date();
+    const monthsElapsed = y < now.getFullYear() ? 12 : y === now.getFullYear() ? now.getMonth() + 1 : 0;
+    return { series, total: money(total), avg: monthsElapsed > 0 ? money(total / monthsElapsed) : 0 };
   }
 
   const current = buildYearSeries(targetYear);
@@ -831,6 +847,7 @@ async function getKPIs(params = {}) {
               COALESCE(SUM(taxable_amount), 0)::float8 AS revenue,
               COALESCE(SUM(cogs), 0)::float8 AS cogs,
               COALESCE(SUM(total), 0)::float8 AS gross,
+              COALESCE(SUM(balance_due), 0)::float8 AS balance_due,
               COALESCE(AVG(total), 0)::float8 AS avg_order
          FROM inv
         WHERE confirmed_at::date BETWEEN $1::date AND $2::date
@@ -861,11 +878,57 @@ async function getKPIs(params = {}) {
        SELECT COALESCE(SUM(balance_due), 0)::float8 AS total FROM purchase_orders
         WHERE balance_due > 0 AND status <> 'cancelled'
      ),
+     -- Customer-facing returns (refund or replace) reverse revenue and the
+     -- COGS of the goods taken back — a supplier_return never touched a
+     -- customer sale, so it's excluded here (it still counts everywhere
+     -- return_rate_pct-style ratios historically did, unchanged below).
+     -- Without this, refunding/returning an invoice never moved revenue,
+     -- gross profit, or net profit on the dashboard even though the sale it
+     -- came from had been reversed.
      ret AS (
-       SELECT COALESCE(SUM(refund_total), 0)::float8 AS refunds,
-              COALESCE(SUM(total_value), 0)::float8 AS value
-         FROM return_orders
-        WHERE created_at::date BETWEEN $1::date AND $2::date
+       SELECT COALESCE(SUM(ro.refund_total), 0)::float8 AS refunds,
+              COALESCE(SUM(ro.total_value), 0)::float8 AS value,
+              -- total_value is tax-INCLUSIVE (refundableLineValues allocates
+              -- the actual paid value, tax included) but 'revenue' below is
+              -- taxable_amount, tax-EXCLUSIVE — de-tax using the original
+              -- invoice's own rate before netting them against each other,
+              -- or the comparison silently overshoots (e.g. a full refund of
+              -- a $500+5%VAT sale would wrongly drop revenue by $525, not
+              -- $500, landing on -$25 instead of $0).
+              COALESCE(SUM(
+                CASE WHEN i.tax_rate > 0 THEN ro.total_value / (1 + i.tax_rate / 100)
+                     ELSE ro.total_value END
+              ), 0)::float8 AS revenue_reversal,
+              -- Scalar per-order subquery, not a join: return_orders is a
+              -- header row and return_order_items is one-to-many, so joining
+              -- them directly here would fan out and multiply ro.total_value
+              -- / ro.refund_total once per item row.
+              COALESCE(SUM((
+                SELECT SUM(roi.quantity * v.cost_price)
+                  FROM return_order_items roi
+                  JOIN product_variants v ON v.id = roi.variant_id
+                 WHERE roi.return_order_id = ro.id
+              )), 0)::float8 AS cogs_reversal
+         FROM return_orders ro
+         LEFT JOIN invoices i ON i.id = ro.original_invoice_id
+        WHERE ro.return_type IN ('customer_refund', 'customer_replace')
+          AND ro.created_at::date BETWEEN $1::date AND $2::date
+     ),
+     prev_ret AS (
+       SELECT COALESCE(SUM(
+                CASE WHEN i.tax_rate > 0 THEN ro.total_value / (1 + i.tax_rate / 100)
+                     ELSE ro.total_value END
+              ), 0)::float8 AS revenue_reversal,
+              COALESCE(SUM((
+                SELECT SUM(roi.quantity * v.cost_price)
+                  FROM return_order_items roi
+                  JOIN product_variants v ON v.id = roi.variant_id
+                 WHERE roi.return_order_id = ro.id
+              )), 0)::float8 AS cogs_reversal
+         FROM return_orders ro
+         LEFT JOIN invoices i ON i.id = ro.original_invoice_id
+        WHERE ro.return_type IN ('customer_refund', 'customer_replace')
+          AND ro.created_at::date BETWEEN $3::date AND $4::date
      ),
      inventory_value AS (
        SELECT COALESCE(SUM(stock_qty * cost_price), 0)::float8 AS total
@@ -881,27 +944,36 @@ async function getKPIs(params = {}) {
             payables.total AS payables_total,
             ret.refunds AS refunds,
             ret.value AS returned_value,
+            ret.revenue_reversal AS returned_revenue,
+            ret.cogs_reversal AS returned_cogs,
+            prev_ret.revenue_reversal AS prev_returned_revenue,
+            prev_ret.cogs_reversal AS prev_returned_cogs,
             inventory_value.total AS inventory_value
-       FROM cur, prev_window, expenses_cur, receivables, payables, ret, inventory_value`,
+       FROM cur, prev_window, expenses_cur, receivables, payables, ret, prev_ret, inventory_value`,
     [range.startDate, range.endDate, prev.startDate, prev.endDate],
   );
 
   const r = agg[0] || {};
-  const revenue = Number(r.revenue || 0);
-  const cogs = Number(r.cogs || 0);
+  const revenue = Number(r.revenue || 0) - Number(r.returned_revenue || 0);
+  const cogs = Number(r.cogs || 0) - Number(r.returned_cogs || 0);
   const grossProfit = revenue - cogs;
   const netProfit = grossProfit - Number(r.expenses || 0);
   const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const netMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
-  const prevRevenue = Number(r.prev_revenue || 0);
+  const prevRevenue = Number(r.prev_revenue || 0) - Number(r.prev_returned_revenue || 0);
   const turnover =
     Number(r.inventory_value || 0) > 0
       ? Number(r.cogs || 0) / Number(r.inventory_value)
       : 0;
   const totalInvoicedGross = Number(r.gross || 0);
+  // Collected % of what was invoiced *in this period* — must stay scoped to
+  // the same window as the numerator. r.receivables_total (below) is an
+  // unscoped, current, all-customer AR snapshot; using it here previously
+  // divided a period figure by an all-time one, producing a nonsensical
+  // (often deeply negative) rate for any window other than "all time".
   const collectionRate =
     totalInvoicedGross > 0
-      ? ((totalInvoicedGross - Number(r.receivables_total || 0)) / totalInvoicedGross) * 100
+      ? ((totalInvoicedGross - Number(r.balance_due || 0)) / totalInvoicedGross) * 100
       : 0;
   const returnRate =
     totalInvoicedGross > 0

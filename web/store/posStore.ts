@@ -221,9 +221,14 @@ export const usePosStore = create<PosState>()((set, get) => ({
 
   setCustomer(customer) {
     set((state) => {
-      const next = customer && customer.id ? customer : null;
-      // Guest can't keep credit payments.
-      const payments = next
+      // Guest is a valid selection represented as { id: null, name: 'Guest' }
+      // (see CustomerSelect's `isGuest` check) — `customer && customer.id`
+      // treated that as falsy and silently discarded it, so clicking
+      // "Guest (no account)" looked like it did nothing.
+      const next = customer || null;
+      const isRegisteredCustomer = !!(next && next.id);
+      // Guest (or no customer) can't keep credit payments.
+      const payments = isRegisteredCustomer
         ? state.payments
         : state.payments.filter((p) => p.method !== 'credit');
       return { selectedCustomer: next, payments };

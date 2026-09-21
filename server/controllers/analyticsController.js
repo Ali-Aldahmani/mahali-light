@@ -447,6 +447,13 @@ async function exportAnnualPlan(req, res, next) {
 
 async function dismissReorder(req, res, next) {
   try {
+    const dismissed = await forecastService.dismissReorderRecommendation(
+      req.params.id,
+      req.user?.id,
+    );
+    if (!dismissed) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
     await logActivity({
       entityType: 'reorder_recommendation',
       entityId: req.params.id,

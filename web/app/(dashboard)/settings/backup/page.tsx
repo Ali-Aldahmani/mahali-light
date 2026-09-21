@@ -29,14 +29,20 @@ function Toggle({
   onChange,
   label,
   helper,
+  disabled = false,
 }: {
   checked: boolean;
   onChange?: (v: boolean) => void;
   label: string;
   helper?: string;
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 rounded-card border border-border bg-surface px-3 py-2.5 cursor-pointer">
+    <label
+      className={`flex items-center justify-between gap-3 rounded-card border border-border bg-surface px-3 py-2.5 ${
+        disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+      }`}
+    >
       <span>
         <span className="block text-sm font-medium text-ink">{label}</span>
         {helper && <span className="block text-xs text-ink-muted">{helper}</span>}
@@ -44,7 +50,8 @@ function Toggle({
       <span
         role="switch"
         aria-checked={checked}
-        onClick={() => onChange?.(!checked)}
+        aria-disabled={disabled}
+        onClick={() => !disabled && onChange?.(!checked)}
         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
           checked ? 'bg-accent' : 'bg-surface-2'
         }`}
@@ -325,24 +332,28 @@ function SettingsForm({
           onChange={(v) => set({ schedule_6h_enabled: v })}
           label="6-hour DB backup"
           helper="Database-only sweep every 6 hours."
+          disabled={!canConfigure}
         />
         <Toggle
           checked={!!draft.schedule_nightly_enabled}
           onChange={(v) => set({ schedule_nightly_enabled: v })}
           label="Nightly full backup"
           helper="Full backup at 02:00 every night."
+          disabled={!canConfigure}
         />
         <Toggle
           checked={!!draft.schedule_weekly_enabled}
           onChange={(v) => set({ schedule_weekly_enabled: v })}
           label="Weekly full backup"
           helper="Full backup every Sunday at 03:00."
+          disabled={!canConfigure}
         />
         <Toggle
           checked={!!draft.schedule_monthly_enabled}
           onChange={(v) => set({ schedule_monthly_enabled: v })}
           label="Monthly archive"
           helper="Permanent archive on the 1st of each month."
+          disabled={!canConfigure}
         />
       </SectionCard>
 
@@ -352,6 +363,7 @@ function SettingsForm({
           onChange={(v) => set({ local_enabled: v })}
           label="Local disk"
           helper="Stores backups on the server PC."
+          disabled={!canConfigure}
         />
         <Input
           label="Local path"
@@ -367,7 +379,8 @@ function SettingsForm({
             onChange={(v) => set({ nas_enabled: v })}
             label="NAS (network storage)"
             helper="UNC or mounted share copy after each backup."
-          />
+            disabled={!canConfigure}
+        />
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Input
@@ -375,17 +388,20 @@ function SettingsForm({
             value={draft.nas_ip || ''}
             onChange={(e: any) => set({ nas_ip: e.target.value })}
             placeholder="192.168.50.51"
+            disabled={!canConfigure}
           />
           <Input
             label="NAS path"
             value={draft.nas_path || ''}
             onChange={(e: any) => set({ nas_path: e.target.value })}
             placeholder="/volume1/pos-backups"
+            disabled={!canConfigure}
           />
           <Input
             label="NAS username"
             value={draft.nas_username || ''}
             onChange={(e: any) => set({ nas_username: e.target.value })}
+            disabled={!canConfigure}
           />
           <Input
             label="NAS password"
@@ -393,9 +409,16 @@ function SettingsForm({
             value={draft.nas_password || ''}
             onChange={(e: any) => set({ nas_password: e.target.value })}
             placeholder={draft.nas_password_set ? '••••••••' : 'Set new password'}
+            disabled={!canConfigure}
           />
         </div>
-        <Button variant="secondary" size="sm" onClick={onTestNas} loading={nasTesting} disabled={!draft.nas_enabled}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onTestNas}
+          loading={nasTesting}
+          disabled={!draft.nas_enabled || !canConfigure}
+        >
           Test NAS connection
         </Button>
 
@@ -405,13 +428,15 @@ function SettingsForm({
             onChange={(v) => set({ usb_enabled: v })}
             label="USB drive"
             helper="Copy to any plugged-in removable drive."
-          />
+            disabled={!canConfigure}
+        />
           <Toggle
             checked={!!draft.usb_auto_detect}
             onChange={(v) => set({ usb_auto_detect: v })}
             label="Auto-detect drives"
             helper="Disable to manually choose a drive only."
-          />
+            disabled={!canConfigure}
+        />
           <div className="mt-2 rounded-card border border-border bg-surface-2/40 p-3 text-xs text-ink-muted">
             {usbDrives?.length ? (
               <ul className="space-y-1">
@@ -463,7 +488,7 @@ function SettingsForm({
           locked
           helper="Monthly archives are kept forever and never auto-purged."
         />
-        <Button variant="secondary" size="sm" onClick={onRetentionCleanup}>
+        <Button variant="secondary" size="sm" onClick={onRetentionCleanup} disabled={!canConfigure}>
           Run retention cleanup now
         </Button>
       </SectionCard>
@@ -474,6 +499,7 @@ function SettingsForm({
           onChange={(v) => set({ compression_enabled: v })}
           label="Enable compression"
           helper="Smaller archives but slower CPU."
+          disabled={!canConfigure}
         />
         <RetentionSlider
           label="Compression level"
@@ -487,11 +513,13 @@ function SettingsForm({
           checked={!!draft.notify_on_success}
           onChange={(v) => set({ notify_on_success: v })}
           label="Notify on success"
+          disabled={!canConfigure}
         />
         <Toggle
           checked={!!draft.notify_on_failure}
           onChange={(v) => set({ notify_on_failure: v })}
           label="Notify on failure"
+          disabled={!canConfigure}
         />
         <Input
           label="pg_dump path override"
@@ -499,12 +527,14 @@ function SettingsForm({
           onChange={(e: any) => set({ pg_dump_path: e.target.value })}
           placeholder="(empty = use PATH)"
           hint="Optional. Use only if pg_dump is not on the server's PATH."
+          disabled={!canConfigure}
         />
         <Input
           label="pg_restore path override"
           value={draft.pg_restore_path || ''}
           onChange={(e: any) => set({ pg_restore_path: e.target.value })}
           placeholder="(empty = use PATH)"
+          disabled={!canConfigure}
         />
       </SectionCard>
     </div>

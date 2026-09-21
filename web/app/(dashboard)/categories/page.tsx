@@ -171,29 +171,33 @@ function CategoriesPageContent() {
             </Badge>
           )}
           <div className="hidden group-hover:flex items-center gap-1 ml-1">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditing(n);
-                setFormOpen(true);
-              }}
-              className="rounded-md p-1 hover:bg-surface text-ink-muted hover:text-ink"
-              title="Edit category"
-            >
-              <Pencil size={12} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setConfirmDel(n);
-              }}
-              className="rounded-md p-1 hover:bg-error-light text-ink-muted hover:text-error"
-              title="Delete category"
-            >
-              <Trash2 size={12} />
-            </button>
+            <PermissionGate permission="product.edit">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditing(n);
+                  setFormOpen(true);
+                }}
+                className="rounded-md p-1 hover:bg-surface text-ink-muted hover:text-ink"
+                title="Edit category"
+              >
+                <Pencil size={12} />
+              </button>
+            </PermissionGate>
+            <PermissionGate permission="product.delete">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmDel(n);
+                }}
+                className="rounded-md p-1 hover:bg-error-light text-ink-muted hover:text-error"
+                title="Delete category"
+              >
+                <Trash2 size={12} />
+              </button>
+            </PermissionGate>
           </div>
         </div>
         {hasChildren && isOpen && (

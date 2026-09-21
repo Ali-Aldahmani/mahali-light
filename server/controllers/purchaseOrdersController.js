@@ -31,7 +31,14 @@ const createSchema = z.object({
   items: z.array(itemSchema).min(1, 'Add at least one item.'),
 });
 
-const updateSchema = createSchema.partial({ supplierId: true });
+// Every field is independently optional on update (unlike create) — the
+// controller below only touches columns/items that were actually sent
+// (`COALESCE($n, col)` for scalars, `if (body.items)` for the item list).
+// `.partial({ supplierId: true })` previously left every OTHER key —
+// including the required `items` array — mandatory, so editing just a
+// PO's notes or due date 400'd unless a full, valid items array was
+// resent too.
+const updateSchema = createSchema.partial();
 
 const receiveSchema = z.object({
   items: z
@@ -301,7 +308,7 @@ async function create(req, res, next) {
           `INSERT INTO purchase_order_items
              (purchase_order_id, product_id, variant_id, quantity, unit_label,
               cost_price_per_unit, total_cost)
-           VALUES ($1,$2,$3,$4,$5,$6,$4*$6)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$4::numeric*$6::numeric)`,
           [
             id,
             it.productId,
@@ -352,22 +359,26 @@ async function update(req, res, next) {
     const { id } = req.params;
     const body = updateSchema.parse(req.body || {});
 
-    const { rows: existing } = await query(
-      `SELECT status FROM purchase_orders WHERE id = $1`,
-      [id],
-    );
-    if (!existing.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
-    }
-    if (existing[0].status !== 'draft') {
-      throw new AppError(
-        ERROR_CODES.BIZ_INVALID_STATE,
-        'Only draft purchase orders can be edited.',
-        { status: 409 },
-      );
-    }
-
     await withTransaction(async (client) => {
+      // Lock + re-check status inside the transaction — a plain SELECT
+      // before the transaction started (the old pattern here) let a
+      // concurrent confirm()/remove() land in between the check and the
+      // write, silently mutating a PO that was no longer a draft.
+      const { rows: existing } = await client.query(
+        `SELECT status FROM purchase_orders WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      if (!existing.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      if (existing[0].status !== 'draft') {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          'Only draft purchase orders can be edited.',
+          { status: 409 },
+        );
+      }
+
       await client.query(
         `UPDATE purchase_orders
             SET supplier_id = COALESCE($1, supplier_id),
@@ -399,7 +410,7 @@ async function update(req, res, next) {
             `INSERT INTO purchase_order_items
                (purchase_order_id, product_id, variant_id, quantity, unit_label,
                 cost_price_per_unit, total_cost)
-             VALUES ($1,$2,$3,$4,$5,$6,$4*$6)`,
+             VALUES ($1,$2,$3,$4,$5,$6,$4::numeric*$6::numeric)`,
             [id, it.productId, it.variantId, it.quantity, it.unitLabel || null, it.costPricePerUnit],
           );
         }
@@ -424,21 +435,24 @@ async function update(req, res, next) {
 async function remove(req, res, next) {
   try {
     const { id } = req.params;
-    const { rows } = await query(
-      `SELECT status, po_number, attachment_path FROM purchase_orders WHERE id = $1`,
-      [id],
-    );
-    if (!rows.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
-    }
-    if (rows[0].status !== 'draft') {
-      throw new AppError(
-        ERROR_CODES.BIZ_INVALID_STATE,
-        'Only draft purchase orders can be deleted.',
-        { status: 409 },
+    const rows = await withTransaction(async (client) => {
+      const { rows: found } = await client.query(
+        `SELECT status, po_number, attachment_path FROM purchase_orders WHERE id = $1 FOR UPDATE`,
+        [id],
       );
-    }
-    await query(`DELETE FROM purchase_orders WHERE id = $1`, [id]);
+      if (!found.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      if (found[0].status !== 'draft') {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          'Only draft purchase orders can be deleted.',
+          { status: 409 },
+        );
+      }
+      await client.query(`DELETE FROM purchase_orders WHERE id = $1`, [id]);
+      return found;
+    });
 
     if (rows[0].attachment_path) {
       deleteAttachmentFile(rows[0].attachment_path);
@@ -461,24 +475,26 @@ async function confirm(req, res, next) {
   try {
     const includeCost = canSeeCost(req);
     const { id } = req.params;
-    const { rows } = await query(
-      `SELECT status FROM purchase_orders WHERE id = $1`,
-      [id],
-    );
-    if (!rows.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
-    }
-    if (rows[0].status !== 'draft') {
-      throw new AppError(
-        ERROR_CODES.BIZ_INVALID_STATE,
-        `Cannot confirm a PO in status "${rows[0].status}".`,
-        { status: 409 },
+    await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        `SELECT status FROM purchase_orders WHERE id = $1 FOR UPDATE`,
+        [id],
       );
-    }
-    await query(
-      `UPDATE purchase_orders SET status = 'confirmed', updated_at = NOW() WHERE id = $1`,
-      [id],
-    );
+      if (!rows.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      if (rows[0].status !== 'draft') {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          `Cannot confirm a PO in status "${rows[0].status}".`,
+          { status: 409 },
+        );
+      }
+      await client.query(
+        `UPDATE purchase_orders SET status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+        [id],
+      );
+    });
 
     await logActivity({
       entityType: 'purchase_order',

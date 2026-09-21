@@ -129,9 +129,23 @@ function promptReason(label: string) {
   return r.trim();
 }
 
+// Mirrors server/services/approvalsService.js's SECTION_PERMISSION — any one
+// of these grants access to at least one section of the queue. A hardcoded
+// role-name check here would lock out a custom role granted e.g.
+// return.approve but not literally named "Admin"/"Manager".
+const APPROVAL_PERMISSIONS = [
+  'return.approve',
+  'invoice.edit_approve',
+  'stock.adjust_approve',
+  'stock.count_approve',
+  'attendance.correction_approve',
+];
+
 export default function ApprovalsPage() {
   const router = useRouter();
-  const role = useAuthStore((s) => s.user?.role);
+  const permissions = useAuthStore((s) => s.permissions);
+  const canApproveAnything =
+    permissions.includes('*') || APPROVAL_PERMISSIONS.some((p) => permissions.includes(p));
   const fetchApprovalCount = useNotificationStore((s) => s.fetchApprovalCount);
 
   const [data, setData] = useState<any>(null);
@@ -157,7 +171,7 @@ export default function ApprovalsPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  if (role !== 'Admin' && role !== 'Manager') {
+  if (!canApproveAnything) {
     return (
       <div className="card p-8 text-center text-ink-muted">
         <AlertTriangle size={24} className="mx-auto mb-2 text-warning" />

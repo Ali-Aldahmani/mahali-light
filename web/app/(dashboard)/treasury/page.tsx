@@ -31,8 +31,18 @@ function TreasuryPageInner() {
   const applyBankEvent = useTreasuryStore((s) => s.applyBankEvent);
   const user = useAuthStore((s) => s.user);
   const hasPermission = useAuthStore((s) => s.hasPermission);
+  // /treasury/summary (Overview's data source) requires cash.view server-side
+  // — a role with only e.g. bank.view landing here by default would get a
+  // 403 on load. Default to a tab the user can actually see.
+  const defaultTab = hasPermission('cash.view')
+    ? 'overview'
+    : hasPermission('bank.view')
+      ? 'banks'
+      : hasPermission('cash.adjust') || hasPermission('bank.transact')
+        ? 'transfers'
+        : 'overview';
   const [tab, setTab] = useState(() =>
-    tabFromQuery && ALLOWED_TABS.includes(tabFromQuery) ? tabFromQuery : 'overview',
+    tabFromQuery && ALLOWED_TABS.includes(tabFromQuery) ? tabFromQuery : defaultTab,
   );
 
   useEffect(() => {
@@ -63,7 +73,9 @@ function TreasuryPageInner() {
   }
 
   const tabs = [
-    { value: 'overview', label: 'Overview', icon: <LayoutDashboard size={14} /> },
+    hasPermission('cash.view')
+      ? { value: 'overview', label: 'Overview', icon: <LayoutDashboard size={14} /> }
+      : null,
     hasPermission('cash.view')
       ? { value: 'cash', label: 'Cash drawer', icon: <Coins size={14} /> }
       : null,
@@ -83,19 +95,25 @@ function TreasuryPageInner() {
       />
       <Tabs items={tabs} value={tab} onChange={switchTab} className="mb-6" />
 
-      {tab === 'overview' && <OverviewTab onJumpTab={switchTab} />}
-      {tab === 'cash' && (
+      {tab === 'overview' && hasPermission('cash.view') && <OverviewTab onJumpTab={switchTab} />}
+      {tab === 'cash' && hasPermission('cash.view') && (
         <CashDrawerTab actionParam={searchParams.get('action')} />
       )}
-      {tab === 'banks' && <BankAccountsTab />}
-      {tab === 'transfers' && <TransfersTab />}
+      {tab === 'banks' && hasPermission('bank.view') && <BankAccountsTab />}
+      {tab === 'transfers' &&
+        (hasPermission('cash.adjust') || hasPermission('bank.transact')) && <TransfersTab />}
     </div>
   );
 }
 
+// Matches the union of what each tab below individually requires — a
+// custom role granted only e.g. bank.view (no cash.view) must still reach
+// the page to see the tab it actually has rights to.
+const TREASURY_PAGE_PERMISSIONS = ['cash.view', 'bank.view', 'cash.adjust', 'bank.transact'];
+
 export default function TreasuryPage() {
   return (
-    <RequirePermission permission="cash.view">
+    <RequirePermission permissions={TREASURY_PAGE_PERMISSIONS}>
       <TreasuryPageInner />
     </RequirePermission>
   );

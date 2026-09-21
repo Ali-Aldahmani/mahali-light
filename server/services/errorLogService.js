@@ -303,7 +303,7 @@ function classifyError(err) {
   const e = new AppError(ERROR_CODES.DB_QUERY_FAILED);
   return {
     code: ERROR_CODES.DB_QUERY_FAILED,
-    message: err?.message || e.message,
+    message: process.env.NODE_ENV === 'development' ? err?.message || e.message : e.message,
     status: 500,
     details: process.env.NODE_ENV === 'development' ? { hint: err?.hint } : null,
     field: null,

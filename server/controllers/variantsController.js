@@ -11,15 +11,22 @@ const { saveProductImage, deleteImageFile } = require('../utils/upload');
 const { emitProductChange } = require('./productsController');
 const { applyStockMovement } = require('../services/stockService');
 
+// Upper bounds catch fat-finger data entry (e.g. typing 999999 into opening
+// stock instead of 9) before it silently inflates inventory value / KPI
+// figures — DECIMAL(12,2) columns could otherwise hold far larger numbers
+// with no application-level guard at all.
+const MAX_PRICE = 999999;
+const MAX_QTY = 999999;
+
 const createSchema = z.object({
   attributeValueIds: z.array(z.string().uuid()).default([]),
   sku: z.string().max(100).nullable().optional(),
   barcode: z.string().max(100).nullable().optional(),
   supplierBarcode: z.string().max(100).nullable().optional(),
-  sellingPrice: z.number().min(0).default(0),
-  costPrice: z.number().min(0).default(0),
-  openingStock: z.number().min(0).default(0),
-  reorderThreshold: z.number().min(0).nullable().optional(),
+  sellingPrice: z.number().min(0).max(MAX_PRICE).default(0),
+  costPrice: z.number().min(0).max(MAX_PRICE).default(0),
+  openingStock: z.number().min(0).max(MAX_QTY).default(0),
+  reorderThreshold: z.number().min(0).max(MAX_QTY).nullable().optional(),
 });
 
 const updateSchema = z.object({
@@ -27,9 +34,9 @@ const updateSchema = z.object({
   sku: z.string().max(100).optional(),
   barcode: z.string().max(100).nullable().optional(),
   supplierBarcode: z.string().max(100).nullable().optional(),
-  sellingPrice: z.number().min(0).optional(),
-  costPrice: z.number().min(0).optional(),
-  reorderThreshold: z.number().min(0).nullable().optional(),
+  sellingPrice: z.number().min(0).max(MAX_PRICE).optional(),
+  costPrice: z.number().min(0).max(MAX_PRICE).optional(),
+  reorderThreshold: z.number().min(0).max(MAX_QTY).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -116,6 +123,7 @@ async function create(req, res, next) {
     const includeCost = canSeeCost(req);
     const { id } = req.params;
     const body = createSchema.parse(req.body || {});
+    if (!includeCost) body.costPrice = 0;
 
     const { rows: prod } = await query(
       `SELECT id, category_id, brand FROM products WHERE id = $1`,
@@ -218,6 +226,7 @@ async function update(req, res, next) {
     const includeCost = canSeeCost(req);
     const { id, vid } = req.params;
     const body = updateSchema.parse(req.body || {});
+    if (!includeCost) delete body.costPrice;
 
     const { rows: existing } = await query(
       `SELECT * FROM product_variants WHERE id = $1 AND product_id = $2`,

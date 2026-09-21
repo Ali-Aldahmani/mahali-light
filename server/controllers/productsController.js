@@ -23,6 +23,13 @@ const { lookupBarcode } = require('../services/barcodeLookupService');
 
 const SOLD_BY = ['piece', 'meter', 'roll', 'kg', 'box'];
 
+// Upper bounds catch fat-finger data entry (e.g. typing 999999 into opening
+// stock instead of 9) before it silently inflates inventory value / KPI
+// figures — DECIMAL(12,2) columns could otherwise hold far larger numbers
+// with no application-level guard at all.
+const MAX_PRICE = 999999;
+const MAX_QTY = 999999;
+
 const baseProductSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(5000).nullable().optional(),
@@ -32,7 +39,7 @@ const baseProductSchema = z.object({
   soldBy: z.enum(SOLD_BY).optional().default('piece'),
   unitLabel: z.string().max(20).optional().default('pcs'),
   defaultWarrantyMonths: z.number().int().min(0).max(120).optional().default(0),
-  reorderThreshold: z.number().min(0).optional().default(0),
+  reorderThreshold: z.number().min(0).max(MAX_QTY).optional().default(0),
   isActive: z.boolean().optional().default(true),
 });
 
@@ -40,10 +47,10 @@ const simpleVariantSchema = z.object({
   sku: z.string().max(100).optional().nullable(),
   barcode: z.string().max(100).optional().nullable(),
   supplierBarcode: z.string().max(100).optional().nullable(),
-  sellingPrice: z.number().min(0).default(0),
-  costPrice: z.number().min(0).default(0),
-  openingStock: z.number().min(0).default(0),
-  reorderThreshold: z.number().min(0).nullable().optional(),
+  sellingPrice: z.number().min(0).max(MAX_PRICE).default(0),
+  costPrice: z.number().min(0).max(MAX_PRICE).default(0),
+  openingStock: z.number().min(0).max(MAX_QTY).default(0),
+  reorderThreshold: z.number().min(0).max(MAX_QTY).nullable().optional(),
 });
 
 const variantInputSchema = z.object({
@@ -51,10 +58,10 @@ const variantInputSchema = z.object({
   sku: z.string().max(100).optional().nullable(),
   barcode: z.string().max(100).optional().nullable(),
   supplierBarcode: z.string().max(100).optional().nullable(),
-  sellingPrice: z.number().min(0).default(0),
-  costPrice: z.number().min(0).default(0),
-  openingStock: z.number().min(0).default(0),
-  reorderThreshold: z.number().min(0).nullable().optional(),
+  sellingPrice: z.number().min(0).max(MAX_PRICE).default(0),
+  costPrice: z.number().min(0).max(MAX_PRICE).default(0),
+  openingStock: z.number().min(0).max(MAX_QTY).default(0),
+  reorderThreshold: z.number().min(0).max(MAX_QTY).nullable().optional(),
 });
 
 const createSchema = baseProductSchema.extend({
@@ -280,6 +287,10 @@ async function create(req, res, next) {
   try {
     const includeCost = canSeeCost(req);
     const body = createSchema.parse(req.body || {});
+    if (!includeCost) {
+      if (body.simple) body.simple.costPrice = 0;
+      for (const v of body.variants || []) v.costPrice = 0;
+    }
 
     if (body.hasVariants && (!body.variants || !body.variants.length)) {
       throw new AppError(

@@ -138,7 +138,7 @@ async function calculateReorderRecommendation(variantId) {
     `SELECT v.id AS variant_id, v.product_id, v.stock_qty, v.cost_price,
             p.name AS product_name,
             COALESCE(
-              (SELECT AVG(EXTRACT(EPOCH FROM (po.received_date - po.order_date)) / 86400)
+              (SELECT AVG(po.received_date - po.order_date)::float8
                  FROM purchase_order_items poi
                  JOIN purchase_orders po ON po.id = poi.purchase_order_id
                 WHERE poi.variant_id = v.id
@@ -209,7 +209,14 @@ async function calculateReorderRecommendation(variantId) {
     monthlyBuckets[m].count += 1;
   }
   const monthlyMeans = monthlyBuckets.map((b) => (b.count > 0 ? b.total / b.count : 0));
-  const annualMean = monthlyMeans.reduce((s, v2) => s + v2, 0) / 12;
+  // Divide by the number of calendar months actually represented in history,
+  // not a fixed 12 — otherwise a variant with only a few months of sales
+  // gets an artificially low "annual" average, making it too easy to trip
+  // the peak-season threshold below and double the recommended reorder qty.
+  const monthsWithData = monthlyBuckets.filter((b) => b.count > 0).length;
+  const annualMean = monthsWithData > 0
+    ? monthlyMeans.reduce((s, v2) => s + v2, 0) / monthsWithData
+    : 0;
   let peakMonth = null;
   let peakMean = 0;
   for (let i = 0; i < 12; i += 1) {
@@ -243,7 +250,9 @@ async function calculateReorderRecommendation(variantId) {
        is_peak_season = EXCLUDED.is_peak_season,
        peak_multiplier = EXCLUDED.peak_multiplier,
        confidence = EXCLUDED.confidence,
-       calculated_at = NOW()`,
+       calculated_at = NOW(),
+       dismissed_at = NULL,
+       dismissed_by = NULL`,
     [
       v.product_id,
       v.variant_id,
@@ -310,7 +319,12 @@ async function calculateAnnualStockPlan(variantId, year) {
   const monthlyAvg = monthlyBuckets.map((arr) =>
     arr.length ? arr.reduce((s, v2) => s + v2, 0) / arr.length : 0,
   );
-  const annualMean = monthlyAvg.reduce((s, v2) => s + v2, 0) / 12 || 0;
+  // Divide by months actually represented in history, not a fixed 12 (see
+  // the same fix in calculateReorderRecommendation above).
+  const monthsWithData = monthlyBuckets.filter((arr) => arr.length > 0).length;
+  const annualMean = monthsWithData > 0
+    ? monthlyAvg.reduce((s, v2) => s + v2, 0) / monthsWithData
+    : 0;
 
   // Year-over-year growth: only compute when we have at least 12 months of
   // history (so it reflects a full year-to-year cycle).
@@ -383,7 +397,7 @@ async function listReorderRecommendations({
   lowStockOnly = false,
   categoryId = null,
 } = {}) {
-  const conds = ['v.is_active = true', 'p.is_active = true'];
+  const conds = ['v.is_active = true', 'p.is_active = true', 'rr.dismissed_at IS NULL'];
   const vals = [];
   if (categoryId) {
     vals.push(categoryId);
@@ -425,6 +439,19 @@ async function listReorderRecommendations({
     based_on_months: r.based_on_months,
     calculated_at: r.calculated_at,
   }));
+}
+
+// Dismiss until the next recalculation (manual or monthly cron), which
+// resets dismissed_at back to NULL since the underlying numbers changed.
+async function dismissReorderRecommendation(id, userId) {
+  const { rows } = await query(
+    `UPDATE reorder_recommendations
+        SET dismissed_at = NOW(), dismissed_by = $2
+      WHERE id = $1
+      RETURNING id`,
+    [id, userId],
+  );
+  return rows.length > 0;
 }
 
 async function getReorderForVariant(variantId) {
@@ -631,6 +658,7 @@ module.exports = {
   calculateAnnualStockPlan,
   runAllForecasts,
   listReorderRecommendations,
+  dismissReorderRecommendation,
   getReorderForVariant,
   listAnnualPlan,
   getAnnualPlanForVariant,

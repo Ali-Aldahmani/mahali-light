@@ -22,6 +22,7 @@ import {
   setSupplierClaimResolved,
 } from '@/services/warrantyClaimService';
 import { toast } from '@/store/toastStore';
+import { useAuthStore } from '@/store/authStore';
 import { formatDate } from '@/lib/utils/format';
 import ResolveClaimSlideOver from '@/components/warranties/ResolveClaimSlideOver';
 import type { WarrantyClaim } from '@/components/warranties/types';
@@ -32,6 +33,8 @@ function WarrantyClaimDetailPageContent() {
   const [claim, setClaim] = useState<WarrantyClaim | null>(null);
   const [loading, setLoading] = useState(true);
   const [resolveOpen, setResolveOpen] = useState(false);
+  const permissions = useAuthStore((s) => s.permissions);
+  const canClaim = permissions.includes('warranty.claim');
 
   async function load() {
     setLoading(true);
@@ -190,11 +193,13 @@ function WarrantyClaimDetailPageContent() {
             value={claim.supplierClaimRaised}
             onChange={() => handleRaiseSupplier()}
             disabledIfTrue
+            disabled={!canClaim}
           />
           <ToggleRow
             label="Supplier resolved"
             value={claim.supplierClaimResolved}
             onChange={() => toggleSupplierResolved(!claim.supplierClaimResolved)}
+            disabled={!canClaim}
           />
         </div>
       </div>
@@ -225,14 +230,16 @@ function ToggleRow({
   value,
   onChange,
   disabledIfTrue = false,
+  disabled = false,
 }: {
   label: string;
   value?: boolean;
   onChange: () => void;
   disabledIfTrue?: boolean;
+  disabled?: boolean;
 }) {
   const isOn = !!value;
-  const isLocked = disabledIfTrue && isOn;
+  const isLocked = disabled || (disabledIfTrue && isOn);
   return (
     <button
       type="button"

@@ -87,9 +87,20 @@ function FinancePageInner() {
   );
 }
 
+// Matches the union of what each tab above individually requires — a
+// custom role granted only e.g. finance.view_pl (no finance.view_dashboard)
+// must still reach the page to see the tab it actually has rights to.
+const FINANCE_PAGE_PERMISSIONS = [
+  'finance.view_dashboard',
+  'finance.view_pl',
+  'finance.view_balance_sheet',
+  'finance.view_cashflow',
+  'finance.view_vat',
+];
+
 export default function FinancePage() {
   return (
-    <RequirePermission permission="finance.view_dashboard">
+    <RequirePermission permissions={FINANCE_PAGE_PERMISSIONS}>
       <FinancePageInner />
     </RequirePermission>
   );

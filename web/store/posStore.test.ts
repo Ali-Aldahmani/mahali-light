@@ -69,3 +69,41 @@ describe('usePosStore.calculateTotals', () => {
     expect(totals.subtotal).toBe(30);
   });
 });
+
+describe('usePosStore.setCustomer', () => {
+  beforeEach(() => {
+    usePosStore.getState().clearCart();
+    usePosStore.getState().setCustomer(null);
+  });
+
+  it('selects Guest ({ id: null, name: "Guest" }) instead of silently discarding it', () => {
+    // Regression: `customer && customer.id` treated the Guest sentinel's
+    // null id as falsy and reset selectedCustomer back to null, so clicking
+    // "Guest (no account)" in CustomerSelect appeared to do nothing.
+    usePosStore.getState().setCustomer({ id: null, name: 'Guest' });
+    expect(usePosStore.getState().selectedCustomer).toEqual({ id: null, name: 'Guest' });
+  });
+
+  it('selects a registered customer normally', () => {
+    usePosStore.getState().setCustomer({ id: 'c1', name: 'Ali' });
+    expect(usePosStore.getState().selectedCustomer).toEqual({ id: 'c1', name: 'Ali' });
+  });
+
+  it('clears credit payments when switching to Guest', () => {
+    usePosStore.getState().setCustomer({ id: 'c1', name: 'Ali' });
+    usePosStore.setState({ payments: [{ id: 'p1', method: 'credit', amount: 20 }] });
+
+    usePosStore.getState().setCustomer({ id: null, name: 'Guest' });
+
+    expect(usePosStore.getState().payments).toHaveLength(0);
+  });
+
+  it('keeps credit payments when switching between two registered customers', () => {
+    usePosStore.getState().setCustomer({ id: 'c1', name: 'Ali' });
+    usePosStore.setState({ payments: [{ id: 'p1', method: 'credit', amount: 20 }] });
+
+    usePosStore.getState().setCustomer({ id: 'c2', name: 'Sara' });
+
+    expect(usePosStore.getState().payments).toHaveLength(1);
+  });
+});

@@ -21,7 +21,7 @@ const REASONS = new Set([
 const createSchema = z.object({
   variantId: z.string().uuid(),
   adjustmentType: z.enum(['add', 'remove', 'set']),
-  quantity: z.number().refine((n) => Number.isFinite(n), 'Quantity must be a number.'),
+  quantity: z.number().finite().min(-999999).max(999999),
   reason: z.string().refine((r) => REASONS.has(r), 'Invalid reason.'),
   note: z.string().min(10, 'Please add a note (at least 10 characters).').max(1000),
   applyDirectly: z.boolean().optional().default(false),

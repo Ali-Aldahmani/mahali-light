@@ -73,6 +73,8 @@ async function fetchPdf({ kind, invoiceId, apiToken }) {
   return Buffer.from(await res.arrayBuffer());
 }
 
+const PRINT_SCRIPT = path.join(__dirname, 'print.ps1');
+
 function printBuffer(buf, printer, copies) {
   const tmp = path.join(os.tmpdir(), `bytecra-print-${Date.now()}.pdf`);
   fs.writeFileSync(tmp, buf);
@@ -85,8 +87,26 @@ function printBuffer(buf, printer, copies) {
       args = ['-n', String(n), tmp];
       if (printer) args.splice(1, 0, '-d', printer);
     } else {
-      cmd = 'cmd';
-      args = ['/c', 'start', '/min', tmp];
+      // Windows has no CLI print-to-printer without a bundled binary; invoke the
+      // OS-registered PDF handler's Print/PrintTo verb via PowerShell instead of
+      // just opening a viewer window. Args are passed positionally (not through
+      // a shell string), so a printer name can't inject PowerShell commands.
+      cmd = 'powershell';
+      args = [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-WindowStyle',
+        'Hidden',
+        '-File',
+        PRINT_SCRIPT,
+        '-Path',
+        tmp,
+        '-Copies',
+        String(n),
+      ];
+      if (printer) args.push('-Printer', printer);
     }
     const child = spawn(cmd, args, { windowsHide: true });
     child.on('error', reject);

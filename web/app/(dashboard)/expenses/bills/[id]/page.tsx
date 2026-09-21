@@ -27,10 +27,7 @@ import { useAuthStore } from '@/store/authStore';
 import { onBillEvent } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
 import PrivateFileLink from '@/components/ui/PrivateFileLink';
-
-function aed(n: any) {
-  return `AED ${Number(n || 0).toFixed(2)}`;
-}
+import { formatCurrency } from '@/lib/utils/format';
 
 function BillDetailPageInner() {
   const { id } = useParams<{ id: string }>();
@@ -192,7 +189,7 @@ function BillDetailPageInner() {
             <Field label="Frequency" value={<span className="capitalize">{bill.frequency}</span>} />
             <Field
               label="Expected amount"
-              value={bill.isVariableAmount ? 'Variable' : aed(bill.amount)}
+              value={bill.isVariableAmount ? 'Variable' : formatCurrency(bill.amount)}
             />
             <Field
               label="Reminder"
@@ -241,7 +238,7 @@ function BillDetailPageInner() {
             <span className="font-semibold">
               {bill.isVariableAmount
                 ? 'Variable'
-                : aed(upcoming?.amountDue ?? bill.amount)}
+                : formatCurrency(upcoming?.amountDue ?? bill.amount)}
             </span>
           </div>
         </div>
@@ -277,9 +274,9 @@ function BillDetailPageInner() {
               {(bill.payments || []).map((p: any) => (
                 <tr key={p.id} className="border-t border-border">
                   <td className="px-4 py-2">{p.dueDate}</td>
-                  <td className="px-4 py-2 text-right">{aed(p.amountDue)}</td>
+                  <td className="px-4 py-2 text-right">{formatCurrency(p.amountDue)}</td>
                   <td className="px-4 py-2 text-right">
-                    {p.amountPaid != null ? aed(p.amountPaid) : '—'}
+                    {p.amountPaid != null ? formatCurrency(p.amountPaid) : '—'}
                   </td>
                   <td className="px-4 py-2">{p.paidDate || '—'}</td>
                   <td className="px-4 py-2">{p.paidByUsername || '—'}</td>
