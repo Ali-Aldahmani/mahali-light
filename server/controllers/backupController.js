@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { z } = require('zod');
 const { ok, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { isAdminActor } = require('../../shared/authzPolicy');
 const { query } = require('../db/postgres');
 const { logActivity } = require('../utils/activityLog');
 
@@ -156,7 +157,7 @@ const restoreSchema = z.object({
 async function restore(req, res, next) {
   try {
     restoreSchema.parse(req.body || {});
-    if (req.user.role !== 'Admin') {
+    if (!isAdminActor(req.user)) {
       throw new AppError(
         ERROR_CODES.AUTH_NO_PERMISSION,
         'Only an Admin can restore a backup.',

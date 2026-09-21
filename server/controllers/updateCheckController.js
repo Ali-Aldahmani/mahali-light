@@ -2,10 +2,11 @@
 
 const { ok } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { isAdminActor } = require('../../shared/authzPolicy');
 const updateCheckService = require('../services/updateCheckService');
 
 function requireAdmin(req) {
-  if (req.user.role !== 'Admin') {
+  if (!isAdminActor(req.user)) {
     throw new AppError(
       ERROR_CODES.AUTH_NO_PERMISSION,
       'Only administrators can manage app updates.',

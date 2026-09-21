@@ -28,7 +28,7 @@ function verifyToken(token) {
 async function loadUserContext(userId) {
   const { rows } = await query(
     `SELECT u.id, u.username, u.is_active, u.employee_id,
-            r.id AS role_id, r.name AS role_name
+            r.id AS role_id, r.name AS role_name, r.is_system AS role_is_system
        FROM users u
        LEFT JOIN roles r ON r.id = u.role_id
       WHERE u.id = $1`,

@@ -9,8 +9,10 @@
  */
 const { AppError, ERROR_CODES } = require('./errorCodes');
 
+const SYSTEM_ADMIN_ROLE_NAME = 'Admin';
+
 const ROLE_RANK = {
-  Admin: 100,
+  [SYSTEM_ADMIN_ROLE_NAME]: 100,
   Manager: 50,
   Cashier: 20,
   Warehouse: 20,
@@ -38,7 +40,13 @@ function actorRoleName(actor) {
 }
 
 function isAdminActor(actor) {
-  return actorRoleName(actor) === 'Admin';
+  // Anchor admin semantics to the seeded system role — not a custom role that
+  // picked a similar display name (creation/rename to reserved names is blocked
+  // elsewhere, but this keeps checks correct even if data was tampered with).
+  return (
+    Boolean(actor?.role_is_system) &&
+    actorRoleName(actor) === SYSTEM_ADMIN_ROLE_NAME
+  );
 }
 
 function actorPermissionSet(actor) {
@@ -75,12 +83,21 @@ function assertCanManageTarget({ actor, targetRoleName, targetUserId }) {
  * Cannot assign Admin unless the actor is Admin. Cannot assign a role
  * at or above the actor unless Admin.
  */
-function assertCanAssignRole({ actor, newRoleName }) {
+function assertCanAssignRole({ actor, newRoleName, newRoleIsSystem = false }) {
   if (!newRoleName) {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Role is required.', { status: 400 });
   }
-  if (isAdminActor(actor)) return;
-  if (newRoleName === 'Admin') {
+  const isAdminRoleName =
+    String(newRoleName).trim().toLowerCase() === SYSTEM_ADMIN_ROLE_NAME.toLowerCase();
+  if (isAdminActor(actor)) {
+    if (isAdminRoleName && !newRoleIsSystem) {
+      throw deny('Only the system Admin role can be assigned.', {
+        reason: 'invalid_admin_role',
+      });
+    }
+    return;
+  }
+  if (isAdminRoleName) {
     throw deny('Only an Admin can assign the Admin role.', {
       reason: 'cannot_assign_admin',
     });
@@ -98,7 +115,13 @@ function assertCanAssignRole({ actor, newRoleName }) {
  * Changing roleId on PUT /users/:id. Requires user.change_role in addition
  * to user.edit on the route.
  */
-function assertCanChangeRole({ actor, targetUserId, currentRoleName, newRoleName }) {
+function assertCanChangeRole({
+  actor,
+  targetUserId,
+  currentRoleName,
+  newRoleName,
+  newRoleIsSystem = false,
+}) {
   const owned = actorPermissionSet(actor);
   if (!owned.has('user.change_role')) {
     throw deny('Changing a user role requires user.change_role.', {
@@ -107,7 +130,7 @@ function assertCanChangeRole({ actor, targetUserId, currentRoleName, newRoleName
     });
   }
   assertCanManageTarget({ actor, targetRoleName: currentRoleName, targetUserId });
-  assertCanAssignRole({ actor, newRoleName });
+  assertCanAssignRole({ actor, newRoleName, newRoleIsSystem });
 }
 
 function assertCanSetEffectivePermissions({
@@ -154,6 +177,7 @@ function assertCanSetEffectivePermissions({
 }
 
 module.exports = {
+  SYSTEM_ADMIN_ROLE_NAME,
   ROLE_RANK,
   ADMIN_EXCLUSIVE_PERMISSIONS,
   roleRank,

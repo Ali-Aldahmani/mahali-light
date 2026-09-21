@@ -3,6 +3,7 @@ const { ok } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const notificationService = require('../services/notificationService');
 const approvalsService = require('../services/approvalsService');
+const { isAdminActor } = require('../../shared/authzPolicy');
 const { logActivity } = require('../utils/activityLog');
 
 function zodFail(err) {
@@ -78,7 +79,7 @@ async function markAllRead(req, res, next) {
 
 async function dismissOne(req, res, next) {
   try {
-    const isAdmin = req.user.role === 'Admin';
+    const isAdmin = isAdminActor(req.user);
     await notificationService.dismiss({
       notificationId: req.params.id,
       userId: req.user.id,

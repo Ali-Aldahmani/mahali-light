@@ -6,6 +6,7 @@ const { ERROR_CODES, AppError } = require('../../shared/errorCodes.js');
 const {
   ROLE_RANK,
   ADMIN_EXCLUSIVE_PERMISSIONS,
+  isAdminActor,
   assertCanAssignRole,
   assertCanChangeRole,
   assertCanSetEffectivePermissions,
@@ -17,6 +18,7 @@ function admin() {
   return {
     id: 'admin-1',
     role: 'Admin',
+    role_is_system: true,
     permissions: ['user.change_role', 'user.edit', 'user.create', ...ADMIN_EXCLUSIVE_PERMISSIONS, 'invoice.view'],
   };
 }
@@ -64,8 +66,14 @@ describe('AUTHZ-004 role assignment', () => {
     expect(ROLE_RANK.Cashier).toBe(ROLE_RANK.Warehouse);
   });
 
-  it('Admin may assign Admin', () => {
-    expect(() => assertCanAssignRole({ actor: admin(), newRoleName: 'Admin' })).not.toThrow();
+  it('Admin may assign the system Admin role', () => {
+    expect(() =>
+      assertCanAssignRole({
+        actor: admin(),
+        newRoleName: 'Admin',
+        newRoleIsSystem: true,
+      }),
+    ).not.toThrow();
   });
 
   it('Manager cannot assign Admin or Manager', () => {
@@ -129,6 +137,28 @@ describe('AUTHZ-004 role assignment', () => {
 // MED-03: usersController.forceLogout now calls assertCanManageTarget the
 // same way role/permission changes already did, so a Manager (who holds
 // user.force_logout by default) cannot forcibly disconnect the Admin.
+describe('isAdminActor', () => {
+  it('requires the seeded system Admin role, not the display name alone', () => {
+    expect(isAdminActor(admin())).toBe(true);
+    expect(isAdminActor({ role: 'Admin', role_is_system: false })).toBe(false);
+    expect(isAdminActor({ role: 'Manager', role_is_system: true })).toBe(false);
+  });
+});
+
+describe('assertCanAssignRole (system Admin role)', () => {
+  it('rejects assigning a non-system role named Admin', () => {
+    expectDenied(
+      () =>
+        assertCanAssignRole({
+          actor: admin(),
+          newRoleName: 'Admin',
+          newRoleIsSystem: false,
+        }),
+      'invalid_admin_role',
+    );
+  });
+});
+
 describe('assertCanManageTarget (force-logout rank check)', () => {
   it('Manager cannot manage/force-logout Admin', () => {
     expectDenied(

@@ -11,10 +11,10 @@ const {
   assertCanManageTarget,
 } = require('../../shared/authzPolicy');
 
-async function loadRoleName(roleId) {
+async function loadRoleMeta(roleId) {
   if (!roleId) return null;
-  const { rows } = await query('SELECT name FROM roles WHERE id = $1', [roleId]);
-  return rows[0]?.name || null;
+  const { rows } = await query('SELECT name, is_system FROM roles WHERE id = $1', [roleId]);
+  return rows[0] || null;
 }
 
 const createSchema = z.object({
@@ -129,11 +129,15 @@ async function create(req, res, next) {
       throw new AppError(ERROR_CODES.USERNAME_TAKEN, undefined, { status: 409 });
     }
 
-    const newRoleName = await loadRoleName(body.roleId);
-    if (!newRoleName) {
+    const newRole = await loadRoleMeta(body.roleId);
+    if (!newRole) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Role not found.', { status: 404 });
     }
-    assertCanAssignRole({ actor: req.user, newRoleName });
+    assertCanAssignRole({
+      actor: req.user,
+      newRoleName: newRole.name,
+      newRoleIsSystem: Boolean(newRole.is_system),
+    });
 
     const rounds = Number(process.env.BCRYPT_ROUNDS || 12);
     const hash = await bcrypt.hash(body.password, rounds);
@@ -220,15 +224,16 @@ async function update(req, res, next) {
     }
     if (body.username !== undefined) add('username', body.username);
     if (body.roleId !== undefined && body.roleId !== existing[0].role_id) {
-      const newRoleName = await loadRoleName(body.roleId);
-      if (!newRoleName) {
+      const newRole = await loadRoleMeta(body.roleId);
+      if (!newRole) {
         throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Role not found.', { status: 404 });
       }
       assertCanChangeRole({
         actor: req.user,
         targetUserId: id,
         currentRoleName: existing[0].role_name,
-        newRoleName,
+        newRoleName: newRole.name,
+        newRoleIsSystem: Boolean(newRole.is_system),
       });
       add('role_id', body.roleId);
     }
@@ -324,6 +329,9 @@ async function forceLogout(req, res, next) {
         WHERE u.id = $1`,
       [id],
     );
+    if (!targetRows.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
     assertCanManageTarget({
       actor: req.user,
       targetRoleName: targetRows[0]?.role_name || null,
