@@ -296,23 +296,22 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Row 3 — top products / category breakdown / alerts */}
-          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div>
+          {/* Row 3 — top products / category breakdown / alerts. Each column
+              stretches to the tallest sibling so uneven content (e.g. one
+              product vs. several categories) doesn't leave one card
+              visually shorter than the others. */}
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+            <div className="flex flex-col h-full">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-ink">Top products</h3>
                 <Link href="/analytics?tab=products" className="text-xs text-accent">
                   View all
                 </Link>
               </div>
-              <TopProductsTable rows={topProducts} />
+              <TopProductsTable rows={topProducts} className="flex-1" />
             </div>
-            <div>
-              <CategoryBreakdownBars rows={categories} />
-            </div>
-            <div>
-              <AlertsPanel />
-            </div>
+            <CategoryBreakdownBars rows={categories} className="h-full" />
+            <AlertsPanel className="h-full" />
           </div>
 
           {/* Row 4 — peak hours + finance snapshot */}

@@ -4,17 +4,17 @@ import { formatCurrency } from '@/lib/utils/format';
 // Horizontal progress bars per category. Designed for the dashboard's
 // centre column where we don't have room for a pie chart. The `target`
 // optional second value (if a target is set) renders as a darker tick.
-export default function CategoryBreakdownBars({ rows = [], emptyText = 'No category data yet.' }) {
+export default function CategoryBreakdownBars({ rows = [], emptyText = 'No category data yet.', className = '' }) {
   if (!rows.length) {
     return (
-      <div className="rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted">
+      <div className={cn('rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted flex items-center justify-center', className)}>
         {emptyText}
       </div>
     );
   }
   const max = Math.max(...rows.map((r) => Number(r.revenue) || 0), 1);
   return (
-    <div className="rounded-card border border-border bg-surface p-4">
+    <div className={cn('rounded-card border border-border bg-surface p-4', className)}>
       <div className="text-sm font-semibold text-ink mb-3">Category breakdown</div>
       <div className="space-y-3">
         {rows.map((r) => {

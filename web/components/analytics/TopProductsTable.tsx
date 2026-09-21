@@ -31,16 +31,17 @@ export default function TopProductsTable({
   emptyText = 'No sales in this period.',
   showCategory = false,
   linkTo = (row) => `/products/${row.product_id}`,
+  className = '',
 }) {
   if (!rows.length) {
     return (
-      <div className="rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted">
+      <div className={cn('rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted flex items-center justify-center', className)}>
         {emptyText}
       </div>
     );
   }
   return (
-    <div className="rounded-card border border-border bg-surface overflow-hidden">
+    <div className={cn('rounded-card border border-border bg-surface overflow-hidden', className)}>
       <table className="w-full text-sm">
         <thead className="bg-surface-2 text-ink-muted">
           <tr>

@@ -4,11 +4,12 @@ import { AlertTriangle, Receipt, Boxes, ArrowRight } from 'lucide-react';
 import { listReorderAlerts } from '@/services/reorderService';
 import { useBillStore } from '@/store/billStore';
 import { formatCurrency, formatQty } from '@/lib/utils/format';
+import { cn } from '@/lib/utils/cn';
 
 // Compact panel that fuses upcoming bills + reorder alerts into a single
 // "needs your attention" card. Each section is hidden if the user lacks
 // the related permission so this is safe to render unconditionally.
-export default function AlertsPanel() {
+export default function AlertsPanel({ className = '' }: { className?: string }) {
   const upcoming = useBillStore((s) => s.upcoming);
   const refreshBills = useBillStore((s) => s.refreshUpcoming);
   const [reorders, setReorders] = useState<any[]>([]);
@@ -32,14 +33,14 @@ export default function AlertsPanel() {
 
   if (!billItems.length && !reorderItems.length) {
     return (
-      <div className="rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted">
+      <div className={cn('rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted flex items-center justify-center', className)}>
         Nothing needs your attention right now.
       </div>
     );
   }
 
   return (
-    <div className="rounded-card border border-border bg-surface overflow-hidden">
+    <div className={cn('rounded-card border border-border bg-surface overflow-hidden', className)}>
       {reorderItems.length > 0 && (
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
