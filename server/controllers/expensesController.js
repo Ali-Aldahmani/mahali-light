@@ -48,6 +48,7 @@ const createSchema = z.object({
   expenseDate: z.string().optional(),
   paymentMethod: z.enum(['cash', 'bank']),
   bankAccountId: z.string().uuid().nullable().optional(),
+  fundingSource: z.enum(['showroom', 'owner']).optional().default('showroom'),
   notes: z.string().max(1000).nullable().optional(),
 });
 

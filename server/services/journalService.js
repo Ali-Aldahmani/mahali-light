@@ -595,6 +595,7 @@ async function postRefundEntry(client, {
   method,
   date,
   userId,
+  taxRate = 0,
 }) {
   const amt = money(amount);
   if (amt <= 0) return null;
@@ -602,15 +603,32 @@ async function postRefundEntry(client, {
   if (method === 'cash') creditCode = '1001';
   else if (method === 'bank') creditCode = '1002';
   else creditCode = '1003'; // credit refund = bumps receivable down via opposite
+
+  // A refund reverses the original sale — it must debit the same accounts
+  // postSaleEntry credited (Sales Revenue + VAT Payable), not book against
+  // an unrelated "Refunds Given" expense account. Debiting 5013 instead
+  // left revenue and the VAT liability completely untouched, so a FULL
+  // refund of a sale showed up as a pure loss (revenue - refund-as-expense)
+  // rather than netting to zero, and the VAT report kept showing tax due
+  // on a sale that no longer exists.
+  const rate = Number(taxRate) || 0;
+  const revenuePortion = rate > 0 ? money(amt / (1 + rate / 100)) : amt;
+  const vatPortion = money(amt - revenuePortion);
+
+  const lines = [
+    { accountId: await getAccountIdByCode('4001', client), debit: revenuePortion, credit: 0 },
+  ];
+  if (vatPortion > 0) {
+    lines.push({ accountId: await getAccountIdByCode('2002', client), debit: vatPortion, credit: 0 });
+  }
+  lines.push({ accountId: await getAccountIdByCode(creditCode, client), debit: 0, credit: amt });
+
   return postJournalEntryWith(client, {
     referenceType: 'return_order',
     referenceId: returnOrderId,
     date,
     description: `Refund for ${returnOrderNumber}`,
-    lines: [
-      { accountId: await getAccountIdByCode('5013', client), debit: amt, credit: 0 },
-      { accountId: await getAccountIdByCode(creditCode, client), debit: 0, credit: amt },
-    ],
+    lines,
     userId,
   });
 }

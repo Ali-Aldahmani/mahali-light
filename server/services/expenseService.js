@@ -38,6 +38,7 @@ function shapeExpense(row) {
     receiptAttachment: row.receipt_attachment,
     paidBy: row.paid_by,
     paidByUsername: row.paid_by_username || null,
+    fundingSource: row.funding_source || 'showroom',
     notes: row.notes,
     createdAt: row.created_at,
   };
@@ -53,6 +54,7 @@ async function createExpense({
   expenseDate,
   paymentMethod,
   bankAccountId = null,
+  fundingSource = 'showroom',
   notes = null,
   userId,
   io = null,
@@ -75,8 +77,8 @@ async function createExpense({
     const { rows } = await client.query(
       `INSERT INTO one_time_expenses
          (category_id, description, amount, expense_date,
-          payment_method, bank_account_id, paid_by, notes)
-       VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8)
+          payment_method, bank_account_id, paid_by, funding_source, notes)
+       VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9)
        RETURNING *`,
       [
         categoryId || null,
@@ -86,6 +88,7 @@ async function createExpense({
         paymentMethod,
         bankAccountId || null,
         userId || null,
+        fundingSource === 'owner' ? 'owner' : 'showroom',
         notes || null,
       ],
     );

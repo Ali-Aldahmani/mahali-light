@@ -366,13 +366,39 @@ async function getVATReport({ startDate, endDate }) {
   const from = dateOnly(startDate);
   const to = dateOnly(endDate);
 
-  // Output tax: sum of invoice tax_amount on confirmed invoices in period.
+  // Output tax: sum of invoice tax_amount on confirmed invoices in period,
+  // net of customer refunds/replacements in the same period — otherwise a
+  // fully refunded sale kept showing VAT due on a sale that no longer
+  // exists. total_value is tax-inclusive while taxable_amount/tax_amount
+  // are tax-exclusive/tax-only, so de-tax using each return's original
+  // invoice's own rate before netting (mirrors the same fix in
+  // analyticsService.js's getKPIs).
   const { rows: outRows } = await query(
-    `SELECT COALESCE(SUM(taxable_amount), 0)::float8 AS net_sales,
-            COALESCE(SUM(tax_amount),     0)::float8 AS output_tax
-       FROM invoices
-      WHERE status = 'confirmed'
-        AND confirmed_at::date BETWEEN $1::date AND $2::date`,
+    `WITH sales AS (
+       SELECT COALESCE(SUM(taxable_amount), 0)::float8 AS net_sales,
+              COALESCE(SUM(tax_amount),     0)::float8 AS output_tax
+         FROM invoices
+        WHERE status = 'confirmed'
+          AND confirmed_at::date BETWEEN $1::date AND $2::date
+     ),
+     returns AS (
+       SELECT COALESCE(SUM(
+                CASE WHEN i.tax_rate > 0 THEN ro.total_value / (1 + i.tax_rate / 100)
+                     ELSE ro.total_value END
+              ), 0)::float8 AS net_returns,
+              COALESCE(SUM(
+                CASE WHEN i.tax_rate > 0
+                     THEN ro.total_value - (ro.total_value / (1 + i.tax_rate / 100))
+                     ELSE 0 END
+              ), 0)::float8 AS tax_reversed
+         FROM return_orders ro
+         LEFT JOIN invoices i ON i.id = ro.original_invoice_id
+        WHERE ro.return_type IN ('customer_refund', 'customer_replace')
+          AND ro.created_at::date BETWEEN $1::date AND $2::date
+     )
+     SELECT sales.net_sales - returns.net_returns AS net_sales,
+            sales.output_tax - returns.tax_reversed AS output_tax
+       FROM sales, returns`,
     [from, to],
   );
   const netSales = money(outRows[0].net_sales || 0);

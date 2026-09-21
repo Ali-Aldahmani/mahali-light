@@ -6,6 +6,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import RequirePermission from '@/components/guards/RequirePermission';
+import ReportExportBar from '@/components/reports/ReportExportBar';
 import {
   listErrorLogs,
   resolveErrorLog,
@@ -79,13 +80,24 @@ function ErrorLogsAdminPageInner() {
         title="Error logs"
         subtitle="Append-only server error trail with auto-escalation."
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" onClick={load}>
               <RefreshCw size={14} /> Refresh
             </Button>
             <Button variant="secondary" onClick={cleanup}>
               Cleanup 90d
             </Button>
+            <ReportExportBar
+              type="error_logs"
+              params={{
+                start_date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+                  .toISOString()
+                  .slice(0, 10),
+                end_date: new Date().toISOString().slice(0, 10),
+                severity: severity || undefined,
+                resolved: resolved || undefined,
+              }}
+            />
           </div>
         }
       />

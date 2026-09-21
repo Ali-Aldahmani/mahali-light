@@ -898,8 +898,9 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
             );
           }
 
-          // Post the journal entry for this refund line (DR refunds given,
-          // CR cash / bank / receivable depending on method).
+          // Post the journal entry for this refund line — reverses Sales
+          // Revenue + VAT Payable (proportional to the original invoice's
+          // tax rate), CR cash / bank / receivable depending on method.
           await journalService.postRefundEntry(client, {
             returnOrderId: orderId,
             returnOrderNumber: orderNumber,
@@ -907,6 +908,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
             method: p.method,
             date: new Date().toISOString().slice(0, 10),
             userId: managerId,
+            taxRate: invoice ? Number(invoice.tax_rate) || 0 : 0,
           });
 
           // Cash / bank refunds now book through the treasury services.

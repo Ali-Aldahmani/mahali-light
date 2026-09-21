@@ -1,6 +1,7 @@
 const { query } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const financialReportService = require('./financialReportService');
+const errorLogService = require('./errorLogService');
 
 // =======================================================================
 // Helpers
@@ -2011,6 +2012,320 @@ async function netProfit(params) {
 }
 
 // =======================================================================
+// Custom shop reports — mirror this store's own Excel bookkeeping so the
+// exports look like what staff already know, sourced from live data.
+// =======================================================================
+
+// Matches "Product Inventory.xlsx": one row per variant with the specific
+// attribute columns (Wattage/Color/Color Temperature) this shop tracks,
+// rather than a generic attributes blob.
+async function customProductInventory() {
+  const { rows } = await query(
+    `SELECT p.name AS product_name, pc.name AS category_name, p.brand,
+            v.sku, v.cost_price, v.selling_price, v.stock_qty,
+            MAX(CASE WHEN a.name = 'Wattage'
+                     THEN av.value || COALESCE(a.unit, '') END) AS wattage,
+            MAX(CASE WHEN a.name = 'Color' THEN av.value END) AS body_color,
+            MAX(CASE WHEN a.name = 'Color Temperature'
+                     THEN av.value || COALESCE(a.unit, '') END) AS color_kelvin
+       FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+       LEFT JOIN product_categories pc ON pc.id = p.category_id
+       LEFT JOIN product_variant_attributes pva ON pva.variant_id = v.id
+       LEFT JOIN product_attribute_values av ON av.id = pva.attribute_value_id
+       LEFT JOIN product_attributes a ON a.id = av.attribute_id
+      WHERE v.is_active = true AND p.is_active = true
+      GROUP BY p.id, p.name, pc.name, p.brand, v.id, v.sku,
+               v.cost_price, v.selling_price, v.stock_qty
+      ORDER BY pc.name NULLS LAST, p.name, v.sku`,
+  );
+  return {
+    type: 'custom_product_inventory',
+    title: 'Product Inventory',
+    period: { label: `As of ${todayIso()}` },
+    columns: [
+      { key: 'category_name', label: 'Category' },
+      { key: 'item_name', label: 'Item Name' },
+      { key: 'brand', label: 'Brand Name' },
+      { key: 'wattage', label: 'Watts' },
+      { key: 'body_color', label: 'Body Color' },
+      { key: 'color_kelvin', label: 'Color Kelvin' },
+      { key: 'cost_price', label: 'Cost Price', type: 'currency', align: 'right' },
+      { key: 'selling_price', label: 'Selling Price', type: 'currency', align: 'right' },
+      { key: 'quantity', label: 'Quantity', type: 'number', align: 'right' },
+    ],
+    rows: rows.map((r) => ({
+      category_name: r.category_name || '—',
+      item_name: r.product_name,
+      brand: r.brand || '—',
+      wattage: r.wattage || '—',
+      body_color: r.body_color || '—',
+      color_kelvin: r.color_kelvin || '—',
+      cost_price: money(r.cost_price),
+      selling_price: money(r.selling_price),
+      quantity: Number(r.stock_qty) || 0,
+    })),
+  };
+}
+
+// Matches "Costing.xlsx": per invoice line, sale value + VAT alongside its
+// cost basis and margin. VAT lines mirror the invoice's own tax_rate
+// applied to both the sale value (output tax) and the cost basis (an
+// approximation of recoverable input tax — this shop's sheet does the same
+// on a per-line basis rather than tracking actual supplier VAT invoices).
+async function customCostingSales(params) {
+  const { startDate, endDate } = parseDateRange(params);
+  const { rows } = await query(
+    `SELECT i.confirmed_at, i.invoice_number, i.tax_rate,
+            ii.product_name, ii.sku, ii.quantity, ii.unit_price, ii.cost_price_at_time
+       FROM invoice_items ii
+       JOIN invoices i ON i.id = ii.invoice_id
+      WHERE i.status = 'confirmed'
+        AND i.confirmed_at::date BETWEEN $1::date AND $2::date
+      ORDER BY i.confirmed_at, i.invoice_number`,
+    [startDate, endDate],
+  );
+  const shaped = rows.map((r) => {
+    const qty = Number(r.quantity);
+    const unitPrice = Number(r.unit_price);
+    const costPrice = Number(r.cost_price_at_time);
+    const taxRate = Number(r.tax_rate) || 0;
+    const totalSale = money(qty * unitPrice);
+    const vatOutput = money(totalSale * (taxRate / 100));
+    const totalCost = money(qty * costPrice);
+    const vatInput = money(totalCost * (taxRate / 100));
+    const balance = money(totalSale - totalCost);
+    return {
+      date: r.confirmed_at,
+      invoice_number: r.invoice_number,
+      description: r.product_name,
+      model_no: r.sku,
+      quantity: qty,
+      unit_price: unitPrice,
+      total_sale: totalSale,
+      vat_output: vatOutput,
+      total: money(totalSale + vatOutput),
+      cost_price: costPrice,
+      total_cost: totalCost,
+      vat_input: vatInput,
+      balance,
+      profit_pct: totalSale > 0 ? Math.round((balance / totalSale) * 1000) / 10 : 0,
+    };
+  });
+  return {
+    type: 'custom_costing_sales',
+    title: 'Costing',
+    period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) },
+    columns: [
+      { key: 'date', label: 'Date', type: 'date' },
+      { key: 'invoice_number', label: 'Invoice No' },
+      { key: 'description', label: 'Description' },
+      { key: 'model_no', label: 'Model No' },
+      { key: 'quantity', label: 'Quantity', type: 'number', align: 'right' },
+      { key: 'unit_price', label: 'Unit Price', type: 'currency', align: 'right' },
+      { key: 'total_sale', label: 'Total Sale', type: 'currency', align: 'right' },
+      { key: 'vat_output', label: 'VAT', type: 'currency', align: 'right' },
+      { key: 'total', label: 'Total', type: 'currency', align: 'right' },
+      { key: 'cost_price', label: 'Cost Price', type: 'currency', align: 'right' },
+      { key: 'total_cost', label: 'Total Cost', type: 'currency', align: 'right' },
+      { key: 'vat_input', label: 'VAT', type: 'currency', align: 'right' },
+      { key: 'balance', label: 'Balance', type: 'currency', align: 'right' },
+      { key: 'profit_pct', label: 'Profit %', type: 'percent', align: 'right' },
+    ],
+    rows: shaped,
+    totals: {
+      total_sale: money(shaped.reduce((s, r) => s + r.total_sale, 0)),
+      vat_output: money(shaped.reduce((s, r) => s + r.vat_output, 0)),
+      total: money(shaped.reduce((s, r) => s + r.total, 0)),
+      total_cost: money(shaped.reduce((s, r) => s + r.total_cost, 0)),
+      vat_input: money(shaped.reduce((s, r) => s + r.vat_input, 0)),
+      balance: money(shaped.reduce((s, r) => s + r.balance, 0)),
+    },
+  };
+}
+
+// Matches "Summary.xlsx" — the shop's monthly financial overview. Expense
+// rows come from real one_time_expenses/bill_payments/supplier_payments/
+// refund_payments in the period; Investor Profit, Showroom Capital Return,
+// Salary and Commission are logged like any other expense (see migration
+// 028) under funding_source 'showroom' or 'owner', matching the sheet's
+// "(A) Paid From Showroom" / "(B) Paid by Owner" split.
+//
+// Known simplification: "Previous Months Remaining" in the original sheet
+// is a hand-carried running balance across months. This report surfaces
+// the *current* total customer receivables snapshot instead (there's no
+// stored month-end AR snapshot to carry forward from) — labelled plainly
+// as such rather than approximated to look like the historical figure.
+async function customMonthlySummary(params) {
+  const { startDate, endDate } = parseDateRange(params);
+
+  const [salesRows, receivedRows, supplierRows, refundRows, expenseRows, receivablesRows] =
+    await Promise.all([
+      query(
+        `SELECT COALESCE(SUM(taxable_amount + tax_amount), 0)::float8 AS total_sale
+           FROM invoices
+          WHERE status = 'confirmed' AND confirmed_at::date BETWEEN $1::date AND $2::date`,
+        [startDate, endDate],
+      ),
+      query(
+        `SELECT COALESCE(SUM(amount), 0)::float8 AS total_received
+           FROM customer_payments
+          WHERE paid_at::date BETWEEN $1::date AND $2::date`,
+        [startDate, endDate],
+      ),
+      query(
+        `SELECT COALESCE(SUM(amount), 0)::float8 AS total
+           FROM supplier_payments
+          WHERE paid_at::date BETWEEN $1::date AND $2::date`,
+        [startDate, endDate],
+      ),
+      query(
+        `SELECT COALESCE(SUM(amount), 0)::float8 AS total
+           FROM refund_payments
+          WHERE paid_at::date BETWEEN $1::date AND $2::date`,
+        [startDate, endDate],
+      ),
+      query(
+        `SELECT c.name AS category_name, e.funding_source,
+                COALESCE(SUM(e.amount), 0)::float8 AS total
+           FROM one_time_expenses e
+           LEFT JOIN expense_categories c ON c.id = e.category_id
+          WHERE e.expense_date BETWEEN $1::date AND $2::date
+          GROUP BY c.name, e.funding_source`,
+        [startDate, endDate],
+      ),
+      query(`SELECT COALESCE(SUM(credit_balance), 0)::float8 AS total FROM customers WHERE credit_balance > 0`),
+    ]);
+
+  const totalSale = money(salesRows.rows[0].total_sale);
+  const totalReceived = money(receivedRows.rows[0].total_received);
+  const supplierPurchases = money(supplierRows.rows[0].total);
+  const returns = money(refundRows.rows[0].total);
+
+  const byCategory = {};
+  let paidFromShowroom = 0;
+  let paidByOwner = 0;
+  for (const r of expenseRows.rows) {
+    const name = r.category_name || 'Uncategorized';
+    byCategory[name] = money((byCategory[name] || 0) + Number(r.total));
+    if (r.funding_source === 'owner') paidByOwner = money(paidByOwner + Number(r.total));
+    else paidFromShowroom = money(paidFromShowroom + Number(r.total));
+  }
+  // Supplier purchases and customer refunds are always paid from the
+  // showroom's own funds — they don't carry a funding_source of their own.
+  paidFromShowroom = money(paidFromShowroom + supplierPurchases + returns);
+
+  const expenseLine = (label, category) => ({ label, amount: byCategory[category] || 0 });
+  const expenseLines = [
+    { label: 'All Suppliers Purchase', amount: supplierPurchases },
+    { label: 'Return', amount: returns },
+    expenseLine('Salary', 'Salary'),
+    expenseLine('Investor Profit', 'Investor Profit'),
+    expenseLine('Showroom Capital Return', 'Showroom Capital Return'),
+    expenseLine('Commission', 'Commission'),
+    {
+      label: 'Utility Bills',
+      amount: money(
+        (byCategory['Electricity'] || 0) + (byCategory['Water'] || 0) + (byCategory['Internet'] || 0),
+      ),
+    },
+    expenseLine('Miscellaneous', 'Miscellaneous'),
+  ];
+  const totalExpenses = money(paidFromShowroom + paidByOwner);
+
+  const rows = [
+    ...expenseLines.map((l) => ({ line: l.label, amount: l.amount, section: 'Expenses' })),
+    { line: '(A) Paid From Showroom', amount: paidFromShowroom, section: 'Expenses' },
+    { line: '(B) Paid By Owner', amount: paidByOwner, section: 'Expenses' },
+    { line: '(A+B) Total Expenses', amount: totalExpenses, section: 'Expenses' },
+    { line: 'Total Sale', amount: totalSale, section: 'Sales' },
+    { line: 'Total Received', amount: totalReceived, section: 'Sales' },
+    { line: 'Remaining (this period)', amount: money(totalSale - totalReceived), section: 'Sales' },
+    {
+      line: 'Current Total Receivables (all customers, as of today)',
+      amount: money(receivablesRows.rows[0].total),
+      section: 'Sales',
+    },
+  ];
+
+  return {
+    type: 'custom_monthly_summary',
+    title: 'Monthly Financial Summary',
+    period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) },
+    columns: [
+      { key: 'section', label: 'Section' },
+      { key: 'line', label: 'Line' },
+      { key: 'amount', label: 'Amount', type: 'currency', align: 'right' },
+    ],
+    rows,
+  };
+}
+
+// Full-detail error log export — meant to be sent off-system (e.g. to a
+// developer) for debugging, so every raw column is included rather than
+// the summarized view the Error Logs page shows on screen.
+async function errorLogsExport(params) {
+  const { startDate, endDate } = parseDateRange(params);
+  const conds = [`e.created_at::date BETWEEN $1::date AND $2::date`];
+  const vals = [startDate, endDate];
+  if (params.severity) {
+    vals.push(params.severity);
+    conds.push(`e.severity = $${vals.length}`);
+  }
+  if (params.resolved === 'true' || params.resolved === 'false') {
+    conds.push(`e.resolved = ${params.resolved}`);
+  }
+  const { rows } = await query(
+    `SELECT e.*, u.username AS user_username, r.username AS resolved_by_username
+       FROM error_logs e
+       LEFT JOIN users u ON u.id = e.user_id
+       LEFT JOIN users r ON r.id = e.resolved_by
+      WHERE ${conds.join(' AND ')}
+      ORDER BY e.created_at DESC`,
+    vals,
+  );
+  return {
+    type: 'error_logs',
+    title: 'Error Log',
+    period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) },
+    columns: [
+      { key: 'created_at', label: 'Time', type: 'datetime' },
+      { key: 'severity', label: 'Severity' },
+      { key: 'code', label: 'Code' },
+      { key: 'message', label: 'Message' },
+      { key: 'source', label: 'Source' },
+      { key: 'method', label: 'Method' },
+      { key: 'endpoint', label: 'Endpoint' },
+      { key: 'user_username', label: 'User' },
+      { key: 'pc_identifier', label: 'PC' },
+      { key: 'resolved', label: 'Resolved' },
+      { key: 'resolved_by_username', label: 'Resolved By' },
+      { key: 'resolved_at', label: 'Resolved At', type: 'datetime' },
+      { key: 'resolution_note', label: 'Resolution Note' },
+      { key: 'details', label: 'Details (JSON)' },
+      { key: 'stack_trace', label: 'Stack Trace' },
+    ],
+    rows: rows.map((r) => ({
+      created_at: r.created_at,
+      severity: r.severity,
+      code: r.code,
+      message: r.message,
+      source: r.source,
+      method: r.method || '',
+      endpoint: r.endpoint || '',
+      user_username: r.user_username || '',
+      pc_identifier: r.pc_identifier || '',
+      resolved: r.resolved ? 'Yes' : 'No',
+      resolved_by_username: r.resolved_by_username || '',
+      resolved_at: r.resolved_at,
+      resolution_note: r.resolution_note || '',
+      details: r.details ? JSON.stringify(r.details) : '',
+      stack_trace: r.stack_trace || '',
+    })),
+  };
+}
+
+// =======================================================================
 // Dispatcher
 // =======================================================================
 const REGISTRY = {
@@ -2028,6 +2343,20 @@ const REGISTRY = {
         type: 'profit_loss',
         title: 'Profit & Loss',
         period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) },
+        // The report page's generic table renderer only shows something
+        // when columns/rows or `summary` (flat key/value stat cards) are
+        // present — this type has neither historically (only `raw`, which
+        // nothing reads), so it silently rendered "No data" regardless of
+        // the date range picked.
+        summary: {
+          revenue: pl.revenue.total,
+          cogs: pl.cogs.total,
+          grossProfit: pl.grossProfit,
+          grossMarginPct: pl.grossMargin,
+          expenses: pl.expenses.total,
+          netProfit: pl.netProfit,
+          netMarginPct: pl.netMargin,
+        },
         raw: pl,
       };
     },
@@ -2037,7 +2366,23 @@ const REGISTRY = {
     fn: async (p) => {
       const asOf = dateOnly(p.as_of_date) || todayIso();
       const bs = await financialReportService.getBalanceSheet({ asOfDate: asOf });
-      return { type: 'balance_sheet', title: 'Balance Sheet', period: { label: `As of ${asOf}` }, raw: bs };
+      return {
+        type: 'balance_sheet',
+        title: 'Balance Sheet',
+        period: { label: `As of ${asOf}` },
+        summary: {
+          cash: bs.assets.cash,
+          banks: bs.assets.banksTotal,
+          receivables: bs.assets.receivables,
+          inventory: bs.assets.inventory,
+          totalAssets: bs.assets.total,
+          payables: bs.liabilities.payables,
+          vatPayable: bs.liabilities.vatPayable,
+          totalLiabilities: bs.liabilities.total,
+          netEquity: bs.equity.netEquity,
+        },
+        raw: bs,
+      };
     },
     permission: 'report.financial',
   },
@@ -2045,7 +2390,25 @@ const REGISTRY = {
     fn: async (p) => {
       const { startDate, endDate } = parseDateRange(p);
       const cf = await financialReportService.getCashFlowStatement({ startDate, endDate });
-      return { type: 'cash_flow', title: 'Cash Flow', period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) }, raw: cf };
+      return {
+        type: 'cash_flow',
+        title: 'Cash Flow',
+        period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) },
+        summary: {
+          cashFromSales: cf.operating.cashFromSales,
+          cashFromCollections: cf.operating.cashFromCollections,
+          paidToSuppliers: cf.operating.paidToSuppliers,
+          billsPaid: cf.operating.billsPaid,
+          expensesPaid: cf.operating.expensesPaid,
+          refundsPaid: cf.operating.refundsPaid,
+          netOperating: cf.operating.net,
+          netFinancing: cf.financing.net,
+          netCashChange: cf.netCashChange,
+          openingCash: cf.openingCash,
+          closingCash: cf.closingCash,
+        },
+        raw: cf,
+      };
     },
     permission: 'report.financial',
   },
@@ -2053,7 +2416,19 @@ const REGISTRY = {
     fn: async (p) => {
       const { startDate, endDate } = parseDateRange(p);
       const v = await financialReportService.getVATReport({ startDate, endDate });
-      return { type: 'vat', title: 'VAT Report', period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) }, raw: v };
+      return {
+        type: 'vat',
+        title: 'VAT Report',
+        period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) },
+        summary: {
+          netSales: v.netSales,
+          outputTax: v.outputTax,
+          netPurchases: v.netPurchases,
+          inputTax: v.inputTax,
+          netPayable: v.netPayable,
+        },
+        raw: v,
+      };
     },
     permission: 'report.financial',
   },
@@ -2115,6 +2490,14 @@ const REGISTRY = {
   bills_summary: { fn: billsSummary, permission: 'report.bills' },
   bills_expenses: { fn: billsExpenses, permission: 'report.bills' },
   bills_overdue: { fn: billsOverdue, permission: 'report.bills' },
+
+  // Custom shop reports (quick-access buttons on the Reports hub)
+  custom_product_inventory: { fn: customProductInventory, permission: 'report.inventory' },
+  custom_costing_sales: { fn: customCostingSales, permission: 'report.sales' },
+  custom_monthly_summary: { fn: customMonthlySummary, permission: 'report.financial' },
+
+  // Error log export (Error Logs page)
+  error_logs: { fn: errorLogsExport, permission: 'errors.view_all' },
 };
 
 function isValidType(type) {

@@ -7,6 +7,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import EmptyState from '@/components/ui/EmptyState';
 import ReportCategoryCard from '@/components/reports/ReportCategoryCard';
+import QuickReportButton from '@/components/reports/QuickReportButton';
 import { REPORT_CATEGORIES } from '@/services/reportService';
 import { useAuthStore } from '@/store/authStore';
 
@@ -49,13 +50,18 @@ export default function ReportsHubPage() {
         title="Reports"
         subtitle="Drill into financial, operational, and HR data. Export as PDF, CSV, or Excel."
         action={
-          hasPermission('report.schedule') && (
-            <Link href="/reports/scheduled">
-              <Button variant="secondary" leftIcon={<Calendar size={16} />}>
-                Scheduled Reports
-              </Button>
-            </Link>
-          )
+          <div className="flex flex-wrap items-center gap-2">
+            <QuickReportButton type="custom_product_inventory" label="Product Inventory" />
+            <QuickReportButton type="custom_costing_sales" label="Costing" />
+            <QuickReportButton type="custom_monthly_summary" label="Monthly Summary" />
+            {hasPermission('report.schedule') && (
+              <Link href="/reports/scheduled">
+                <Button variant="secondary" leftIcon={<Calendar size={16} />}>
+                  Scheduled Reports
+                </Button>
+              </Link>
+            )}
+          </div>
         }
       />
 

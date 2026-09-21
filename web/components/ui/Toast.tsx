@@ -40,44 +40,61 @@ export default function ToastViewport() {
             key={t.id}
             role="alert"
             className={cn(
-              'pointer-events-auto card flex overflow-hidden',
+              'pointer-events-auto card relative flex flex-col overflow-hidden',
               'animate-[toastin_180ms_ease-out]',
             )}
           >
-            <span className={cn('w-1 shrink-0', tone.bar)} />
-            <div className="flex flex-1 items-start gap-3 px-3 py-3">
-              <div className="mt-0.5">{tone.icon}</div>
-              <div className="flex-1 min-w-0">
-                {t.title && (
-                  <p className="text-sm font-semibold text-ink leading-tight">{t.title}</p>
-                )}
-                <p className="text-sm text-ink-muted break-words whitespace-pre-line">{t.message}</p>
-                {t.actionLabel && t.onAction && (
-                  <button
-                    type="button"
-                    className="mt-2 text-xs font-semibold text-accent hover:underline"
-                    onClick={() => {
-                      t.onAction?.();
-                      dismiss(t.id);
-                    }}
-                  >
-                    {t.actionLabel}
-                  </button>
-                )}
+            <div className="flex">
+              <span className={cn('w-1 shrink-0', tone.bar)} />
+              <div className="flex flex-1 items-start gap-3 px-3 py-3">
+                <div className="mt-0.5">{tone.icon}</div>
+                <div className="flex-1 min-w-0">
+                  {t.title && (
+                    <p className="text-sm font-semibold text-ink leading-tight">{t.title}</p>
+                  )}
+                  <p className="text-sm text-ink-muted break-words whitespace-pre-line">{t.message}</p>
+                  {t.actionLabel && t.onAction && (
+                    <button
+                      type="button"
+                      className="mt-2 text-xs font-semibold text-accent hover:underline"
+                      onClick={() => {
+                        t.onAction?.();
+                        dismiss(t.id);
+                      }}
+                    >
+                      {t.actionLabel}
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => dismiss(t.id)}
+                  className="rounded-md p-1 text-ink-muted hover:bg-surface-2"
+                  aria-label="Dismiss"
+                >
+                  <X size={14} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => dismiss(t.id)}
-                className="rounded-md p-1 text-ink-muted hover:bg-surface-2"
-                aria-label="Dismiss"
-              >
-                <X size={14} />
-              </button>
             </div>
+            {/* Countdown line: starts full width, shrinks to 0 exactly as
+                the toast's own auto-dismiss timer (toastStore) elapses —
+                a duration of 0 means "stays until dismissed", so no line. */}
+            {t.duration > 0 && (
+              <span
+                className={cn('absolute bottom-0 left-0 h-0.5 origin-left', tone.bar)}
+                style={{
+                  width: '100%',
+                  animation: `toast-countdown ${t.duration}ms linear forwards`,
+                }}
+              />
+            )}
           </div>
         );
       })}
-      <style>{`@keyframes toastin { from { transform: translateY(-8px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }`}</style>
+      <style>{`
+        @keyframes toastin { from { transform: translateY(-8px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+        @keyframes toast-countdown { from { transform: scaleX(1) } to { transform: scaleX(0) } }
+      `}</style>
     </div>
   );
 }

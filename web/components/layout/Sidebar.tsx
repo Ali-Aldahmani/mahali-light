@@ -216,7 +216,24 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-        {visibleItems(NAV, hasPermission, role).map((item, idx) => {
+        {(() => {
+          const shown = visibleItems(NAV, hasPermission, role);
+          // Two nav entries can share a path prefix (e.g. /invoices and
+          // /invoices/edit-requests are separate top-level items, not a
+          // parent/child pair) — a plain prefix match on each item
+          // independently lit up both at once. Only the single longest
+          // matching `to` should ever be active.
+          let bestMatchTo: string | null = null;
+          for (const item of shown) {
+            if (!item.to) continue;
+            const matches = item.to === '/dashboard'
+              ? pathname === '/dashboard'
+              : pathname === item.to || pathname.startsWith(item.to + '/');
+            if (matches && (!bestMatchTo || item.to.length > bestMatchTo.length)) {
+              bestMatchTo = item.to;
+            }
+          }
+          return shown.map((item, idx) => {
           if (item.section) {
             if (collapsed) return null;
             return (
@@ -230,9 +247,7 @@ export default function Sidebar() {
           }
           const Icon = item.icon!;
           const badge = item.badge ? badgeFor(item.badge) : null;
-          const isActive = item.to === '/dashboard'
-            ? pathname === '/dashboard'
-            : pathname === item.to || pathname.startsWith(item.to + '/');
+          const isActive = item.to === bestMatchTo;
           return (
             <Link
               key={item.to}
@@ -251,7 +266,8 @@ export default function Sidebar() {
               )}
             </Link>
           );
-        })}
+          });
+        })()}
       </nav>
 
       <div className="border-t border-border px-2 py-3 space-y-1">
