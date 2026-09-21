@@ -123,6 +123,11 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
 
     socket.on('connect_error', (err) => {
       if (err.message === 'AUTH_SESSION_EXPIRED' || err.message === 'AUTH_TOKEN_INVALID') {
+        // This socket was opened with `token` (captured above). If the
+        // session has since been replaced by a newer login, that new
+        // session is a different one — a stale rejection of this old
+        // socket's handshake must not clear it.
+        if (useAuthStore.getState().token !== token) return;
         toast.error('Session expired. Please sign in again.');
         useAuthStore.getState().logoutLocal();
       }

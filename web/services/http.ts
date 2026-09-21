@@ -99,8 +99,17 @@ http.interceptors.response.use(
         code === 'AUTH_TOKEN_MISSING' ||
         code === 'AUTH_FORCE_LOGGED_OUT')
     ) {
+      // A request carries whatever token was current when it was *sent*. If
+      // the session has since been replaced (e.g. the user logged back in
+      // while this request was still in flight), that new session is a
+      // different one and this stale rejection must not clear it — only log
+      // out if the failing request was actually made with the token that is
+      // still the active one.
+      const requestAuth = config.headers?.Authorization;
+      const requestToken =
+        typeof requestAuth === 'string' ? requestAuth.replace(/^Bearer\s+/i, '') : undefined;
       const { token } = useAuthStore.getState();
-      if (token) {
+      if (token && requestToken === token) {
         try {
           sessionStorage.setItem(
             'mahali.returnRoute',
