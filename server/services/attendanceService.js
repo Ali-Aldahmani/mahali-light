@@ -384,6 +384,8 @@ async function upsertManualAttendance({
 async function submitCorrection({
   attendanceId,
   requestedBy,
+  requesterEmployeeId = null,
+  canSubmitForOthers = false,
   reason,
   requestNote,
   newCheckIn = null,
@@ -408,6 +410,16 @@ async function submitCorrection({
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
     const att = attRows[0];
+    if (
+      !canSubmitForOthers &&
+      (!requesterEmployeeId || att.employee_id !== requesterEmployeeId)
+    ) {
+      throw new AppError(
+        ERROR_CODES.AUTH_NO_PERMISSION,
+        'You can only request corrections for your own attendance.',
+        { status: 403 },
+      );
+    }
 
     const recordDate = new Date(dateOnly(att.date));
     const today = new Date(todayDateString());

@@ -11,6 +11,16 @@ function zodFail(err) {
   );
 }
 
+function canSubmitCorrectionFor(user, attendanceEmployeeId) {
+  const perms = user?.permissions || [];
+  if (perms.includes('*') || perms.includes('attendance.view_all')) return true;
+  return Boolean(
+    user?.employee_id &&
+      attendanceEmployeeId &&
+      user.employee_id === attendanceEmployeeId,
+  );
+}
+
 const listSchema = z.object({
   employeeId: z.string().uuid().optional(),
   status: z.enum(['present', 'late', 'absent', 'half_day', 'leave']).optional(),
@@ -200,9 +210,13 @@ async function submitCorrection(req, res, next) {
   try {
     const body = submitCorrectionSchema.parse(req.body || {});
     const io = req.app.get('io');
+    const perms = req.user?.permissions || [];
     const record = await attendanceService.submitCorrection({
       ...body,
       requestedBy: req.user.id,
+      requesterEmployeeId: req.user.employee_id || null,
+      canSubmitForOthers:
+        perms.includes('*') || perms.includes('attendance.view_all'),
       io,
     });
     return created(res, record);
@@ -297,4 +311,5 @@ module.exports = {
   rejectCorrection,
   reportMonthly,
   reportSummary,
+  canSubmitCorrectionFor,
 };
