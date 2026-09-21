@@ -10,6 +10,7 @@ export default defineConfig({
     // picks up web/'s *.test.ts(x) files too and tries to execute them
     // under the wrong environment/module resolution (no @/* alias here).
     exclude: ['**/node_modules/**', 'web/**', '**/.claude/**'],
+    globalSetup: ['./tests/globalSetup.js'],
     setupFiles: ['./tests/setup.js'],
     // Increase timeout slightly for integration tests that involve bcrypt
     testTimeout: 15000,

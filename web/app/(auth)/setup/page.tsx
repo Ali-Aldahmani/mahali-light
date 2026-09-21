@@ -20,6 +20,7 @@ export default function SetupWizardPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [status, setStatus] = useState<any>(null);
+  const [setupToken, setSetupToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [connOk, setConnOk] = useState(false);
 
@@ -58,6 +59,7 @@ export default function SetupWizardPage() {
     getSetupStatus()
       .then((s: any) => {
         setStatus(s);
+        if (s?.setup_token) setSetupToken(s.setup_token);
         if (s?.setup_completed) router.replace('/login');
         if (s?.server_port) {
           setNetwork((n) => ({
@@ -129,7 +131,7 @@ export default function SetupWizardPage() {
               account_number: bank.account_number,
               iban: bank.iban,
             },
-      });
+      }, setupToken || undefined);
       setDoneSummary(result);
       setStep(8);
       const electron = typeof window !== 'undefined' ? (window as any).electron : null;

@@ -23,7 +23,6 @@ const REASON_OPTIONS = [
 const TYPE_OPTIONS = [
   { value: 'add', label: 'Add to stock' },
   { value: 'remove', label: 'Remove from stock' },
-  { value: 'set', label: 'Set to exact value' },
 ];
 
 export default function RequestAdjustmentSlideOver({
@@ -69,7 +68,6 @@ export default function RequestAdjustmentSlideOver({
     if (!variant || !isValidQty) return currentQty;
     if (type === 'add') return currentQty + Math.abs(parsedQty);
     if (type === 'remove') return currentQty - Math.abs(parsedQty);
-    if (type === 'set') return parsedQty;
     return currentQty;
   }, [variant, type, parsedQty, isValidQty, currentQty]);
 

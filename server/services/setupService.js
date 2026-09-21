@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const { query, withTransaction } = require('../db/postgres');
 const appSettingsService = require('./appSettingsService');
 const cashService = require('./cashService');
+const setupTokenService = require('./setupTokenService');
 
 async function hasAdminUser() {
   const { rows } = await query(
@@ -14,12 +15,6 @@ async function hasAdminUser() {
 }
 
 async function completeSetup(payload) {
-  if (await appSettingsService.isSetupComplete()) {
-    const err = new Error('Setup has already been completed.');
-    err.code = 'SETUP_ALREADY_DONE';
-    throw err;
-  }
-
   const {
     store,
     vat,
@@ -30,6 +25,36 @@ async function completeSetup(payload) {
   } = payload;
 
   return withTransaction(async (client) => {
+    const { rows: settingsRows } = await client.query(
+      `SELECT id, setup_completed FROM app_settings ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`,
+    );
+    if (!settingsRows.length) {
+      throw new Error('app_settings row missing — run database migrations.');
+    }
+    if (settingsRows[0].setup_completed) {
+      const err = new Error('Setup has already been completed.');
+      err.code = 'SETUP_ALREADY_DONE';
+      throw err;
+    }
+
+    const { rows: adminCheck } = await client.query(
+      `SELECT u.id FROM users u
+         JOIN roles r ON r.id = u.role_id
+        WHERE r.name = 'Admin'
+        LIMIT 1`,
+    );
+    const adminExists = adminCheck.length > 0;
+    if (adminExists && admin) {
+      const err = new Error('An Admin account already exists.');
+      err.code = 'SETUP_ADMIN_EXISTS';
+      throw err;
+    }
+    if (!adminExists && !admin) {
+      const err = new Error('Admin account is required for first-time setup.');
+      err.code = 'SETUP_ADMIN_REQUIRED';
+      throw err;
+    }
+
     await client.query(
       `UPDATE app_settings SET
          store_name = COALESCE($1, store_name),
@@ -61,7 +86,6 @@ async function completeSetup(payload) {
     );
 
     let adminUserId = null;
-    const adminExists = await hasAdminUser();
 
     if (!adminExists && admin) {
       const { rows: roleRows } = await client.query(
@@ -111,8 +135,10 @@ async function completeSetup(payload) {
           SET setup_completed = true,
               setup_completed_at = NOW(),
               updated_at = NOW()
-        WHERE id = (SELECT id FROM app_settings LIMIT 1)`,
+        WHERE id = $1`,
+      [settingsRows[0].id],
     );
+    await setupTokenService.clearSetupToken(client);
 
     return {
       adminUserId,

@@ -16,16 +16,30 @@ describe('setup POST /complete lifecycle', () => {
   let mockIsSetupComplete;
   let mockHasAdmin;
   let mockCompleteSetup;
+  let mockAssertValidSetupToken;
 
   beforeEach(() => {
     wipe('/server/controllers/setupController');
     wipe('/server/services/setupService');
+    wipe('/server/services/setupTokenService');
     wipe('/server/services/appSettingsService');
     wipe('/server/utils/activityLog');
 
     mockIsSetupComplete = vi.fn();
     mockHasAdmin = vi.fn();
     mockCompleteSetup = vi.fn();
+    mockAssertValidSetupToken = vi.fn().mockResolvedValue(undefined);
+
+    require.cache[require.resolve('../../server/services/setupTokenService.js')] = {
+      id: require.resolve('../../server/services/setupTokenService.js'),
+      filename: require.resolve('../../server/services/setupTokenService.js'),
+      loaded: true,
+      exports: {
+        issueSetupToken: vi.fn().mockResolvedValue('test-token'),
+        assertValidSetupToken: (...a) => mockAssertValidSetupToken(...a),
+        clearSetupToken: vi.fn(),
+      },
+    };
 
     require.cache[require.resolve('../../server/services/appSettingsService.js')] = {
       id: require.resolve('../../server/services/appSettingsService.js'),
@@ -66,9 +80,9 @@ describe('setup POST /complete lifecycle', () => {
     admin: { full_name: 'Owner', username: 'admin', password: 'secret1' },
   };
 
-  function run(body) {
+  function run(body, headers = { 'x-setup-token': 'test-token' }) {
     return new Promise((resolve) => {
-      const req = { body };
+      const req = { body, headers };
       const res = {
         status(code) {
           this.statusCode = code;
@@ -105,6 +119,17 @@ describe('setup POST /complete lifecycle', () => {
     mockHasAdmin.mockResolvedValue(true);
     const out = await run(validBody);
     expect(out.err.code).toBe(ERROR_CODES.BIZ_INVALID_STATE);
+    expect(mockCompleteSetup).not.toHaveBeenCalled();
+  });
+
+  it('rejects complete when setup token validation fails', async () => {
+    mockIsSetupComplete.mockResolvedValue(false);
+    mockHasAdmin.mockResolvedValue(false);
+    mockAssertValidSetupToken.mockRejectedValueOnce(
+      Object.assign(new Error('Invalid setup token.'), { code: 'AUTH_NO_PERMISSION', status: 403 }),
+    );
+    const out = await run(validBody);
+    expect(out.err).toBeDefined();
     expect(mockCompleteSetup).not.toHaveBeenCalled();
   });
 

@@ -10,6 +10,7 @@ const {
   shapeClaim,
 } = require('../services/warrantyService');
 const { logActivity } = require('../utils/activityLog');
+const { assertWarrantyClaimStatusTransition } = require('../../shared/warrantyClaimPolicy');
 
 const CLAIM_SELECT = `
   SELECT c.*, w.warranty_number,
@@ -187,7 +188,10 @@ async function update(req, res, next) {
       fields.push(`${col} = $${i++}`);
       params.push(val);
     }
-    if (body.status !== undefined) set('status', body.status);
+    if (body.status !== undefined) {
+      assertWarrantyClaimStatusTransition(existing[0].status, body.status);
+      set('status', body.status);
+    }
     if (body.notes !== undefined) set('notes', body.notes || null);
     if (body.issueDescription !== undefined) {
       set('issue_description', body.issueDescription);

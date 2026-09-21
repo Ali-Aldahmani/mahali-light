@@ -29,7 +29,7 @@ const enabled = Boolean(process.env.INVOICE_TEST_PG_PORT);
 
 describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
   let db, auth, app, request;
-  let adminToken, adminId, managerToken, cashierToken;
+  let adminToken, adminId, managerToken, cashierToken, discounterToken, discounterId;
   const database = `pricing_restriction_regression_${randomUUID().replaceAll('-', '')}`;
   let createdDatabase = false;
   let admin;
@@ -83,7 +83,15 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
       [adminId, auth.hashToken(adminToken)],
     );
     ({ token: managerToken } = await makeUser('manager1', 'Manager'));
+    ({ id: discounterId, token: discounterToken } = await makeUser('discounter1', 'Cashier'));
     ({ token: cashierToken } = await makeUser('cashier1', 'Cashier'));
+    const { rows: overridePerm } = await db.query(
+      `SELECT id FROM permissions WHERE key = 'invoice.override_price'`,
+    );
+    await db.query(
+      `INSERT INTO user_permissions (user_id, permission_id, granted) VALUES ($1, $2, true)`,
+      [discounterId, overridePerm[0].id],
+    );
 
     const express = require('express');
     request = require('supertest');
@@ -269,7 +277,7 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     expect(ok.status).toBe(201);
   });
 
-  it('MAX_DISCOUNT_PERCENT rejects an excessive discount from an ordinary Cashier', async () => {
+  it('MAX_DISCOUNT_PERCENT rejects an excessive discount from staff with discount authority', async () => {
     const v = await variant({ price: 100 });
     await request(app)
       .put(`/pricing-restrictions/product/${v.productId}`)
@@ -278,14 +286,14 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
 
     const tooMuch = await request(app)
       .post('/invoices')
-      .auth(cashierToken, { type: 'bearer' })
+      .auth(discounterToken, { type: 'bearer' })
       .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 20 }] }); // 20% off
     expect(tooMuch.status).toBe(422);
     expect(tooMuch.body.code).toBe('BIZ_PRICING_RESTRICTION_VIOLATION');
 
     const withinLimit = await request(app)
       .post('/invoices')
-      .auth(cashierToken, { type: 'bearer' })
+      .auth(discounterToken, { type: 'bearer' })
       .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 5 }] }); // 5% off
     expect(withinLimit.status).toBe(201);
   });
@@ -306,7 +314,7 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
 
     const bumped = await request(app)
       .put(`/invoices/${invoiceId}/items`)
-      .auth(cashierToken, { type: 'bearer' })
+      .auth(discounterToken, { type: 'bearer' })
       .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 10 }] });
     expect(bumped.status).toBe(422);
     expect(bumped.body.code).toBe('BIZ_PRICING_RESTRICTION_VIOLATION');

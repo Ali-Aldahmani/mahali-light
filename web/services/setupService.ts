@@ -4,8 +4,9 @@ export function getSetupStatus() {
   return apiGet('/setup/status');
 }
 
-export function completeSetup(payload) {
-  return apiPost('/setup/complete', payload);
+export function completeSetup(payload, setupToken?: string) {
+  const headers = setupToken ? { 'X-Setup-Token': setupToken } : undefined;
+  return apiPost('/setup/complete', payload, headers ? { headers } : undefined);
 }
 
 export async function testServerConnection(baseUrl) {

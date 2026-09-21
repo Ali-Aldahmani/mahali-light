@@ -4,12 +4,23 @@ const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const appSettingsService = require('../services/appSettingsService');
 const setupService = require('../services/setupService');
+const setupTokenService = require('../services/setupTokenService');
 const { logActivity } = require('../utils/activityLog');
 
 async function status(_req, res, next) {
   try {
+    const setupComplete = await appSettingsService.isSetupComplete();
     const settings = await appSettingsService.getPublicSettings();
     const hasAdmin = await setupService.hasAdminUser();
+
+    if (setupComplete) {
+      return ok(res, {
+        setup_completed: true,
+        has_admin: hasAdmin,
+        server_port: Number(process.env.PORT || 3000),
+      });
+    }
+
     const nets = os.networkInterfaces();
     const ips = [];
     for (const iface of Object.values(nets)) {
@@ -17,11 +28,14 @@ async function status(_req, res, next) {
         if (addr.family === 'IPv4' && !addr.internal) ips.push(addr.address);
       }
     }
+    const setupToken = await setupTokenService.issueSetupToken();
     ok(res, {
       ...settings,
+      setup_completed: false,
       has_admin: hasAdmin,
       local_ips: ips,
       server_port: Number(process.env.PORT || 3000),
+      setup_token: setupToken,
     });
   } catch (err) {
     next(err);
@@ -80,6 +94,9 @@ async function complete(req, res, next) {
         { status: 409 },
       );
     }
+    await setupTokenService.assertValidSetupToken(
+      req.headers['x-setup-token'] || req.body?.setup_token,
+    );
     const hasAdmin = await setupService.hasAdminUser();
     if (hasAdmin && body.admin) {
       throw new AppError(
@@ -111,9 +128,14 @@ async function complete(req, res, next) {
     });
     created(res, settings);
   } catch (err) {
-    if (err.code === 'SETUP_ALREADY_DONE') {
+    if (err.code === 'SETUP_ALREADY_DONE' || err.code === 'SETUP_ADMIN_EXISTS') {
       return next(
         new AppError(ERROR_CODES.BIZ_INVALID_STATE, err.message, { status: 409 }),
+      );
+    }
+    if (err.code === 'SETUP_ADMIN_REQUIRED') {
+      return next(
+        new AppError(ERROR_CODES.VAL_REQUIRED_FIELD, err.message, { status: 400 }),
       );
     }
     next(err);

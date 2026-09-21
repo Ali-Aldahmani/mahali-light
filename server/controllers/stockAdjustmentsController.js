@@ -20,8 +20,8 @@ const REASONS = new Set([
 
 const createSchema = z.object({
   variantId: z.string().uuid(),
-  adjustmentType: z.enum(['add', 'remove', 'set']),
-  quantity: z.number().finite().min(-999999).max(999999),
+  adjustmentType: z.enum(['add', 'remove']),
+  quantity: z.number().finite().positive(),
   reason: z.string().refine((r) => REASONS.has(r), 'Invalid reason.'),
   note: z.string().min(10, 'Please add a note (at least 10 characters).').max(1000),
   applyDirectly: z.boolean().optional().default(false),
@@ -197,11 +197,9 @@ async function create(req, res, next) {
     const currentQty = Number(variant.stock_qty);
     let requestedQty;
     if (body.adjustmentType === 'add') {
-      requestedQty = currentQty + Math.abs(body.quantity);
-    } else if (body.adjustmentType === 'remove') {
-      requestedQty = currentQty - Math.abs(body.quantity);
+      requestedQty = currentQty + body.quantity;
     } else {
-      requestedQty = body.quantity;
+      requestedQty = currentQty - body.quantity;
     }
     if (requestedQty < 0) {
       throw new AppError(

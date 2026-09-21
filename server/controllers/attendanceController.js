@@ -158,7 +158,7 @@ async function update(req, res, next) {
       date: body.date || rows[0].date,
       checkIn: body.checkIn ?? undefined,
       checkOut: body.checkOut ?? undefined,
-      status: body.status || 'present',
+      status: body.status,
       notes: body.notes ?? null,
       userId: req.user.id,
     });

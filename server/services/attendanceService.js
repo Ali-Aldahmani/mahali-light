@@ -2,6 +2,10 @@ const { query, withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('./notificationService');
+const {
+  resolveManualAttendanceStatus,
+  assertRequestedStatusAllowed,
+} = require('../../shared/attendancePolicy');
 
 // UAE Friday/Saturday weekend. Sunday is the first working day.
 // JS getDay(): 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
@@ -288,7 +292,7 @@ async function upsertManualAttendance({
   date,
   checkIn: ci,
   checkOut: co,
-  status = 'present',
+  status = null,
   notes = null,
   userId,
 }) {
@@ -326,9 +330,21 @@ async function upsertManualAttendance({
       workingHours = money(Math.max(0, ms / (60 * 60 * 1000)));
       const std = Number(employee.standard_hours || 8);
       overtimeHours = money(Math.max(0, workingHours - std));
-      if (status !== 'leave' && status !== 'absent') {
-        shortageHours = money(Math.max(0, std - workingHours));
-      }
+    }
+
+    const resolvedStatus = resolveManualAttendanceStatus({
+      requestedStatus: status,
+      checkIn: ci,
+      checkOut: co,
+      lateMinutes,
+      standardHours: employee.standard_hours,
+      workingHours,
+    });
+    assertRequestedStatusAllowed(status, resolvedStatus);
+
+    if (ci && co && resolvedStatus !== 'leave' && resolvedStatus !== 'absent') {
+      const std = Number(employee.standard_hours || 8);
+      shortageHours = money(Math.max(0, std - workingHours));
     }
 
     const { rows } = await client.query(
@@ -356,7 +372,7 @@ async function upsertManualAttendance({
         dateOnly(date),
         ci || null,
         co || null,
-        status,
+        resolvedStatus,
         workingHours,
         overtimeHours,
         lateMinutes,
