@@ -11,6 +11,26 @@ function zodFail(err) {
   );
 }
 
+function canViewLeave(user, leave) {
+  const perms = user?.permissions || [];
+  if (perms.includes('*') || perms.includes('attendance.view_all')) return true;
+  return Boolean(
+    perms.includes('attendance.view_own') &&
+      leave?.employeeId &&
+      user?.employee_id &&
+      leave.employeeId === user.employee_id,
+  );
+}
+
+function assertCanViewLeave(req, leave) {
+  if (canViewLeave(req.user, leave)) return;
+  throw new AppError(
+    ERROR_CODES.AUTH_NO_PERMISSION,
+    'No permission to view this leave request.',
+    { status: 403 },
+  );
+}
+
 const listSchema = z.object({
   employeeId: z.string().uuid().optional(),
   status: z.enum(['pending', 'approved', 'rejected', 'cancelled']).optional(),
@@ -80,6 +100,7 @@ async function submit(req, res, next) {
 async function detail(req, res, next) {
   try {
     const leave = await leaveService.getLeave(req.params.id);
+    assertCanViewLeave(req, leave);
     return ok(res, leave);
   } catch (err) {
     next(err);
@@ -159,4 +180,5 @@ module.exports = {
   reject,
   cancel,
   calculateDays,
+  canViewLeave,
 };
