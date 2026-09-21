@@ -3,7 +3,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
-const { ROLE_RANK } = require('../../shared/authzPolicy');
+const { ROLE_RANK, assertCanAssignPermissionKeys } = require('../../shared/authzPolicy');
 
 // System role names ("Admin" chief among them) are trusted by name in
 // several security-sensitive checks (isAdminActor, ADMIN_EXCLUSIVE_PERMISSIONS
@@ -103,6 +103,10 @@ async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
     assertNotReservedName(body.name);
+    assertCanAssignPermissionKeys({
+      actor: req.user,
+      permissionKeys: body.permissionKeys,
+    });
 
     const role = await withTransaction(async (client) => {
       const { rows } = await client.query(
@@ -230,6 +234,11 @@ async function setPermissions(req, res, next) {
   try {
     const body = setPermsSchema.parse(req.body || {});
     const { id } = req.params;
+
+    assertCanAssignPermissionKeys({
+      actor: req.user,
+      permissionKeys: body.permissionKeys,
+    });
 
     const { rows } = await query('SELECT id, is_system FROM roles WHERE id = $1', [id]);
     if (!rows.length) {

@@ -206,6 +206,12 @@ async function update(req, res, next) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
 
+    assertCanManageTarget({
+      actor: req.user,
+      targetRoleName: existing[0].role_name,
+      targetUserId: id,
+    });
+
     if (body.username && body.username !== existing[0].username) {
       const dup = await query(
         'SELECT id FROM users WHERE username = $1 AND id <> $2',
@@ -284,6 +290,22 @@ async function softDelete(req, res, next) {
         status: 400,
       });
     }
+
+    const { rows: existing } = await query(
+      `SELECT u.id, r.name AS role_name
+         FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.id = $1`,
+      [id],
+    );
+    if (!existing.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
+    assertCanManageTarget({
+      actor: req.user,
+      targetRoleName: existing[0].role_name,
+      targetUserId: id,
+    });
 
     const { rowCount } = await query(
       `UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1`,

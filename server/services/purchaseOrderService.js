@@ -1,4 +1,4 @@
-const { withTransaction } = require('../db/postgres');
+const { withTransaction, query } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { applyStockMovement } = require('./stockService');
 const { nextDocumentNumber } = require('../utils/docNumbers');
@@ -14,6 +14,39 @@ async function generatePoNumber(client) {
   return result.formatted;
 }
 
+// Purchase-order VAT follows the same store settings as sales invoices —
+// never trust a client-supplied taxAmount.
+async function resolvePoTaxAmount(client, subtotal) {
+  const q = client ? client.query.bind(client) : query;
+  const { rows } = await q(
+    `SELECT vat_enabled, vat_rate FROM app_settings ORDER BY id LIMIT 1`,
+  );
+  const row = rows[0];
+  if (!row || row.vat_enabled === false) return 0;
+  const rate = Number(row.vat_rate);
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  return money(subtotal * (rate / 100));
+}
+
+// Line cost defaults to catalog cost_price; only callers with cost visibility
+// may override (negotiated supplier pricing).
+async function resolvePoLineCost(client, { variantId, clientCost, canOverrideCost }) {
+  const { rows } = await client.query(
+    `SELECT cost_price FROM product_variants WHERE id = $1`,
+    [variantId],
+  );
+  if (!rows.length) {
+    throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Product variant not found.', {
+      status: 404,
+    });
+  }
+  const catalogCost = money(rows[0].cost_price);
+  if (!canOverrideCost) return catalogCost;
+  const requested = money(clientCost);
+  if (!Number.isFinite(requested) || requested < 0) return catalogCost;
+  return requested;
+}
+
 // Compute and persist totals on the purchase_orders row from its items.
 async function recalculatePOTotals(client, poId) {
   const { rows } = await client.query(
@@ -22,15 +55,18 @@ async function recalculatePOTotals(client, poId) {
     [poId],
   );
   const subtotal = money(rows[0].subtotal);
+  const taxAmount = await resolvePoTaxAmount(client, subtotal);
+  const totalCost = money(subtotal + taxAmount);
 
   await client.query(
     `UPDATE purchase_orders
         SET subtotal = $1,
-            total_cost = $1 + COALESCE(tax_amount, 0),
-            balance_due = ($1 + COALESCE(tax_amount, 0)) - COALESCE(amount_paid, 0),
+            tax_amount = $2,
+            total_cost = $3,
+            balance_due = $3 - COALESCE(amount_paid, 0),
             updated_at = NOW()
-      WHERE id = $2`,
-    [subtotal, poId],
+      WHERE id = $4`,
+    [subtotal, taxAmount, totalCost, poId],
   );
 }
 
@@ -232,5 +268,7 @@ async function receiveItems({ poId, items, employeeId }) {
 module.exports = {
   generatePoNumber,
   recalculatePOTotals,
+  resolvePoTaxAmount,
+  resolvePoLineCost,
   receiveItems,
 };

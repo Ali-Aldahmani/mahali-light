@@ -40,6 +40,34 @@ function assertCanAddItems(req, items) {
   }
 }
 
+function assertDiscountAuthority(req, { items = [], invoiceDiscount = 0 }) {
+  if (canOverridePrice(req)) return;
+  const hasLineDiscount = items.some(
+    (i) => (i.discountAmount || 0) > 0 || (i.discountPercent || 0) > 0,
+  );
+  if (hasLineDiscount || (invoiceDiscount || 0) > 0) {
+    throw new AppError(
+      ERROR_CODES.AUTH_NO_PERMISSION,
+      'Applying discounts requires the invoice.override_price permission.',
+      { status: 403, details: { missing: ['invoice.override_price'] } },
+    );
+  }
+}
+
+function assertCustomItemCostAuthority(req, items) {
+  if (canSeeCost(req)) return;
+  const hasCustomCost = items.some(
+    (i) => i.isCustom && Number(i.customCostPrice || 0) > 0,
+  );
+  if (hasCustomCost) {
+    throw new AppError(
+      ERROR_CODES.AUTH_NO_PERMISSION,
+      'Setting custom item cost requires the product.view_cost permission.',
+      { status: 403, details: { missing: ['product.view_cost'] } },
+    );
+  }
+}
+
 function canDirectCancel(req) {
   const p = req.user?.permissions || [];
   return p.includes('invoice.cancel');
@@ -383,6 +411,8 @@ async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
     assertCanAddItems(req, body.items);
+    assertDiscountAuthority(req, body);
+    assertCustomItemCostAuthority(req, body.items);
 
     const result = await withTransaction(async (client) => {
       const { invoiceNumber, pcCode } = await generateInvoiceNumber(client, {
@@ -468,6 +498,8 @@ async function updateItems(req, res, next) {
     const { id } = req.params;
     const body = updateItemsSchema.parse(req.body || {});
     assertCanAddItems(req, body.items);
+    assertDiscountAuthority(req, body);
+    assertCustomItemCostAuthority(req, body.items);
 
     await withTransaction(async (client) => {
       const { rows: invRows } = await client.query(

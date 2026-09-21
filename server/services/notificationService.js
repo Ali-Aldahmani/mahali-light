@@ -321,7 +321,22 @@ async function getUnreadCount(userId, role = null) {
   return rows[0]?.count || 0;
 }
 
-async function markAsRead({ notificationId, userId }) {
+async function assertNotificationVisible({ notificationId, userId, role }) {
+  const { rows } = await query(
+    `SELECT n.id
+       FROM notifications n
+      WHERE n.id = $1 AND ${userScopeSql(userId, role)}`,
+    [notificationId, userId, role || null],
+  );
+  if (!rows.length) {
+    const e = new Error('Notification not found.');
+    e.code = 'NOTIFICATION_NOT_FOUND';
+    throw e;
+  }
+}
+
+async function markAsRead({ notificationId, userId, role }) {
+  await assertNotificationVisible({ notificationId, userId, role });
   await query(
     `INSERT INTO notification_reads (notification_id, user_id)
      VALUES ($1, $2)
@@ -361,7 +376,8 @@ async function markAllAsRead({ userId, role }) {
   return rows.length;
 }
 
-async function dismiss({ notificationId, userId, isAdmin = false }) {
+async function dismiss({ notificationId, userId, role, isAdmin = false }) {
+  await assertNotificationVisible({ notificationId, userId, role });
   // Critical notifications can only be dismissed by admins. Other roles see
   // them stay until resolved.
   const { rows } = await query(

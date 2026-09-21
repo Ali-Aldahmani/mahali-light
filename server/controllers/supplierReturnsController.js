@@ -13,10 +13,34 @@ const itemSchema = z.object({
   productId: z.string().uuid(),
   variantId: z.string().uuid(),
   quantity: z.number().positive(),
-  unitCost: z.number().nonnegative(),
+  unitCost: z.number().nonnegative().optional(),
   condition: z.enum(['defective', 'damaged', 'good']).optional().nullable(),
   serialNumber: z.string().max(100).optional().nullable(),
 });
+
+async function resolveSupplierReturnUnitCost(client, { variantId, purchaseOrderId }) {
+  if (purchaseOrderId) {
+    const { rows } = await client.query(
+      `SELECT cost_price_per_unit
+         FROM purchase_order_items
+        WHERE purchase_order_id = $1 AND variant_id = $2
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [purchaseOrderId, variantId],
+    );
+    if (rows.length) return Math.round(Number(rows[0].cost_price_per_unit) * 100) / 100;
+  }
+  const { rows } = await client.query(
+    `SELECT cost_price FROM product_variants WHERE id = $1`,
+    [variantId],
+  );
+  if (!rows.length) {
+    throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Product variant not found.', {
+      status: 404,
+    });
+  }
+  return Math.round(Number(rows[0].cost_price || 0) * 100) / 100;
+}
 
 const createSchema = z.object({
   supplierId: z.string().uuid(),
@@ -159,8 +183,17 @@ async function create(req, res, next) {
       const numberRes = await nextDocumentNumber(client, 'SR');
       const returnNumber = numberRes.formatted;
 
+      const resolvedItems = [];
+      for (const it of body.items) {
+        const unitCost = await resolveSupplierReturnUnitCost(client, {
+          variantId: it.variantId,
+          purchaseOrderId: body.purchaseOrderId || null,
+        });
+        resolvedItems.push({ ...it, unitCost });
+      }
+
       // Insert the return record first (we need the id for movements).
-      const totalValue = body.items.reduce(
+      const totalValue = resolvedItems.reduce(
         (sum, i) => sum + Number(i.quantity) * Number(i.unitCost),
         0,
       );
@@ -183,7 +216,7 @@ async function create(req, res, next) {
       );
       const returnId = insertRows[0].id;
 
-      for (const it of body.items) {
+      for (const it of resolvedItems) {
         const lineTotal = Number(it.quantity) * Number(it.unitCost);
         await client.query(
           `INSERT INTO supplier_return_items

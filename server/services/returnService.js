@@ -213,10 +213,13 @@ async function resolveReplacementPlan(client, plan) {
       lineTotal: money(unitPrice * qty),
     });
   }
+  const replacementTotal = money(items.reduce((sum, it) => sum + it.lineTotal, 0));
   return {
     items,
-    priceDifference: money(parsed.priceDifference || 0),
-    differenceDirection: parsed.differenceDirection || 'none',
+    replacementTotal,
+    // Derived at approve time from return total vs replacement total.
+    priceDifference: 0,
+    differenceDirection: 'none',
   };
 }
 

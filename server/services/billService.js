@@ -454,6 +454,16 @@ async function payBillPayment({
     }
 
     const paidDateStr = dateOnly(paidDate) || todayIso();
+    if (!payment.is_variable_amount) {
+      const expectedDue = money(payment.amount_due);
+      if (Math.abs(amt - expectedDue) > 0.001) {
+        throw new AppError(
+          ERROR_CODES.VALIDATION_FAILED,
+          `Fixed bills must be paid in full (${expectedDue.toFixed(2)} AED).`,
+          { status: 400, details: { amountPaid: amt, amountDue: expectedDue } },
+        );
+      }
+    }
     const amountDue = payment.is_variable_amount ? amt : money(payment.amount_due);
 
     const { rows } = await client.query(

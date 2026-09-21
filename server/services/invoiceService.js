@@ -382,8 +382,32 @@ async function recalculateAndPersistTotals(
 
 // Verify each invoice item still has enough on-hand stock to be sold. Returns
 // a list of shortfalls so the caller can build a useful error response.
-async function findStockShortfalls(client, items) {
-  if (!items.length) return [];
+async function posAllowsNegativeStock(client) {
+  const { rows } = await client.query(
+    `SELECT pos_allow_negative_stock FROM app_settings ORDER BY id LIMIT 1`,
+  );
+  return rows[0]?.pos_allow_negative_stock === true;
+}
+
+async function findMissingSerialNumbers(client, invoiceId) {
+  const { rows } = await client.query(
+    `SELECT ii.id, ii.product_name, ii.serial_number,
+            COALESCE(c.requires_serial, false) AS requires_serial
+       FROM invoice_items ii
+       JOIN products p ON p.id = ii.product_id
+       LEFT JOIN product_categories c ON c.id = p.category_id
+      WHERE ii.invoice_id = $1
+        AND ii.is_custom = false
+        AND ii.variant_id IS NOT NULL`,
+    [invoiceId],
+  );
+  return rows.filter(
+    (r) => r.requires_serial && (!r.serial_number || !String(r.serial_number).trim()),
+  );
+}
+
+async function findStockShortfalls(client, items, { allowNegative = false } = {}) {
+  if (allowNegative || !items.length) return [];
   const ids = items.map((i) => i.variant_id);
   const { rows } = await client.query(
     `SELECT id, product_id, stock_qty FROM product_variants WHERE id = ANY($1) FOR UPDATE`,
@@ -462,7 +486,17 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     // throw a RESOURCE_NOT_FOUND trying to lock a null variant id.
     const catalogItems = items.filter((it) => !it.is_custom);
 
-    const shortfalls = await findStockShortfalls(client, catalogItems);
+    const missingSerials = await findMissingSerialNumbers(client, invoiceId);
+    if (missingSerials.length) {
+      throw new AppError(
+        ERROR_CODES.VALIDATION_FAILED,
+        `Serial number required for ${missingSerials.length} item(s).`,
+        { details: { items: missingSerials.map((r) => r.product_name) } },
+      );
+    }
+
+    const allowNegative = await posAllowsNegativeStock(client);
+    const shortfalls = await findStockShortfalls(client, catalogItems, { allowNegative });
     if (shortfalls.length) {
       throw new AppError(
         ERROR_CODES.BIZ_INSUFFICIENT_STOCK,

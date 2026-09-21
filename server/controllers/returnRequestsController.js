@@ -302,11 +302,6 @@ const replacementPlanSchema = z
         quantity: z.number().positive(),
       }),
     ),
-    priceDifference: z.number().optional().nullable(),
-    differenceDirection: z
-      .enum(['none', 'customer_pays', 'refund_to_customer'])
-      .optional()
-      .nullable(),
   })
   .optional()
   .nullable();
@@ -318,7 +313,6 @@ const createSchema = z.object({
   customerId: z.string().uuid().optional().nullable(),
   supplierId: z.string().uuid().optional().nullable(),
   noInvoiceReturn: z.boolean().optional().default(false),
-  approvedBy: z.string().uuid().optional().nullable(),
   reason: z.enum([
     'defective',
     'wrong_item',
@@ -347,8 +341,11 @@ async function create(req, res, next) {
       }
     }
     const io = req.app.get('io');
+    const noInvoice =
+      body.noInvoiceReturn || body.referenceType === 'manual';
     const result = await returnService.createReturnRequest({
       ...body,
+      approvedBy: noInvoice ? req.user.id : null,
       requestedBy: req.user.id,
       io,
     });

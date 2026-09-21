@@ -10,6 +10,7 @@ const {
   assertCanAssignRole,
   assertCanChangeRole,
   assertCanSetEffectivePermissions,
+  assertCanAssignPermissionKeys,
   assertCanManageTarget,
 } = require('../../shared/authzPolicy.js');
 const { ROLE_DEFAULTS } = require('../../shared/permissions.js');
@@ -320,5 +321,38 @@ describe('setPermissions delegation', () => {
         }),
       'delegation',
     );
+  });
+});
+
+describe('AUTHZ role permission assignment', () => {
+  it('Manager with user.change_role cannot assign admin-exclusive keys to a role', () => {
+    expectDenied(
+      () =>
+        assertCanAssignPermissionKeys({
+          actor: manager(['user.change_role']),
+          permissionKeys: ['backup.restore', 'invoice.view'],
+        }),
+      'delegation',
+    );
+  });
+
+  it('Manager cannot assign permissions they do not hold', () => {
+    expectDenied(
+      () =>
+        assertCanAssignPermissionKeys({
+          actor: manager(['user.change_role']),
+          permissionKeys: ['finance.close_period'],
+        }),
+      'delegation',
+    );
+  });
+
+  it('Admin may assign admin-exclusive keys to a role', () => {
+    expect(() =>
+      assertCanAssignPermissionKeys({
+        actor: admin(),
+        permissionKeys: [...ADMIN_EXCLUSIVE_PERMISSIONS, 'invoice.view'],
+      }),
+    ).not.toThrow();
   });
 });

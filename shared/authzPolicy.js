@@ -133,6 +133,28 @@ function assertCanChangeRole({
   assertCanAssignRole({ actor, newRoleName, newRoleIsSystem });
 }
 
+/**
+ * Role-level permission assignment (POST /roles, PUT /roles/:id/permissions).
+ * Non-admin actors may only grant keys they themselves hold; admin-exclusive
+ * keys require an Admin actor.
+ */
+function assertCanAssignPermissionKeys({ actor, permissionKeys }) {
+  if (isAdminActor(actor)) return;
+  const owned = actorPermissionSet(actor);
+  const exclusive = new Set(ADMIN_EXCLUSIVE_PERMISSIONS);
+  const forbidden = [];
+  for (const key of permissionKeys || []) {
+    if (exclusive.has(key)) forbidden.push(key);
+    else if (!owned.has(key)) forbidden.push(key);
+  }
+  if (forbidden.length) {
+    throw deny('You cannot assign permissions outside your authority.', {
+      reason: 'delegation',
+      forbiddenKeys: forbidden,
+    });
+  }
+}
+
 function assertCanSetEffectivePermissions({
   actor,
   targetUserId,
@@ -185,5 +207,6 @@ module.exports = {
   assertCanManageTarget,
   assertCanAssignRole,
   assertCanChangeRole,
+  assertCanAssignPermissionKeys,
   assertCanSetEffectivePermissions,
 };

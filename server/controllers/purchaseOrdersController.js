@@ -6,6 +6,7 @@ const { logActivity } = require('../utils/activityLog');
 const {
   generatePoNumber,
   recalculatePOTotals,
+  resolvePoLineCost,
   receiveItems: receiveItemsService,
 } = require('../services/purchaseOrderService');
 const {
@@ -26,7 +27,6 @@ const createSchema = z.object({
   orderDate: z.string().optional().nullable(),
   expectedDate: z.string().optional().nullable(),
   dueDate: z.string().optional().nullable(),
-  taxAmount: z.number().nonnegative().optional().default(0),
   notes: z.string().max(4000).optional().nullable(),
   items: z.array(itemSchema).min(1, 'Add at least one item.'),
 });
@@ -280,15 +280,13 @@ async function create(req, res, next) {
       );
     }
 
-    const taxAmount = Number(body.taxAmount || 0);
-
     const poId = await withTransaction(async (client) => {
       const poNumber = await generatePoNumber(client);
       const { rows } = await client.query(
         `INSERT INTO purchase_orders
            (po_number, supplier_id, employee_id, order_date, expected_date,
-            due_date, status, tax_amount, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8)
+            due_date, status, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,'draft',$7)
          RETURNING id`,
         [
           poNumber,
@@ -297,13 +295,17 @@ async function create(req, res, next) {
           body.orderDate || new Date().toISOString().slice(0, 10),
           body.expectedDate || null,
           body.dueDate || null,
-          taxAmount,
           body.notes || null,
         ],
       );
       const id = rows[0].id;
 
       for (const it of body.items) {
+        const unitCost = await resolvePoLineCost(client, {
+          variantId: it.variantId,
+          clientCost: it.costPricePerUnit,
+          canOverrideCost: includeCost,
+        });
         await client.query(
           `INSERT INTO purchase_order_items
              (purchase_order_id, product_id, variant_id, quantity, unit_label,
@@ -315,7 +317,7 @@ async function create(req, res, next) {
             it.variantId,
             it.quantity,
             it.unitLabel || null,
-            it.costPricePerUnit,
+            unitCost,
           ],
         );
       }
@@ -385,16 +387,14 @@ async function update(req, res, next) {
                 order_date = COALESCE($2, order_date),
                 expected_date = $3,
                 due_date = $4,
-                tax_amount = COALESCE($5, tax_amount),
-                notes = $6,
+                notes = $5,
                 updated_at = NOW()
-          WHERE id = $7`,
+          WHERE id = $6`,
         [
           body.supplierId || null,
           body.orderDate || null,
           body.expectedDate || null,
           body.dueDate || null,
-          body.taxAmount,
           body.notes || null,
           id,
         ],
@@ -406,12 +406,17 @@ async function update(req, res, next) {
           [id],
         );
         for (const it of body.items) {
+          const unitCost = await resolvePoLineCost(client, {
+            variantId: it.variantId,
+            clientCost: it.costPricePerUnit,
+            canOverrideCost: includeCost,
+          });
           await client.query(
             `INSERT INTO purchase_order_items
                (purchase_order_id, product_id, variant_id, quantity, unit_label,
                 cost_price_per_unit, total_cost)
              VALUES ($1,$2,$3,$4,$5,$6,$4::numeric*$6::numeric)`,
-            [id, it.productId, it.variantId, it.quantity, it.unitLabel || null, it.costPricePerUnit],
+            [id, it.productId, it.variantId, it.quantity, it.unitLabel || null, unitCost],
           );
         }
       }

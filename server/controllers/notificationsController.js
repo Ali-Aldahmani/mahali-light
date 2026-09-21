@@ -58,9 +58,13 @@ async function markRead(req, res, next) {
     const count = await notificationService.markAsRead({
       notificationId: req.params.id,
       userId: req.user.id,
+      role: req.user.role,
     });
     ok(res, { unread_count: count });
   } catch (err) {
+    if (err.code === 'NOTIFICATION_NOT_FOUND') {
+      return next(new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, err.message, { status: 404 }));
+    }
     next(err);
   }
 }
@@ -83,10 +87,14 @@ async function dismissOne(req, res, next) {
     await notificationService.dismiss({
       notificationId: req.params.id,
       userId: req.user.id,
+      role: req.user.role,
       isAdmin,
     });
     ok(res, { ok: true });
   } catch (err) {
+    if (err.code === 'NOTIFICATION_NOT_FOUND') {
+      return next(new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, err.message, { status: 404 }));
+    }
     if (err.code === 'CANNOT_DISMISS_CRITICAL') {
       return next(
         new AppError(ERROR_CODES.AUTH_NO_PERMISSION, err.message, { status: 403 }),
