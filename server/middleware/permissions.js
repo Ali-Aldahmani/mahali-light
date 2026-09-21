@@ -21,4 +21,24 @@ function requirePermission(...keys) {
   };
 }
 
-module.exports = { requirePermission };
+// requireAnyPermission('return.approve', 'invoice.edit_approve', ...)
+// User must have at least one listed permission (or '*').
+function requireAnyPermission(...keys) {
+  return (req, _res, next) => {
+    if (!req.user) {
+      return next(new AppError(ERROR_CODES.AUTH_TOKEN_MISSING, undefined, { status: 401 }));
+    }
+    const owned = new Set(req.user.permissions || []);
+    if (owned.has('*') || keys.some((k) => owned.has(k))) {
+      return next();
+    }
+    return next(
+      new AppError(ERROR_CODES.AUTH_NO_PERMISSION, undefined, {
+        status: 403,
+        details: { anyOf: keys },
+      }),
+    );
+  };
+}
+
+module.exports = { requirePermission, requireAnyPermission };

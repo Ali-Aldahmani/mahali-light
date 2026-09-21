@@ -167,11 +167,18 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     fetchPreferences?.();
     fetchUnreadCount?.();
     fetchMaintenance?.();
-    const isManagerOrAdmin =
-      permissions.includes('*') || ['Manager', 'Admin'].includes(useAuthStore.getState().user?.role || '');
-    if (isManagerOrAdmin) fetchApprovalCount?.();
+    const canViewApprovals =
+      permissions.includes('*') ||
+      [
+        'return.approve',
+        'invoice.edit_approve',
+        'stock.adjust_approve',
+        'stock.count_approve',
+        'attendance.correction_approve',
+      ].some((p) => permissions.includes(p));
+    if (canViewApprovals) fetchApprovalCount?.();
 
-    const approvalsTimer = isManagerOrAdmin
+    const approvalsTimer = canViewApprovals
       ? setInterval(() => fetchApprovalCount?.(), 60_000)
       : null;
 

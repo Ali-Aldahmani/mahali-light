@@ -15,6 +15,13 @@ const SECTION_PERMISSION = {
   leaves: 'attendance.correction_approve',
 };
 
+const APPROVAL_PERMISSIONS = [...new Set(Object.values(SECTION_PERMISSION))];
+
+function hasAnyApprovalPermission(permissions = []) {
+  if (permissions.includes('*')) return true;
+  return APPROVAL_PERMISSIONS.some((p) => permissions.includes(p));
+}
+
 function allowedSections(permissions = []) {
   const has = (p) => permissions.includes(p) || permissions.includes('*');
   return Object.fromEntries(
@@ -26,24 +33,56 @@ function allowedSections(permissions = []) {
 // One round-trip per call so the approvals page stays snappy.
 async function getCounts(permissions = []) {
   const allowed = allowedSections(permissions);
-  const { rows } = await query(
-    `SELECT
-       (SELECT COUNT(*)::int FROM return_requests WHERE status = 'pending')           AS returns,
-       (SELECT COUNT(*)::int FROM invoice_edit_requests WHERE status = 'pending')     AS invoice_edits,
-       (SELECT COUNT(*)::int FROM stock_adjustment_requests WHERE status = 'pending') AS stock_adjustments,
-       (SELECT COUNT(*)::int FROM stock_counts WHERE status = 'submitted')            AS stock_counts,
-       (SELECT COUNT(*)::int FROM attendance_corrections WHERE status = 'pending')    AS attendance_corrections,
-       (SELECT COUNT(*)::int FROM leaves WHERE status = 'pending')                    AS leaves`,
-  );
-  const r = rows[0] || {};
-  const section = (key) => (allowed[key] ? r[key] || 0 : 0);
+  if (!Object.values(allowed).some(Boolean)) {
+    return {
+      total: 0,
+      returns: 0,
+      invoice_edits: 0,
+      stock_adjustments: 0,
+      stock_counts: 0,
+      attendance_corrections: 0,
+      leaves: 0,
+    };
+  }
+
+  const countPending = (sql) =>
+    query(sql).then(({ rows }) => Number(rows[0]?.count || 0));
+
+  const [
+    returns,
+    invoice_edits,
+    stock_adjustments,
+    stock_counts,
+    attendance_corrections,
+    leaves,
+  ] = await Promise.all([
+    allowed.returns
+      ? countPending(`SELECT COUNT(*)::int AS count FROM return_requests WHERE status = 'pending'`)
+      : 0,
+    allowed.invoice_edits
+      ? countPending(`SELECT COUNT(*)::int AS count FROM invoice_edit_requests WHERE status = 'pending'`)
+      : 0,
+    allowed.stock_adjustments
+      ? countPending(`SELECT COUNT(*)::int AS count FROM stock_adjustment_requests WHERE status = 'pending'`)
+      : 0,
+    allowed.stock_counts
+      ? countPending(`SELECT COUNT(*)::int AS count FROM stock_counts WHERE status = 'submitted'`)
+      : 0,
+    allowed.attendance_corrections
+      ? countPending(`SELECT COUNT(*)::int AS count FROM attendance_corrections WHERE status = 'pending'`)
+      : 0,
+    allowed.leaves
+      ? countPending(`SELECT COUNT(*)::int AS count FROM leaves WHERE status = 'pending'`)
+      : 0,
+  ]);
+
   const counts = {
-    returns: section('returns'),
-    invoice_edits: section('invoice_edits'),
-    stock_adjustments: section('stock_adjustments'),
-    stock_counts: section('stock_counts'),
-    attendance_corrections: section('attendance_corrections'),
-    leaves: section('leaves'),
+    returns,
+    invoice_edits,
+    stock_adjustments,
+    stock_counts,
+    attendance_corrections,
+    leaves,
   };
   const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
   return { total, ...counts };
@@ -156,4 +195,10 @@ async function getQueue({ limit = 10, permissions = [] } = {}) {
   };
 }
 
-module.exports = { getCounts, getQueue };
+module.exports = {
+  getCounts,
+  getQueue,
+  APPROVAL_PERMISSIONS,
+  hasAnyApprovalPermission,
+  allowedSections,
+};
