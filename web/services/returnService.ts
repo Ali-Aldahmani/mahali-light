@@ -1,9 +1,14 @@
 import { apiGet, apiGetWithMeta, apiPost, apiPut } from './http';
+import { z } from 'zod';
 import {
   returnRequestSchema,
+  returnRequestDetailSchema,
+  returnLookupResponseSchema,
   validateMoneyResponse,
   type ReturnRequest,
 } from '@/lib/schemas/returnRequest';
+
+const returnRequestListSchema = z.array(returnRequestSchema);
 
 function toParams(obj: Record<string, any>): string {
   const p = new URLSearchParams();
@@ -14,12 +19,22 @@ function toParams(obj: Record<string, any>): string {
   return p.toString();
 }
 
-export function listReturnRequests(filters = {}) {
-  return apiGetWithMeta(`/return-requests?${toParams(filters)}`);
+export async function listReturnRequests(filters = {}) {
+  const result = await apiGetWithMeta(`/return-requests?${toParams(filters)}`);
+  validateMoneyResponse(returnRequestListSchema, result.data, 'GET /return-requests');
+  return result;
 }
 
-export function getReturnRequest(id) {
-  return apiGet(`/return-requests/${id}`);
+export async function getReturnRequest(id) {
+  const data = await apiGet(`/return-requests/${id}`);
+  validateMoneyResponse(returnRequestDetailSchema, data, `GET /return-requests/${id}`);
+  return data;
+}
+
+export async function lookupReturnTransaction({ q, mode = 'auto' }) {
+  const data = await apiGet(`/return-requests/lookup?${toParams({ q, mode })}`);
+  validateMoneyResponse(returnLookupResponseSchema, data, 'GET /return-requests/lookup');
+  return data;
 }
 
 export async function createReturnRequest(body): Promise<ReturnRequest> {
@@ -38,10 +53,6 @@ export function rejectReturnRequest(id, rejectionReason) {
 
 export function cancelReturnRequest(id) {
   return apiPut(`/return-requests/${id}/cancel`, {});
-}
-
-export function lookupReturnTransaction({ q, mode = 'auto' }) {
-  return apiGet(`/return-requests/lookup?${toParams({ q, mode })}`);
 }
 
 export function getReturnRequestSummary() {

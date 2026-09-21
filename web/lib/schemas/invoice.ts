@@ -114,11 +114,15 @@ export const invoicePaymentListSchema = z.array(invoicePaymentSchema);
  * console warning instead of silently propagating bad money data through
  * the UI as `NaN`/`undefined` with no trace of why.
  */
-export function validateMoneyResponse<T>(schema: z.ZodType<T>, data: unknown, context: string): T {
+export function validateMoneyResponse<T = unknown>(
+  schema: z.ZodTypeAny,
+  data: unknown,
+  context: string,
+): T {
   const result = schema.safeParse(data);
   if (!result.success) {
     console.error(`[validateMoneyResponse] ${context}: response shape mismatch`, result.error.issues, data);
     return data as T;
   }
-  return result.data;
+  return result.data as T;
 }

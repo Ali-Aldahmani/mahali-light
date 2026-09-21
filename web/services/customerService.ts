@@ -1,4 +1,6 @@
 import { apiGet, apiGetWithMeta, apiPost, apiPut, apiDelete } from './http';
+import { customerPaymentListSchema } from '@/lib/schemas/customerPayment';
+import { validateMoneyResponse } from '@/lib/schemas/invoice';
 
 function toParams(o: Record<string, any>): string {
   const p = new URLSearchParams();
@@ -56,8 +58,10 @@ export function getCustomerInvoices(id) {
   return apiGet(`/customers/${id}/invoices`);
 }
 
-export function getCustomerPayments(id) {
-  return apiGetWithMeta(`/customers/${id}/payments`);
+export async function getCustomerPayments(id) {
+  const result = await apiGetWithMeta(`/customers/${id}/payments`);
+  validateMoneyResponse(customerPaymentListSchema, result.data, `GET /customers/${id}/payments`);
+  return result;
 }
 
 export function getCustomerReturns(id) {

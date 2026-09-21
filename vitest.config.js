@@ -9,7 +9,7 @@ export default defineConfig({
     // web test`. Without this exclude, this root run's default test glob
     // picks up web/'s *.test.ts(x) files too and tries to execute them
     // under the wrong environment/module resolution (no @/* alias here).
-    exclude: ['**/node_modules/**', 'web/**'],
+    exclude: ['**/node_modules/**', 'web/**', '**/.claude/**'],
     setupFiles: ['./tests/setup.js'],
     // Increase timeout slightly for integration tests that involve bcrypt
     testTimeout: 15000,
