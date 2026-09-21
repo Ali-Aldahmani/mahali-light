@@ -117,6 +117,7 @@ interface PosState {
   ) => void;
   removeFromCart: (variantId: string | number) => void;
   setInvoiceDiscount: (amount: number) => void;
+  setTaxRate: (rate: number) => void;
   setNotes: (notes: string) => void;
   addPayment: (method: string, amount: number) => void;
   updatePayment: (id: string, patch: Partial<Payment>) => void;
@@ -379,6 +380,10 @@ export const usePosStore = create<PosState>()((set, get) => ({
 
   setInvoiceDiscount(amount) {
     set({ invoiceDiscount: round2(amount) });
+  },
+
+  setTaxRate(rate) {
+    set({ taxRate: Math.max(0, round2(rate || 0)) });
   },
 
   setNotes(notes) {

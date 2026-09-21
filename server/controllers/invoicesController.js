@@ -7,6 +7,7 @@ const {
   generateInvoiceNumber,
   replaceItems,
   recalculateAndPersistTotals,
+  resolveInvoiceTaxRate,
   confirmInvoice,
   cancelInvoice,
   computeLineFigures,
@@ -376,7 +377,6 @@ const createSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
   items: z.array(itemSchema).default([]),
   invoiceDiscount: z.number().nonnegative().optional().default(0),
-  taxRate: z.number().min(0).max(100).optional().default(5),
 });
 
 async function create(req, res, next) {
@@ -388,6 +388,7 @@ async function create(req, res, next) {
       const { invoiceNumber, pcCode } = await generateInvoiceNumber(client, {
         pcIdentifier: body.pcIdentifier || 'P0',
       });
+      const taxRate = await resolveInvoiceTaxRate(client);
 
       const { rows } = await client.query(
         `INSERT INTO invoices (
@@ -400,7 +401,7 @@ async function create(req, res, next) {
           body.customerId || null,
           req.user.id,
           body.invoiceDiscount || 0,
-          body.taxRate ?? 5,
+          taxRate,
           pcCode,
           body.notes || null,
         ],

@@ -28,6 +28,21 @@ function safeLoadPdfService() {
 
 const DEFAULT_TAX_RATE = 5.0;
 
+// Authoritative VAT rate for new/recalculated invoices — never trust the client.
+async function resolveInvoiceTaxRate(client = null) {
+  const q = client ? client.query.bind(client) : query;
+  const { rows } = await q(
+    `SELECT vat_enabled, vat_rate
+       FROM app_settings
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  );
+  const row = rows[0];
+  if (!row || row.vat_enabled === false) return 0;
+  const rate = Number(row.vat_rate);
+  return Number.isFinite(rate) ? rate : DEFAULT_TAX_RATE;
+}
+
 function money(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
@@ -283,10 +298,10 @@ async function loadPaymentsForInvoice(client, invoiceId) {
 async function recalculateAndPersistTotals(
   client,
   invoiceId,
-  { invoiceDiscount = null, taxRate = null } = {},
+  { invoiceDiscount = null } = {},
 ) {
   const { rows: invRows } = await client.query(
-    `SELECT invoice_discount, tax_rate FROM invoices WHERE id = $1`,
+    `SELECT invoice_discount FROM invoices WHERE id = $1`,
     [invoiceId],
   );
   if (!invRows.length) {
@@ -296,13 +311,14 @@ async function recalculateAndPersistTotals(
   }
   const items = await loadItemsForInvoice(client, invoiceId);
   const payments = await loadPaymentsForInvoice(client, invoiceId);
+  const taxRate = await resolveInvoiceTaxRate(client);
 
   const totals = computeTotals({
     items,
     payments,
     invoiceDiscount:
       invoiceDiscount != null ? invoiceDiscount : invRows[0].invoice_discount,
-    taxRate: taxRate != null ? taxRate : invRows[0].tax_rate,
+    taxRate,
   });
 
   if (totals.amountPaid > totals.total) {
@@ -1313,6 +1329,7 @@ module.exports = {
   computeLineFigures,
   replaceItems,
   recalculateAndPersistTotals,
+  resolveInvoiceTaxRate,
   findStockShortfalls,
   confirmInvoice,
   cancelInvoice,

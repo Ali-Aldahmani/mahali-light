@@ -234,4 +234,40 @@ describe.skipIf(!enabled)('custom/third-party invoice items on real PostgreSQL',
     `, [invoiceId]);
     expect(unbalanced).toHaveLength(0);
   });
+
+  it('ignores a client-supplied taxRate and uses app_settings VAT rate', async () => {
+    await db.query(`UPDATE app_settings SET vat_enabled = true, vat_rate = 5`);
+
+    const createRes = await request(app)
+      .post('/invoices')
+      .auth(adminToken, { type: 'bearer' })
+      .send({
+        customerId,
+        taxRate: 0,
+        items: [{ variantId, quantity: 1 }],
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.data.taxRate).toBe(5);
+    expect(createRes.body.data.total).toBe(105);
+  });
+
+  it('uses zero tax when VAT is disabled in app_settings', async () => {
+    await db.query(`UPDATE app_settings SET vat_enabled = false, vat_rate = 5`);
+
+    const createRes = await request(app)
+      .post('/invoices')
+      .auth(adminToken, { type: 'bearer' })
+      .send({
+        customerId,
+        taxRate: 99,
+        items: [{ variantId, quantity: 1 }],
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.data.taxRate).toBe(0);
+    expect(createRes.body.data.total).toBe(100);
+
+    await db.query(`UPDATE app_settings SET vat_enabled = true, vat_rate = 5`);
+  });
 });

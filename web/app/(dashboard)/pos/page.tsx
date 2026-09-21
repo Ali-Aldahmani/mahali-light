@@ -40,6 +40,7 @@ import {
   confirmInvoice as confirmInvoiceApi,
 } from '@/services/invoiceService';
 import { formatCurrency } from '@/lib/utils/format';
+import { useAppSettingsStore } from '@/store/appSettingsStore';
 
 export default function POSPage() {
   return (
@@ -69,8 +70,23 @@ function POSPageContent() {
   const updatePayment = usePosStore((s) => s.updatePayment);
   const removePayment = usePosStore((s) => s.removePayment);
   const clearCart = usePosStore((s) => s.clearCart);
+  const setTaxRate = usePosStore((s) => s.setTaxRate);
+  const fetchPublicSettings = useAppSettingsStore((s) => s.fetchPublic);
+  const publicSettings = useAppSettingsStore((s) => s.publicSettings);
 
   const totals = usePosStore((s) => s.calculateTotals());
+
+  useEffect(() => {
+    fetchPublicSettings().catch(() => {});
+  }, [fetchPublicSettings]);
+
+  useEffect(() => {
+    if (!publicSettings) return;
+    const rate = publicSettings.vat_enabled
+      ? Number(publicSettings.vat_rate ?? 5)
+      : 0;
+    setTaxRate(Number.isFinite(rate) ? rate : 0);
+  }, [publicSettings, setTaxRate]);
 
   const refreshInvoiceSummary = useInvoiceStore((s) => s.refreshSummary);
 
@@ -244,7 +260,6 @@ function POSPageContent() {
         pcIdentifier,
         notes: usePosStore.getState().notes || null,
         invoiceDiscount,
-        taxRate: totals.taxRate,
         items: totals.items.map((it: any) =>
           it.isCustom
             ? {
