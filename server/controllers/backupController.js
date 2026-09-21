@@ -238,8 +238,9 @@ function getBackupKey() {
       { status: 500 },
     );
   }
-  // Derive a 32-byte key from the secret (AES-256 requires exactly 32 bytes).
-  return Buffer.from(raw.padEnd(32).slice(0, 32));
+  // Derive a 32-byte AES-256 key from the secret via scrypt rather than
+  // truncating/zero-padding the raw string, so short secrets aren't weakened.
+  return crypto.scryptSync(raw, 'mahali-light-backup-key-v1', 32);
 }
 
 function encryptCredentials(value) {

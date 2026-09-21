@@ -94,9 +94,7 @@ async function complete(req, res, next) {
         { status: 409 },
       );
     }
-    await setupTokenService.assertValidSetupToken(
-      req.headers['x-setup-token'] || req.body?.setup_token,
-    );
+    await setupTokenService.assertValidSetupToken(req.headers['x-setup-token']);
     const hasAdmin = await setupService.hasAdminUser();
     if (hasAdmin && body.admin) {
       throw new AppError(

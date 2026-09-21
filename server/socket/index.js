@@ -25,12 +25,12 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
     },
   });
 
-  // Authenticate the socket via JWT in handshake.auth.token (or query).
+  // Authenticate the socket via JWT in handshake.auth.token.
   io.use(async (socket, next) => {
     try {
-      const token =
-        (socket.handshake.auth && socket.handshake.auth.token) ||
-        socket.handshake.query.token;
+      // Auth token must come from the handshake auth payload, never the
+      // query string — query params get written to access/proxy logs.
+      const token = socket.handshake.auth && socket.handshake.auth.token;
       if (!token) return next(new Error('AUTH_TOKEN_MISSING'));
 
       const payload = verifyToken(token);

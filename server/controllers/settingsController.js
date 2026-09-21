@@ -55,7 +55,30 @@ async function getOne(req, res, next) {
   }
 }
 
-const updateSchema = z.object({ value: z.any() });
+const MAX_SETTING_VALUE_BYTES = 64 * 1024;
+const MAX_SETTING_VALUE_DEPTH = 10;
+
+function jsonDepth(value, depth = 0) {
+  if (depth > MAX_SETTING_VALUE_DEPTH || !value || typeof value !== 'object') return depth;
+  const values = Array.isArray(value) ? value : Object.values(value);
+  return values.reduce((max, v) => Math.max(max, jsonDepth(v, depth + 1)), depth);
+}
+
+const updateSchema = z.object({
+  value: z
+    .any()
+    .refine((v) => {
+      const serialized = JSON.stringify(v);
+      return (
+        serialized !== undefined &&
+        Buffer.byteLength(serialized, 'utf8') <= MAX_SETTING_VALUE_BYTES
+      );
+    }, `Setting value must be JSON-serializable and at most ${MAX_SETTING_VALUE_BYTES} bytes.`)
+    .refine(
+      (v) => jsonDepth(v) <= MAX_SETTING_VALUE_DEPTH,
+      `Setting value must not be nested more than ${MAX_SETTING_VALUE_DEPTH} levels deep.`,
+    ),
+});
 
 async function update(req, res, next) {
   try {
