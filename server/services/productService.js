@@ -258,7 +258,7 @@ async function loadVariantsBatch(productIds, includeCost) {
  *                                        automatically, so single-product callers don't need
  *                                        to pre-fetch separately.
  */
-async function shapeProduct(row, { includeCost, variants, summary = false, cat = null }) {
+async function shapeProduct(row, { includeCost, variants, summary = false, cat = null, restriction = null }) {
   const catData = cat !== null ? cat : await loadCategoryPath(row.category_id);
   const base = {
     id: row.id,
@@ -280,6 +280,7 @@ async function shapeProduct(row, { includeCost, variants, summary = false, cat =
     updatedAt: row.updated_at,
   };
   base.variants = variants || [];
+  base.pricingRestriction = restriction;
   if (summary) {
     base.variantCount = variants ? variants.length : 0;
     base.totalStock = variants

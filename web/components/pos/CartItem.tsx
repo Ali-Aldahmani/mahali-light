@@ -1,4 +1,4 @@
-import { Minus, Percent, Plus, Trash2 } from 'lucide-react';
+import { Minus, Percent, Plus, ShieldAlert, Trash2 } from 'lucide-react';
 import Input from '../ui/Input';
 import { formatCurrency } from '@/lib/utils/format';
 
@@ -25,6 +25,22 @@ export default function CartItem({
     ? Number(item.discountAmount)
     : lineSubtotal * (Number(item.discountPercent || 0) / 100);
   const lineTotal = Math.max(0, lineSubtotal - discount);
+
+  // UX-only reflection of a pricing restriction — the server is what
+  // actually enforces it (invoiceService), this just avoids a round trip
+  // for the common case of a cashier typing an obviously-too-big discount.
+  const restriction = item.pricingRestriction;
+  const restrictionHint = restriction
+    ? restriction.restrictionType === 'MINIMUM_PRICE'
+      ? `Min price AED ${Number(restriction.minPrice).toFixed(2)}`
+      : restriction.restrictionType === 'MAX_DISCOUNT_PERCENT'
+        ? `Max discount ${restriction.maxDiscountPercent}%`
+        : `Max discount AED ${Number(restriction.maxDiscountAmount).toFixed(2)}/unit`
+    : null;
+  const maxDiscountPercentHint =
+    restriction?.restrictionType === 'MAX_DISCOUNT_PERCENT' ? restriction.maxDiscountPercent : undefined;
+  const maxDiscountAmountHint =
+    restriction?.restrictionType === 'MAX_DISCOUNT_AMOUNT' ? restriction.maxDiscountAmount : undefined;
 
   // Compact 2-line layout — POS cart is space-constrained.
   return (
@@ -118,6 +134,7 @@ export default function CartItem({
           <input
             type="number"
             min={0}
+            max={maxDiscountPercentHint}
             step="0.01"
             value={item.discountPercent || ''}
             onChange={(e) =>
@@ -135,6 +152,7 @@ export default function CartItem({
           <input
             type="number"
             min={0}
+            max={maxDiscountAmountHint}
             step="0.01"
             value={item.discountAmount || ''}
             onChange={(e) =>
@@ -145,6 +163,13 @@ export default function CartItem({
           />
         </div>
       </div>
+
+      {restrictionHint && (
+        <div className="text-[10px] text-warning flex items-center gap-1">
+          <ShieldAlert className="h-2.5 w-2.5 shrink-0" />
+          {restrictionHint}
+        </div>
+      )}
     </div>
   );
 }

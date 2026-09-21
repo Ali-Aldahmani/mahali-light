@@ -20,6 +20,7 @@ const {
   shapeProduct,
 } = require('../services/productService');
 const { lookupBarcode } = require('../services/barcodeLookupService');
+const pricingRestrictionService = require('../services/pricingRestrictionService');
 
 const SOLD_BY = ['piece', 'meter', 'roll', 'kg', 'box'];
 
@@ -143,9 +144,10 @@ async function list(req, res, next) {
 
     // Batch-load variants and category paths for the whole page in parallel —
     // 2 queries total instead of up to 800+ for a 100-product page.
-    const [variantsByProduct, catPathByCategory] = await Promise.all([
+    const [variantsByProduct, catPathByCategory, restrictionsByProduct] = await Promise.all([
       loadVariantsBatch(rows.map((r) => r.id), includeCost),
       loadCategoryPathBatch(rows.map((r) => r.category_id)),
+      pricingRestrictionService.getRestrictionsMap(null, rows.map((r) => r.id)),
     ]);
 
     const data = await Promise.all(
@@ -153,7 +155,8 @@ async function list(req, res, next) {
         const variants = variantsByProduct.get(row.id) || [];
         const cat = catPathByCategory.get(row.category_id)
           || { path: null, depth: 0, categoryName: null };
-        return shapeProduct(row, { includeCost, variants, summary: true, cat });
+        const restriction = pricingRestrictionService.shape(restrictionsByProduct.get(row.id));
+        return shapeProduct(row, { includeCost, variants, summary: true, cat, restriction });
       }),
     );
 
@@ -175,7 +178,10 @@ async function getOne(req, res, next) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
     const variants = await loadVariants(rows[0].id, includeCost);
-    return ok(res, await shapeProduct(rows[0], { includeCost, variants }));
+    const restriction = pricingRestrictionService.shape(
+      await pricingRestrictionService.getRestriction(null, rows[0].id),
+    );
+    return ok(res, await shapeProduct(rows[0], { includeCost, variants, restriction }));
   } catch (err) {
     next(err);
   }
@@ -639,10 +645,12 @@ async function search(req, res, next) {
               p.sold_by, p.unit_label, p.has_variants, p.category_id,
               p.is_active AS product_active,
               p.default_warranty_months,
-              c.requires_serial AS category_requires_serial
+              c.requires_serial AS category_requires_serial,
+              pr.restriction_type, pr.min_price, pr.max_discount_percent, pr.max_discount_amount
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
          LEFT JOIN product_categories c ON c.id = p.category_id
+         LEFT JOIN pricing_restrictions pr ON pr.product_id = p.id
         WHERE ${filters.join(' AND ')}
         ORDER BY p.name ASC, v.sku ASC
         LIMIT $${params.length}`,
@@ -699,6 +707,14 @@ async function search(req, res, next) {
         attributes: attrMap.get(r.id) || [],
         requiresSerial: !!r.category_requires_serial,
         defaultWarrantyMonths: Number(r.default_warranty_months || 0),
+        pricingRestriction: r.restriction_type
+          ? {
+              restrictionType: r.restriction_type,
+              minPrice: r.min_price != null ? Number(r.min_price) : null,
+              maxDiscountPercent: r.max_discount_percent != null ? Number(r.max_discount_percent) : null,
+              maxDiscountAmount: r.max_discount_amount != null ? Number(r.max_discount_amount) : null,
+            }
+          : null,
       };
       if (includeCost) out.costPrice = Number(r.cost_price);
       return out;

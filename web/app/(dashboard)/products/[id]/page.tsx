@@ -11,11 +11,13 @@ import {
   Package,
   Pencil,
   Plus,
+  ShieldAlert,
   Trash2,
   Warehouse,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
 import Tabs from '@/components/ui/Tabs';
 import Badge, { StatusBadge } from '@/components/ui/Badge';
 import BarcodeDisplay from '@/components/ui/BarcodeDisplay';
@@ -37,6 +39,12 @@ import {
 import { deleteVariant } from '@/services/variantService';
 import { getCategoryAttributes } from '@/services/categoryService';
 import { getProductWarrantyStats } from '@/services/warrantyService';
+import {
+  getPricingRestriction,
+  removePricingRestriction,
+  upsertPricingRestriction,
+  type RestrictionType,
+} from '@/services/pricingRestrictionService';
 import { useProductStore } from '@/store/productStore';
 import { useAuthStore } from '@/store/authStore';
 import { onProductUpdate } from '@/store/socketStore';
@@ -53,6 +61,7 @@ function ProductDetailPageContent() {
   const canEdit = hasPermission('product.edit');
   const canDelete = hasPermission('product.delete');
   const canViewCost = hasPermission('product.view_cost');
+  const canManagePricingRestrictions = hasPermission('product.manage_pricing_restrictions');
 
   const tree = useProductStore((s) => s.categoriesTree);
   const fetchCategories = useProductStore((s) => s.fetchCategories);
@@ -156,6 +165,7 @@ function ProductDetailPageContent() {
       } as any);
     }
     items.push({ value: 'stock', label: 'Stock', icon: <Warehouse size={14} /> });
+    items.push({ value: 'pricing', label: 'Pricing', icon: <ShieldAlert size={14} /> });
     items.push({ value: 'history', label: 'History', icon: <HistoryIcon size={14} /> });
     return items;
   }, [product]);
@@ -332,6 +342,10 @@ function ProductDetailPageContent() {
           stockValue={stockValue}
           canViewCost={canViewCost}
         />
+      )}
+
+      {tab === 'pricing' && (
+        <PricingTab productId={product.id} canManage={canManagePricingRestrictions} />
       )}
 
       {tab === 'history' && <HistoryTab loading={historyLoading} entries={history} />}
@@ -719,6 +733,153 @@ function StockTab({
       <p className="mt-3 text-xs text-ink-muted">
         Stock adjustments and quarantine workflows are managed in the Stock module (Phase 3).
       </p>
+    </div>
+  );
+}
+
+const RESTRICTION_OPTIONS: { value: RestrictionType; label: string; hint: string }[] = [
+  { value: 'MINIMUM_PRICE', label: 'Minimum price', hint: 'The final price (after any discount) can never go below this.' },
+  { value: 'MAX_DISCOUNT_PERCENT', label: 'Max discount %', hint: 'No line for this product can be discounted more than this percent off catalog price.' },
+  { value: 'MAX_DISCOUNT_AMOUNT', label: 'Max discount amount', hint: 'No line for this product can be discounted more than this AED amount off catalog price, per unit.' },
+];
+
+// Requirement: Admin configures exactly ONE restriction per product, one of
+// MINIMUM_PRICE / MAX_DISCOUNT_PERCENT / MAX_DISCOUNT_AMOUNT. Enforcement
+// itself lives entirely server-side (invoiceService.replaceItems and
+// applyEditRequest) — this UI is convenience/reflection only, per the
+// "frontend validation is NOT security" requirement.
+function PricingTab({ productId, canManage }: { productId: string; canManage: boolean }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [current, setCurrent] = useState<any>(null);
+  const [type, setType] = useState<RestrictionType | 'NONE'>('NONE');
+  const [value, setValue] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getPricingRestriction(productId)
+      .then((data: any) => {
+        if (cancelled) return;
+        setCurrent(data);
+        if (data) {
+          setType(data.restrictionType);
+          setValue(String(data.minPrice ?? data.maxDiscountPercent ?? data.maxDiscountAmount ?? ''));
+        } else {
+          setType('NONE');
+          setValue('');
+        }
+      })
+      .catch((err: any) => toast.error(err?.message || 'Could not load pricing restriction.'))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [productId]);
+
+  async function handleSave() {
+    if (type === 'NONE') {
+      if (!current) return;
+      setSaving(true);
+      try {
+        await removePricingRestriction(productId);
+        setCurrent(null);
+        toast.success('Pricing restriction removed.');
+      } catch (err: any) {
+        toast.error(err?.message || 'Could not remove pricing restriction.');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 0) {
+      toast.error('Enter a valid, non-negative value.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload: any = { restrictionType: type };
+      if (type === 'MINIMUM_PRICE') payload.minPrice = num;
+      if (type === 'MAX_DISCOUNT_PERCENT') payload.maxDiscountPercent = num;
+      if (type === 'MAX_DISCOUNT_AMOUNT') payload.maxDiscountAmount = num;
+      const saved = await upsertPricingRestriction(productId, payload);
+      setCurrent(saved);
+      toast.success('Pricing restriction saved.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not save pricing restriction.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="card p-10 flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-5 max-w-xl space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-ink">Pricing restriction</h3>
+        <p className="text-xs text-ink-muted mt-0.5">
+          Enforced server-side on every sale, draft edit and edit-request approval for this
+          product — the POS only reflects it for cashiers, it can&apos;t be bypassed from there.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="radio"
+            name="restriction-type"
+            checked={type === 'NONE'}
+            onChange={() => setType('NONE')}
+            disabled={!canManage}
+          />
+          No restriction
+        </label>
+        {RESTRICTION_OPTIONS.map((opt) => (
+          <div key={opt.value} className="space-y-1">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="restriction-type"
+                checked={type === opt.value}
+                onChange={() => setType(opt.value)}
+                disabled={!canManage}
+              />
+              {opt.label}
+            </label>
+            {type === opt.value && (
+              <div className="pl-6 flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={value}
+                  onChange={(e: any) => setValue(e.target.value)}
+                  disabled={!canManage}
+                  className="w-32"
+                  placeholder={opt.value === 'MAX_DISCOUNT_PERCENT' ? '%' : 'AED'}
+                />
+                <span className="text-xs text-ink-muted">{opt.hint}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {canManage ? (
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+      ) : (
+        <p className="text-xs text-ink-muted">
+          You don&apos;t have permission to change pricing restrictions.
+        </p>
+      )}
     </div>
   );
 }

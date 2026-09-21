@@ -13,6 +13,7 @@ const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
 const notificationService = require('./notificationService');
+const pricingRestrictionService = require('./pricingRestrictionService');
 
 // Lazy-require to avoid circular deps and to keep puppeteer cold-start cost
 // off the boot path. Returns null if PDF generation is unavailable.
@@ -168,6 +169,10 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
   ]);
 
   const variantMap = new Map(variantRows.map((v) => [v.id, v]));
+  const restrictionMap = await pricingRestrictionService.getRestrictionsMap(
+    client,
+    variantRows.map((v) => v.product_id),
+  );
 
   // Group flat attribute rows into { variant_id → { name: value } } map.
   const attrMap = new Map();
@@ -242,6 +247,16 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
       discount_percent: Number(raw.discount_percent || 0),
     };
     const figures = computeLineFigures(item);
+
+    // Net per-unit price after discount — checked against any restriction
+    // regardless of allowPriceOverride, so a permitted price override
+    // can't be combined with a discount to slip under a configured floor.
+    pricingRestrictionService.assertPriceAllowed({
+      restriction: restrictionMap.get(v.product_id),
+      catalogPrice: v.selling_price,
+      netUnitPrice: item.quantity > 0 ? figures.lineTotal / item.quantity : item.unit_price,
+      productName: v.product_name,
+    });
 
     const serial =
       raw.serial_number && String(raw.serial_number).trim()
@@ -1049,6 +1064,24 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
       );
       const byVariant = new Map(currentItems.map((r) => [r.variant_id, r]));
       const requestedVariants = new Set();
+
+      // Batch-fetch current catalog price + restriction for every variant
+      // this edit request touches — the existing-item branch below updates
+      // invoice_items directly (not through replaceItems), so it needs its
+      // own fresh price/restriction lookup rather than trusting anything
+      // already stored on the invoice row.
+      const editVariantIds = [...new Set(changes.items.map((i) => i.variant_id).filter(Boolean))];
+      const { rows: editVariantRows } = editVariantIds.length
+        ? await client.query(
+            `SELECT id, product_id, selling_price FROM product_variants WHERE id = ANY($1)`,
+            [editVariantIds],
+          )
+        : { rows: [] };
+      const editVariantPricing = new Map(editVariantRows.map((v) => [v.id, v]));
+      const editRestrictionMap = await pricingRestrictionService.getRestrictionsMap(
+        client,
+        editVariantRows.map((v) => v.product_id),
+      );
       for (const requested of changes.items) {
         if (requestedVariants.has(requested.variant_id) ||
             currentItems.filter((it) => it.variant_id === requested.variant_id).length > 1) {
@@ -1122,6 +1155,18 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
         const { lineSubtotal, lineTotal, discountAmount } = computeLineFigures({
           quantity: newQty, unit_price: newPrice, discount_amount: newDisc,
         });
+
+        if (newQty > 0) {
+          const vp = editVariantPricing.get(requested.variant_id);
+          if (vp) {
+            pricingRestrictionService.assertPriceAllowed({
+              restriction: editRestrictionMap.get(vp.product_id),
+              catalogPrice: vp.selling_price,
+              netUnitPrice: lineTotal / newQty,
+              productName: cur?.product_name,
+            });
+          }
+        }
 
         if (cur) {
           if (newQty <= 0) {

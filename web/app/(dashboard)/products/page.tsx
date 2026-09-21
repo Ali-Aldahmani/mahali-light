@@ -15,7 +15,9 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PermissionGate from '@/components/ui/PermissionGate';
 import CategoryTreeSelect from '@/components/ui/CategoryTreeSelect';
 import RequirePermission from '@/components/guards/RequirePermission';
+import Modal from '@/components/ui/Modal';
 import { deleteProduct, listProducts } from '@/services/productService';
+import { bulkApplyMaxDiscount } from '@/services/pricingRestrictionService';
 import { useProductStore } from '@/store/productStore';
 import { useAuthStore } from '@/store/authStore';
 import { onProductUpdate } from '@/store/socketStore';
@@ -47,7 +49,48 @@ function ProductsPageContent() {
   const router = useRouter();
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const canViewCost = hasPermission('product.view_cost');
+  const canManagePricingRestrictions = hasPermission('product.manage_pricing_restrictions');
   const refreshStore = useProductStore((s) => s.refreshAll);
+
+  // Requirement #2: bulk-apply a max-discount restriction to many products
+  // at once. Selection only appears for admins who can actually act on it.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkType, setBulkType] = useState<'MAX_DISCOUNT_PERCENT' | 'MAX_DISCOUNT_AMOUNT'>('MAX_DISCOUNT_PERCENT');
+  const [bulkValue, setBulkValue] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function submitBulkApply() {
+    const num = Number(bulkValue);
+    if (!Number.isFinite(num) || num < 0) {
+      toast.error('Enter a valid, non-negative value.');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const payload: any = { productIds: [...selectedIds], restrictionType: bulkType };
+      if (bulkType === 'MAX_DISCOUNT_PERCENT') payload.maxDiscountPercent = num;
+      else payload.maxDiscountAmount = num;
+      await bulkApplyMaxDiscount(payload);
+      toast.success(`Applied to ${selectedIds.size} product(s).`);
+      setBulkOpen(false);
+      setSelectedIds(new Set());
+      setBulkValue('');
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not apply the restriction.');
+    } finally {
+      setBulkSaving(false);
+    }
+  }
 
   const categoriesTree = useProductStore((s) => s.categoriesTree);
   const fetchCategories = useProductStore((s) => s.fetchCategories);
@@ -120,6 +163,25 @@ function ProductsPageContent() {
 
   const columns = useMemo<TableColumn[]>(
     () => [
+      ...(canManagePricingRestrictions
+        ? [
+            {
+              key: 'select',
+              header: '',
+              sortable: false,
+              width: 36,
+              render: (row: any) => (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(row.id)}
+                  onChange={() => toggleSelected(row.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`Select ${row.name}`}
+                />
+              ),
+            } as TableColumn,
+          ]
+        : []),
       {
         key: 'product',
         header: 'Product',
@@ -259,7 +321,7 @@ function ProductsPageContent() {
         ),
       },
     ],
-    [router, canViewCost],
+    [router, canViewCost, canManagePricingRestrictions, selectedIds],
   );
 
   async function confirmDelete() {
@@ -358,6 +420,26 @@ function ProductsPageContent() {
         </div>
       </div>
 
+      {canManagePricingRestrictions && selectedIds.size > 0 && (
+        <div className="mb-3 flex items-center justify-between rounded-lg border border-accent/30 bg-accent-light px-4 py-2.5">
+          <span className="text-sm text-accent font-medium">
+            {selectedIds.size} product{selectedIds.size === 1 ? '' : 's'} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-ink-muted hover:text-ink"
+            >
+              Clear
+            </button>
+            <Button size="sm" onClick={() => setBulkOpen(true)}>
+              Apply max discount
+            </Button>
+          </div>
+        </div>
+      )}
+
       {isEmpty ? (
         <EmptyState
           icon={<Package size={20} />}
@@ -400,6 +482,51 @@ function ProductsPageContent() {
         onConfirm={confirmDelete}
         loading={delLoading}
       />
+
+      <Modal
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        title="Apply max discount to selected products"
+        subtitle={`${selectedIds.size} product(s) selected`}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setBulkOpen(false)}>Cancel</Button>
+            <Button onClick={submitBulkApply} disabled={bulkSaving}>
+              {bulkSaving ? 'Applying…' : 'Apply'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              checked={bulkType === 'MAX_DISCOUNT_PERCENT'}
+              onChange={() => setBulkType('MAX_DISCOUNT_PERCENT')}
+            />
+            Max discount %
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              checked={bulkType === 'MAX_DISCOUNT_AMOUNT'}
+              onChange={() => setBulkType('MAX_DISCOUNT_AMOUNT')}
+            />
+            Max discount amount (AED per unit)
+          </label>
+          <Input
+            type="number"
+            min={0}
+            step="0.01"
+            value={bulkValue}
+            onChange={(e: any) => setBulkValue(e.target.value)}
+            placeholder={bulkType === 'MAX_DISCOUNT_PERCENT' ? '%' : 'AED'}
+          />
+          <p className="text-xs text-ink-muted">
+            Replaces any existing pricing restriction on the selected products.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

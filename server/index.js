@@ -27,6 +27,7 @@ const categoriesRouter = require('./routes/categories');
 const attributesRouter = require('./routes/attributes');
 const productsRouter = require('./routes/products');
 const variantsRouter = require('./routes/variants');
+const pricingRestrictionsRouter = require('./routes/pricingRestrictions');
 const stockRouter = require('./routes/stock');
 const settingsRouter = require('./routes/settings');
 const suppliersRouter = require('./routes/suppliers');
@@ -310,6 +311,7 @@ async function bootstrap() {
   app.use('/api/attributes', attributesRouter);
   app.use('/api/products', productsRouter);
   app.use('/api/variants', variantsRouter);
+  app.use('/api/pricing-restrictions', pricingRestrictionsRouter);
   app.use('/api/stock', stockRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/suppliers', suppliersRouter);

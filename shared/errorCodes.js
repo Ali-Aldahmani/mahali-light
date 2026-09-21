@@ -100,6 +100,7 @@ const ERROR_CODES = {
   BIZ_DUPLICATE_ATTENDANCE: 'BIZ_DUPLICATE_ATTENDANCE',
   BIZ_SUPPLIER_HAS_POS: 'BIZ_SUPPLIER_HAS_POS',
   BIZ_CATEGORY_HAS_PRODUCTS: 'BIZ_CATEGORY_HAS_PRODUCTS',
+  BIZ_PRICING_RESTRICTION_VIOLATION: 'BIZ_PRICING_RESTRICTION_VIOLATION',
 
   // Database
   DB_CONNECTION_FAILED: 'DB_CONNECTION_FAILED',
@@ -388,6 +389,11 @@ const ERROR_DEFS = {
   },
   [ERROR_CODES.BIZ_CATEGORY_HAS_PRODUCTS]: {
     message: 'Cannot delete category with existing products.',
+    status: 422,
+    severity: 'warning',
+  },
+  [ERROR_CODES.BIZ_PRICING_RESTRICTION_VIOLATION]: {
+    message: 'This price for {product} violates its pricing restriction ({reason}).',
     status: 422,
     severity: 'warning',
   },

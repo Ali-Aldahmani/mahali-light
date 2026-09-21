@@ -22,6 +22,7 @@ const PERMISSIONS = {
     delete: 'product.delete',
     adjustStock: 'product.adjust_stock',
     viewCost: 'product.view_cost',
+    managePricingRestrictions: 'product.manage_pricing_restrictions',
   },
   supplier: {
     view: 'supplier.view',

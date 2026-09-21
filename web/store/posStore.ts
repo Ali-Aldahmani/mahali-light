@@ -13,6 +13,7 @@ import { create } from 'zustand';
 //     quantity,         // numeric (decimals allowed for meter/kg)
 //     discountAmount,   // AED off the line (always derived from percent)
 //     discountPercent,  // % off the line (preferred input)
+//     pricingRestriction, // { restrictionType, minPrice?, maxDiscountPercent?, maxDiscountAmount? } | null — UX hint only, server-enforced
 //   }
 
 const DEFAULT_TAX_RATE = 5;
@@ -40,6 +41,12 @@ interface CartItem {
   quantity: number;
   discountAmount: number;
   discountPercent: number;
+  pricingRestriction?: {
+    restrictionType: 'MINIMUM_PRICE' | 'MAX_DISCOUNT_PERCENT' | 'MAX_DISCOUNT_AMOUNT';
+    minPrice?: number | null;
+    maxDiscountPercent?: number | null;
+    maxDiscountAmount?: number | null;
+  } | null;
   serialNumber?: string;
   serialValid?: boolean;
   serialError?: string | null;
@@ -271,6 +278,9 @@ export const usePosStore = create<PosState>()((set, get) => ({
         quantity: qty,
         discountAmount: 0,
         discountPercent: 0,
+        // UX-only reflection of the product's pricing restriction (if any)
+        // — the server enforces it regardless of what the client sends.
+        pricingRestriction: variant.pricingRestriction || null,
         serialNumber: '',
         serialValid: true,
         serialError: null,

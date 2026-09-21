@@ -28,6 +28,7 @@ const ALL_PERMISSIONS = [
   ['product.delete', 'Delete Product', 'product'],
   ['product.adjust_stock', 'Adjust Stock', 'product'],
   ['product.view_cost', 'View Cost Price', 'product'],
+  ['product.manage_pricing_restrictions', 'Manage Pricing Restrictions', 'product'],
   ['supplier.view', 'View Suppliers', 'supplier'],
   ['supplier.create', 'Create Supplier', 'supplier'],
   ['supplier.edit', 'Edit Supplier', 'supplier'],
