@@ -9,6 +9,7 @@ function shape(row) {
     id: row.id,
     store_name: row.store_name,
     store_name_ar: row.store_name_ar,
+    store_tagline: row.store_tagline,
     store_address: row.store_address,
     store_phone: row.store_phone,
     store_email: row.store_email,
@@ -59,6 +60,7 @@ async function isSetupComplete() {
 const PATCH_MAP = {
   store_name: 'store_name',
   store_name_ar: 'store_name_ar',
+  store_tagline: 'store_tagline',
   store_address: 'store_address',
   store_phone: 'store_phone',
   store_email: 'store_email',
@@ -160,6 +162,7 @@ async function getPublicSettings() {
   return {
     setup_completed: s.setup_completed,
     store_name: s.store_name,
+    store_tagline: s.store_tagline,
     store_currency: s.store_currency,
     store_timezone: s.store_timezone,
     vat_enabled: s.vat_enabled,

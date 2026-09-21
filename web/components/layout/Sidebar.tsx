@@ -138,6 +138,9 @@ export default function Sidebar() {
   const storeName = useAppSettingsStore(
     (s) => s.publicSettings?.store_name || s.settings?.store_name,
   );
+  const storeTagline = useAppSettingsStore(
+    (s) => s.publicSettings?.store_tagline || s.settings?.store_tagline,
+  );
   const openBugReport = useUiErrorStore((s) => s.openBugReport);
   const [collapsed, setCollapsed] = useState(false);
   const approvalCount = useNotificationStore((s) => s.approvalCount);
@@ -221,7 +224,7 @@ export default function Sidebar() {
         {!collapsed && (
           <div className="min-w-0 leading-tight">
             <p className="truncate text-sm font-semibold text-ink">{storeName || 'Mahali Light'}</p>
-            <p className="text-xs text-ink-muted">Electrical · POS</p>
+            <p className="text-xs text-ink-muted">{storeTagline || 'Electrical · POS'}</p>
           </div>
         )}
         <button

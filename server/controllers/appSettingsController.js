@@ -8,6 +8,7 @@ const patchSchema = z.object({
   section: z.string().optional(),
   store_name: z.string().min(1).max(200).optional(),
   store_name_ar: z.string().max(200).nullable().optional(),
+  store_tagline: z.string().max(100).nullable().optional(),
   store_address: z.string().max(500).nullable().optional(),
   store_phone: z.string().max(20).nullable().optional(),
   store_email: z.string().email().or(z.literal('')).nullable().optional(),
