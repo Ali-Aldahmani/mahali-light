@@ -211,8 +211,8 @@ export default function Sidebar() {
     >
       <div
         className={cn(
-          'flex items-center gap-2 px-4 py-5 border-b border-border',
-          collapsed && 'flex-col gap-3 px-2',
+          'flex items-center py-5 border-b border-border',
+          collapsed ? 'flex-col gap-3 px-2' : 'gap-2 px-4',
         )}
       >
         <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-white">
