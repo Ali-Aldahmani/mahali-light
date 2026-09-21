@@ -149,9 +149,60 @@ Paste each output into the matching line in `.env`.
 - **macOS/Linux**: run `ifconfig` or `ip addr`, look for the address on your
   active network interface (usually starts with `192.168.` or `10.`).
 
-Then, on your router's admin page, **reserve that IP** for this PC's MAC
-address (a "DHCP reservation" or "static lease") so it never changes. Make
-sure this PC and every till are on the **same** Wi‑Fi/VLAN.
+By default this address is handed out by DHCP, which means it **can change**
+after a reboot, a long power-off, or a router restart — and if it does,
+`SERVER_IP` in `.env` goes stale and every till silently loses connection
+(page loads, but Socket.io/API calls fail CORS). Pick **one** of these two
+ways to make it permanent, then make sure every till is on the **same**
+Wi‑Fi/VLAN as the server:
+
+**Option 1 — DHCP reservation on the router (recommended)**
+
+Log into your router's admin page and reserve the server PC's current IP for
+its MAC address (sometimes called a "DHCP reservation" or "static lease").
+The OS side stays on DHCP — the router just always hands back the same
+address. Find the MAC address with `ipconfig /all` (Windows, look for
+"Physical Address" under the same adapter) or `ip link` (Linux) /
+`ifconfig` (macOS).
+
+**Option 2 — Static IP set directly on the server PC**
+
+Use the server's *current* IP, gateway, and subnet so nothing else (`.env`,
+firewall rules, router) needs to change — just make DHCP stop being able to
+reassign it. Find the current gateway/DNS first:
+
+- Windows: `ipconfig /all` (look for "Default Gateway" under the same adapter)
+- macOS/Linux: `netstat -nr | grep default` (macOS) or `ip route` (Linux)
+
+Then, **Windows** (PowerShell, run as Administrator — replace the adapter
+name, IP, and gateway with your own):
+```powershell
+Set-NetIPInterface -InterfaceAlias "Ethernet" -Dhcp Disabled
+New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24 -DefaultGateway 192.168.1.1
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses 192.168.1.1
+```
+To undo and go back to DHCP:
+```powershell
+Set-NetIPInterface -InterfaceAlias "Ethernet" -Dhcp Enabled
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ResetServerAddresses
+```
+
+**macOS** (replace `Wi-Fi` with `Ethernet` if wired):
+```bash
+sudo networksetup -setmanual "Wi-Fi" 192.168.1.50 255.255.255.0 192.168.1.1
+sudo networksetup -setdnsservers "Wi-Fi" 192.168.1.1
+```
+Undo: `sudo networksetup -setdhcp "Wi-Fi"`
+
+**Linux** (NetworkManager — find your connection name with `nmcli con show`):
+```bash
+sudo nmcli connection modify "Wired connection 1" ipv4.addresses 192.168.1.50/24 ipv4.gateway 192.168.1.1 ipv4.dns 192.168.1.1 ipv4.method manual
+sudo nmcli connection up "Wired connection 1"
+```
+Undo: `sudo nmcli connection modify "Wired connection 1" ipv4.method auto && sudo nmcli connection up "Wired connection 1"`
+
+Whichever option you pick, reboot the server PC once afterward and confirm
+the IP is unchanged (`ipconfig` / `ip addr`) before relying on it.
 
 ### A.6 Make the POS come back up automatically after a restart or power cut
 
