@@ -196,6 +196,7 @@ async function approve(req, res, next) {
     await applyEditRequest({
       requestId: reqId,
       managerId: req.user.id,
+      approverPermissions: req.user?.permissions || [],
       io,
     });
     const { rows } = await query(

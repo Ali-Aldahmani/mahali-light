@@ -375,4 +375,41 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     item = (await db.query('SELECT unit_price FROM invoice_items WHERE invoice_id=$1', [inv.id])).rows[0];
     expect(Number(item.unit_price)).toBe(75);
   });
+
+  it('NEW-01 edit-request on a draft ignores a client price change without invoice.override_price', async () => {
+    // A draft has no settled total protecting it yet, unlike the confirmed-
+    // invoice equal-total edits above — this is the path CRIT-01's fix
+    // needs to also close, not just direct create/updateItems.
+    const inv = await draft({ price: 100 });
+    const submit = (unitPrice) => db.query(
+      `INSERT INTO invoice_edit_requests (invoice_id,requested_by,request_note,changes)
+       VALUES ($1,$2,'Regression correction',$3) RETURNING id`,
+      [inv.id, userId, JSON.stringify({ items: [{ variant_id: inv.variant.id, quantity: 1, unit_price: unitPrice }] })],
+    ).then((r) => r.rows[0]);
+
+    const fabricated = await submit(0.01);
+    await invoices.applyEditRequest({ requestId: fabricated.id, managerId: userId, approverPermissions: [] });
+    let item = (await db.query('SELECT unit_price FROM invoice_items WHERE invoice_id=$1', [inv.id])).rows[0];
+    expect(Number(item.unit_price)).toBe(100);
+
+    const authorized = await submit(60);
+    await invoices.applyEditRequest({
+      requestId: authorized.id, managerId: userId, approverPermissions: ['invoice.override_price'],
+    });
+    item = (await db.query('SELECT unit_price FROM invoice_items WHERE invoice_id=$1', [inv.id])).rows[0];
+    expect(Number(item.unit_price)).toBe(60);
+  });
+
+  it('recalculateAndPersistTotals keeps the invoice\'s own tax rate even after app_settings VAT changes', async () => {
+    const inv = await draft({ price: 100, taxRate: 8 });
+    expect(Number((await invoice(inv.id)).tax_rate)).toBe(8);
+
+    await db.query(`UPDATE app_settings SET vat_rate = 20, updated_at = NOW()`);
+    await db.withTransaction((client) => invoices.recalculateAndPersistTotals(client, inv.id));
+
+    const after = await invoice(inv.id);
+    expect(Number(after.tax_rate)).toBe(8);
+    expect(Number(after.tax_amount)).toBe(8);
+    expect(Number(after.total)).toBe(108);
+  });
 });

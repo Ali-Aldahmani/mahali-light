@@ -301,7 +301,7 @@ async function recalculateAndPersistTotals(
   { invoiceDiscount = null } = {},
 ) {
   const { rows: invRows } = await client.query(
-    `SELECT invoice_discount FROM invoices WHERE id = $1`,
+    `SELECT invoice_discount, tax_rate FROM invoices WHERE id = $1`,
     [invoiceId],
   );
   if (!invRows.length) {
@@ -311,7 +311,15 @@ async function recalculateAndPersistTotals(
   }
   const items = await loadItemsForInvoice(client, invoiceId);
   const payments = await loadPaymentsForInvoice(client, invoiceId);
-  const taxRate = await resolveInvoiceTaxRate(client);
+  // Preserve the rate fixed on this invoice at creation — never re-derive
+  // from current app_settings here, or an old invoice's tax/total would
+  // silently drift every time this runs (item edits, payments, edit-request
+  // approvals) after the shop's VAT rate later changes. resolveInvoiceTaxRate
+  // is only for stamping a brand-new invoice; this is just a defensive
+  // fallback for the (should-never-happen) case of a null persisted rate.
+  const taxRate = invRows[0].tax_rate != null
+    ? Number(invRows[0].tax_rate)
+    : await resolveInvoiceTaxRate(client);
 
   const totals = computeTotals({
     items,
@@ -980,7 +988,9 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
 // extra sale movement (with stock check), decrease qty → return_in movement.
 // Settled totals cannot change without an explicit collection/refund workflow.
 // Equal-total corrections repost the sale and COGS; treasury stays unchanged.
-async function applyEditRequest({ requestId, managerId, io = null }) {
+async function applyEditRequest({ requestId, managerId, approverPermissions = [], io = null }) {
+  const canOverridePrice =
+    approverPermissions.includes('invoice.override_price') || approverPermissions.includes('*');
   const result = await withTransaction(async (client) => {
     const { rows: reqRows } = await client.query(
       `SELECT * FROM invoice_edit_requests WHERE id = $1 FOR UPDATE`,
@@ -1017,6 +1027,14 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
         { status: 409 },
       );
     }
+    // A draft has no settled total protecting it yet — a price change here
+    // takes effect at confirm with nothing else checking it, so (like the
+    // direct-edit path) it needs invoice.override_price. A confirmed
+    // invoice is already protected by the "total unchanged" guard below:
+    // price and quantity can be reshuffled for a correction, but the
+    // customer-facing total can't move, so no extra permission is needed
+    // there — that's the documented equal-total correction workflow.
+    const priceChangeAllowed = invoice.status !== 'draft' || canOverridePrice;
 
     const changes = req.changes || {};
     const stockEmits = [];
@@ -1078,17 +1096,21 @@ async function applyEditRequest({ requestId, managerId, io = null }) {
           if (newQty > 0) {
             await replaceItems(client, req.invoice_id, [requested], {
               append: true, startPosition: currentItems.length + requestedVariants.size,
-              // The requested price already went through invoice.edit_approve
-              // review (route-gated), a distinct elevated permission from
-              // baseline invoice.create — unlike the draft-editing call
-              // sites, this one is trusted to set an intentional price.
-              allowPriceOverride: true,
+              // See priceChangeAllowed above: only trusted outright on a
+              // confirmed invoice (total-preservation guard covers it);
+              // on a draft it needs invoice.override_price like the
+              // direct-edit path, and replaceItems falls back to the
+              // product's current selling_price otherwise.
+              allowPriceOverride: priceChangeAllowed,
             });
           }
           continue;
         }
+        // Same rule for an existing line — see priceChangeAllowed above.
         const newPrice =
-          requested.unit_price != null ? money(requested.unit_price) : Number(cur?.unit_price);
+          requested.unit_price != null && priceChangeAllowed
+            ? money(requested.unit_price)
+            : Number(cur?.unit_price);
         const newDisc =
           requested.discount_amount != null
             ? money(requested.discount_amount)
