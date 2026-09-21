@@ -298,6 +298,7 @@ async function postSaleEntry(client, {
   taxAmount,
   payments,
   cogsAmount,
+  thirdPartyCostAmount = 0,
   userId,
 }) {
   const lines = [];
@@ -351,6 +352,34 @@ async function postSaleEntry(client, {
           accountId: await getAccountIdByCode('1004', client),
           debit: 0,
           credit: money(cogsAmount),
+        },
+      ],
+      userId,
+    });
+  }
+
+  // Third-party/custom item cost pass: DR COGS same as a normal sale (so
+  // gross profit still reflects reality), but CR Accounts Payable instead
+  // of Inventory — this good was never held in stock, so there's nothing
+  // to draw down there. There's no per-supplier ledger for these (the
+  // third party is a free-text name on the line, not a tracked supplier
+  // record), so it lands in the shop's general payables balance.
+  if (money(thirdPartyCostAmount) > 0) {
+    await postJournalEntryWith(client, {
+      referenceType: 'invoice',
+      referenceId: invoiceId,
+      date,
+      description: `Third-party item cost for ${invoiceNumber}`,
+      lines: [
+        {
+          accountId: await getAccountIdByCode('5001', client),
+          debit: money(thirdPartyCostAmount),
+          credit: 0,
+        },
+        {
+          accountId: await getAccountIdByCode('2001', client),
+          debit: 0,
+          credit: money(thirdPartyCostAmount),
         },
       ],
       userId,

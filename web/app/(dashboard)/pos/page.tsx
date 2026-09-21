@@ -21,7 +21,9 @@ import DownloadPDFButton from '@/components/ui/DownloadPDFButton';
 import POSProductCard from '@/components/pos/POSProductCard';
 import POSVariantSelector from '@/components/pos/POSVariantSelector';
 import CartItem from '@/components/pos/CartItem';
+import AddCustomItemModal from '@/components/pos/AddCustomItemModal';
 import SerialNumberInput from '@/components/ui/SerialNumberInput';
+import PermissionGate from '@/components/ui/PermissionGate';
 import RequirePermission from '@/components/guards/RequirePermission';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useBarcodeListener } from '@/hooks/useBarcodeListener';
@@ -57,6 +59,7 @@ function POSPageContent() {
 
   const setCustomer = usePosStore((s) => s.setCustomer);
   const addToCart = usePosStore((s) => s.addToCart);
+  const addCustomItem = usePosStore((s) => s.addCustomItem);
   const updateQty = usePosStore((s) => s.updateQty);
   const setLineDiscount = usePosStore((s) => s.setLineDiscount);
   const setSerial = usePosStore((s) => s.setSerial);
@@ -242,13 +245,25 @@ function POSPageContent() {
         notes: usePosStore.getState().notes || null,
         invoiceDiscount,
         taxRate: totals.taxRate,
-        items: totals.items.map((it: any) => ({
-          variantId: it.variantId,
-          quantity: Number(it.quantity),
-          unitPrice: Number(it.unitPrice),
-          discountAmount: Number(it.lineDiscount || 0),
-          serialNumber: it.serialNumber || null,
-        })),
+        items: totals.items.map((it: any) =>
+          it.isCustom
+            ? {
+                isCustom: true,
+                customDescription: it.productName,
+                thirdPartyName: it.thirdPartyName || null,
+                quantity: Number(it.quantity),
+                unitPrice: Number(it.unitPrice),
+                customCostPrice: Number(it.costPrice || 0),
+                discountAmount: Number(it.lineDiscount || 0),
+              }
+            : {
+                variantId: it.variantId,
+                quantity: Number(it.quantity),
+                unitPrice: Number(it.unitPrice),
+                discountAmount: Number(it.lineDiscount || 0),
+                serialNumber: it.serialNumber || null,
+              },
+        ),
       });
       const invoiceId = created.id;
 
@@ -320,6 +335,7 @@ function POSPageContent() {
         onInvoiceDiscountChange={setInvoiceDiscount}
         onClearCart={clearCart}
         onConfirmPay={() => setConfirmOpen(true)}
+        onAddCustomItem={addCustomItem}
       />
 
       <POSVariantSelector
@@ -489,6 +505,7 @@ function CartPanel({
   onInvoiceDiscountChange,
   onClearCart,
   onConfirmPay,
+  onAddCustomItem,
 }: {
   cart: any[];
   totals: any;
@@ -502,7 +519,10 @@ function CartPanel({
   onInvoiceDiscountChange: (amount: any) => void;
   onClearCart: () => void;
   onConfirmPay: () => void;
+  onAddCustomItem: (item: any) => void;
 }) {
+  const [customItemOpen, setCustomItemOpen] = useState(false);
+
   return (
     <div className="w-[400px] shrink-0 bg-surface flex flex-col">
       <div className="px-4 pt-4 pb-3 border-b border-border space-y-3">
@@ -511,15 +531,26 @@ function CartPanel({
             <ShoppingCart className="h-4 w-4" />
             Order
           </div>
-          {cart.length > 0 && (
-            <button
-              type="button"
-              onClick={onClearCart}
-              className="text-xs text-ink-muted hover:text-error inline-flex items-center gap-1"
-            >
-              <X className="h-3 w-3" /> Clear
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            <PermissionGate permission="invoice.custom_item">
+              <button
+                type="button"
+                onClick={() => setCustomItemOpen(true)}
+                className="text-xs text-accent hover:text-accent-hover inline-flex items-center gap-1"
+              >
+                <Tag className="h-3 w-3" /> Custom item
+              </button>
+            </PermissionGate>
+            {cart.length > 0 && (
+              <button
+                type="button"
+                onClick={onClearCart}
+                className="text-xs text-ink-muted hover:text-error inline-flex items-center gap-1"
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
+            )}
+          </div>
         </div>
         <CustomerSelect
           label={null}
@@ -529,6 +560,12 @@ function CartPanel({
           showBalance
         />
       </div>
+
+      <AddCustomItemModal
+        open={customItemOpen}
+        onClose={() => setCustomItemOpen(false)}
+        onAdd={onAddCustomItem}
+      />
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {cart.length === 0 ? (

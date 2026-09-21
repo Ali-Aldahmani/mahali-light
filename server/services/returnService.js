@@ -358,6 +358,17 @@ async function buildRequestItems(
           `Invoice item ${raw.invoiceItemId} does not belong to invoice ${invoice?.invoice_number || ''}.`,
         );
       }
+      if (inv.is_custom) {
+        // Custom/third-party lines have no variant to restock and no
+        // tracked supplier to reverse a payable against — the stock and
+        // COGS-reversal machinery below assumes a real catalog item.
+        // Handling this line's return needs a manual arrangement with the
+        // third party rather than the normal return flow.
+        throw new AppError(
+          ERROR_CODES.VALIDATION_FAILED,
+          `"${inv.product_name}" is a custom/third-party item and can't be processed through a stock return — settle it directly with ${inv.third_party_name || 'the third party'}.`,
+        );
+      }
       item.productId = inv.product_id;
       item.variantId = inv.variant_id;
       item.productName = inv.product_name;

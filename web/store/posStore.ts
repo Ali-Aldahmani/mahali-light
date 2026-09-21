@@ -97,6 +97,13 @@ interface PosState {
   setPcIdentifier: (pc: string) => void;
   setCustomer: (customer: any | null) => void;
   addToCart: (variant: any, quantity?: number) => void;
+  addCustomItem: (item: {
+    description: string;
+    thirdPartyName?: string;
+    unitPrice: number;
+    costPrice: number;
+    quantity?: number;
+  }) => void;
   setSerial: (
     variantId: string | number,
     serial: string,
@@ -271,6 +278,43 @@ export const usePosStore = create<PosState>()((set, get) => ({
       };
       return { cart: [...state.cart, item] };
     });
+  },
+
+  // A custom/third-party line — no catalog variant, gated server-side by
+  // invoice.custom_item. Uses a synthetic variantId so every existing
+  // cart operation (find/update/remove, all keyed by variantId) works
+  // unchanged; the invoice payload builder distinguishes it via isCustom.
+  addCustomItem({ description, thirdPartyName, unitPrice, costPrice, quantity = 1 }) {
+    const desc = String(description || '').trim();
+    if (!desc) return;
+    set((state) => ({
+      cart: [
+        ...state.cart,
+        {
+          variantId: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          productId: null,
+          productName: desc,
+          sku: null,
+          unitLabel: 'pcs',
+          soldBy: 'piece',
+          attributes: [],
+          stockQty: Infinity, // never blocked by stock checks
+          imagePath: null,
+          unitPrice: round2(unitPrice || 0),
+          quantity: Number(quantity) || 1,
+          discountAmount: 0,
+          discountPercent: 0,
+          serialNumber: '',
+          serialValid: true,
+          serialError: null,
+          requiresSerial: false,
+          defaultWarrantyMonths: 0,
+          isCustom: true,
+          thirdPartyName: thirdPartyName ? String(thirdPartyName).trim() : null,
+          costPrice: round2(costPrice || 0),
+        },
+      ],
+    }));
   },
 
   setSerial(variantId, serial, { valid = true, error = null } = {}) {

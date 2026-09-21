@@ -24,6 +24,21 @@ function canOverridePrice(req) {
   return p.includes('invoice.override_price') || p.includes('*');
 }
 
+function canAddCustomItem(req) {
+  const p = req.user?.permissions || [];
+  return p.includes('invoice.custom_item') || p.includes('*');
+}
+
+function assertCanAddItems(req, items) {
+  if (items.some((i) => i.isCustom) && !canAddCustomItem(req)) {
+    throw new AppError(
+      ERROR_CODES.AUTH_NO_PERMISSION,
+      'Adding a custom/third-party item requires the invoice.custom_item permission.',
+      { status: 403, details: { missing: ['invoice.custom_item'] } },
+    );
+  }
+}
+
 function canDirectCancel(req) {
   const p = req.user?.permissions || [];
   return p.includes('invoice.cancel');
@@ -86,6 +101,8 @@ function shapeItem(row, { includeCost = false } = {}) {
     lineTotal: Number(row.line_total),
     position: row.position,
     serialNumber: row.serial_number || null,
+    isCustom: !!row.is_custom,
+    thirdPartyName: row.third_party_name || null,
   };
   if (includeCost) out.costPriceAtTime = Number(row.cost_price_at_time);
   return out;
@@ -309,14 +326,49 @@ async function getOne(req, res, next) {
 
 // -- create draft ---------------------------------------------------------
 
-const itemSchema = z.object({
-  variantId: z.string().uuid(),
-  quantity: z.number().positive(),
-  unitPrice: z.number().nonnegative().optional(),
-  discountAmount: z.number().nonnegative().optional(),
-  discountPercent: z.number().min(0).max(100).optional(),
-  serialNumber: z.string().max(100).optional().nullable(),
-});
+// A "custom" item has no catalog variant — it's a manual line for a
+// product the shop doesn't stock itself (e.g. a third-party item they
+// resell). isCustom gates which branch applies via .superRefine below;
+// requiring it here at the schema level (rather than leaving variantId
+// simply optional for everyone) keeps a plain typo/omission from silently
+// falling through to the custom path.
+const itemSchema = z
+  .object({
+    variantId: z.string().uuid().optional().nullable(),
+    quantity: z.number().positive(),
+    unitPrice: z.number().nonnegative().optional(),
+    discountAmount: z.number().nonnegative().optional(),
+    discountPercent: z.number().min(0).max(100).optional(),
+    serialNumber: z.string().max(100).optional().nullable(),
+    isCustom: z.boolean().optional().default(false),
+    customDescription: z.string().min(1).max(200).optional(),
+    customCostPrice: z.number().min(0).max(999999).optional().default(0),
+    thirdPartyName: z.string().max(200).optional().nullable(),
+  })
+  .superRefine((item, ctx) => {
+    if (item.isCustom) {
+      if (!item.customDescription) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Custom items require a description.',
+          path: ['customDescription'],
+        });
+      }
+      if (item.unitPrice == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Custom items require a unit price.',
+          path: ['unitPrice'],
+        });
+      }
+    } else if (!item.variantId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'variantId is required for a catalog item.',
+        path: ['variantId'],
+      });
+    }
+  });
 
 const createSchema = z.object({
   customerId: z.string().uuid().optional().nullable(),
@@ -330,6 +382,7 @@ const createSchema = z.object({
 async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
+    assertCanAddItems(req, body.items);
 
     const result = await withTransaction(async (client) => {
       const { invoiceNumber, pcCode } = await generateInvoiceNumber(client, {
@@ -365,6 +418,10 @@ async function create(req, res, next) {
             discount_amount: i.discountAmount,
             discount_percent: i.discountPercent,
             serial_number: i.serialNumber,
+            is_custom: i.isCustom,
+            custom_description: i.customDescription,
+            custom_cost_price: i.customCostPrice,
+            third_party_name: i.thirdPartyName,
           })),
           { allowPriceOverride: canOverridePrice(req) },
         );
@@ -409,6 +466,7 @@ async function updateItems(req, res, next) {
   try {
     const { id } = req.params;
     const body = updateItemsSchema.parse(req.body || {});
+    assertCanAddItems(req, body.items);
 
     await withTransaction(async (client) => {
       const { rows: invRows } = await client.query(
@@ -455,6 +513,10 @@ async function updateItems(req, res, next) {
           discount_amount: i.discountAmount,
           discount_percent: i.discountPercent,
           serial_number: i.serialNumber,
+          is_custom: i.isCustom,
+          custom_description: i.customDescription,
+          custom_cost_price: i.customCostPrice,
+          third_party_name: i.thirdPartyName,
         })),
         { allowPriceOverride: canOverridePrice(req) },
       );

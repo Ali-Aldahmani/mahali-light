@@ -123,11 +123,15 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
     await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [invoiceId]);
   }
 
-  const validItems = items.filter((i) => i.variant_id);
+  // Custom (non-catalog, third-party) lines carry their own description and
+  // price — they never touch product_variants or stock, so they're kept
+  // out of the batch variant/attribute lookup below and inserted inline,
+  // in their original position among the catalog items.
+  const validItems = items.filter((i) => i.is_custom || i.variant_id);
   if (!validItems.length) return;
 
   // Deduplicate variant IDs — a cart may have the same variant twice.
-  const variantIds = [...new Set(validItems.map((i) => i.variant_id))];
+  const variantIds = [...new Set(validItems.filter((i) => !i.is_custom).map((i) => i.variant_id))];
 
   const [{ rows: variantRows }, { rows: attrRows }] = await Promise.all([
     client.query(
@@ -160,6 +164,46 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
 
   let position = startPosition;
   for (const raw of validItems) {
+    if (raw.is_custom) {
+      // Custom line: no variant, no catalog price to compare against —
+      // the caller (invoicesController.assertCanAddItems) already checked
+      // invoice.custom_item before we got here, so the client-supplied
+      // price/cost are trusted the same way an override_price caller's
+      // price is. cost_price_at_time reuses the normal column so every
+      // COGS-reading query (getKPIs, reports, journal COGS split) picks it
+      // up with no separate code path.
+      const item = {
+        quantity: money(raw.quantity),
+        unit_price: money(raw.unit_price || 0),
+        discount_amount: money(raw.discount_amount || 0),
+        discount_percent: Number(raw.discount_percent || 0),
+      };
+      const figures = computeLineFigures(item);
+      await client.query(
+        `INSERT INTO invoice_items (
+          invoice_id, product_id, variant_id, product_name, variant_attributes,
+          sku, unit_label, quantity, unit_price, cost_price_at_time,
+          discount_percent, discount_amount, line_subtotal, line_total, position,
+          serial_number, is_custom, third_party_name
+        ) VALUES ($1,NULL,NULL,$2,'{}',NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULL,true,$12)`,
+        [
+          invoiceId,
+          String(raw.custom_description || '').trim().slice(0, 200),
+          'pcs',
+          item.quantity,
+          item.unit_price,
+          money(raw.custom_cost_price || 0),
+          item.discount_percent,
+          figures.discountAmount,
+          figures.lineSubtotal,
+          figures.lineTotal,
+          position++,
+          raw.third_party_name ? String(raw.third_party_name).trim().slice(0, 200) : null,
+        ],
+      );
+      continue;
+    }
+
     const v = variantMap.get(raw.variant_id);
     if (!v) {
       throw new AppError(
@@ -373,7 +417,13 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
         'Allocate the full invoice total to cash, bank, or customer credit before confirming.');
     }
 
-    const shortfalls = await findStockShortfalls(client, items);
+    // Custom (third-party) lines have no variant_id and never touch stock —
+    // running them through the catalog stock check/movement below would
+    // either false-positive as "out of stock" (no variant row to match) or
+    // throw a RESOURCE_NOT_FOUND trying to lock a null variant id.
+    const catalogItems = items.filter((it) => !it.is_custom);
+
+    const shortfalls = await findStockShortfalls(client, catalogItems);
     if (shortfalls.length) {
       throw new AppError(
         ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
@@ -385,7 +435,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     // Apply stock movements. We deliberately pass io: null so the emit fires
     // after we commit the outer transaction.
     const stockEmits = [];
-    for (const it of items) {
+    for (const it of catalogItems) {
       const { variant } = await applyStockMovement({
         client,
         variantId: it.variant_id,
@@ -471,13 +521,21 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       }
     }
 
-    // Compute COGS (cost × qty across all items) for the sale's journal pass.
+    // Compute COGS (cost × qty), split by where the cost is actually owed:
+    // catalog items reduce Inventory (goods physically came from stock);
+    // custom/third-party items were never held in stock, so their cost is
+    // owed to whoever supplied them instead — see postSaleEntry's
+    // thirdPartyCostAmount handling.
     let cogsAmount = 0;
+    let thirdPartyCostAmount = 0;
     for (const it of items) {
       const cost = Number(it.cost_price_at_time) || 0;
-      cogsAmount += cost * Number(it.quantity);
+      const lineCost = cost * Number(it.quantity);
+      if (it.is_custom) thirdPartyCostAmount += lineCost;
+      else cogsAmount += lineCost;
     }
     cogsAmount = money(cogsAmount);
+    thirdPartyCostAmount = money(thirdPartyCostAmount);
 
     // Auto-post the sale journal entry inside the same transaction so a
     // closed period or unbalanced ledger fails the entire confirm.
@@ -495,6 +553,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
         bankAccountId: p.bank_account_id || null,
       })),
       cogsAmount,
+      thirdPartyCostAmount,
       userId: employeeId,
     });
 

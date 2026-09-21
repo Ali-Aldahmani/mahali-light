@@ -17,6 +17,7 @@ const ALL_PERMISSIONS = [
   ['invoice.edit_approve', 'Approve Invoice Edit', 'invoice'],
   ['invoice.edit_direct', 'Edit Invoice Directly', 'invoice'],
   ['invoice.override_price', 'Override Invoice Item Price', 'invoice'],
+  ['invoice.custom_item', 'Add Custom/Third-Party Invoice Item', 'invoice'],
   ['invoice.cancel', 'Cancel Invoice', 'invoice'],
   ['invoice.refund', 'Refund Invoice', 'invoice'],
   ['invoice.print', 'Print Invoice', 'invoice'],

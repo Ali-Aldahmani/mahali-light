@@ -31,8 +31,13 @@ export default function CartItem({
     <div className="rounded-input border border-border bg-surface p-2.5 space-y-1.5">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-ink truncate">
+          <div className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
             {item.productName}
+            {item.isCustom && (
+              <span className="shrink-0 rounded-full bg-warning-light text-warning text-[10px] font-medium px-1.5 py-0.5">
+                {item.thirdPartyName ? `Third-party · ${item.thirdPartyName}` : 'Custom'}
+              </span>
+            )}
           </div>
           {item.attributes?.length > 0 && (
             <div className="text-[11px] text-ink-muted truncate">
