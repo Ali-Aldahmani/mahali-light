@@ -160,7 +160,11 @@ async function login(req, res, next) {
     });
     await logActivity({
       entityType: 'app',
-      entityId: pcIdentifier,
+      // entity_id is a UUID column — there's no specific entity row for an
+      // "app started" event, and pcIdentifier (e.g. "localhost-web") isn't
+      // one, so passing it here silently failed the insert on every single
+      // login. The identifier is already captured in `notes` below.
+      entityId: null,
       action: 'app.started',
       performedBy: user.id,
       notes: `Login from ${pcIdentifier}`,

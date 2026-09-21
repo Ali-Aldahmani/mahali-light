@@ -1,6 +1,6 @@
 {
   "name": "mahali-light",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Bytecra POS — Docker-first LAN point of sale for electrical retail (UAE). Native Next.js frontend, Express core API, PostgreSQL.",
   "author": {
     "name": "Ali Aldahmani",

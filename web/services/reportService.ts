@@ -162,34 +162,55 @@ export function runReport(type, params = {}) {
 // Download an export — we bypass apiGet/apiPost because the response is a
 // binary blob, and we need the browser to trigger a Save As dialog.
 export async function downloadExport(type, format, params = {}) {
-  const token = useAuthStore.getState().token;
-  const url = `${getApiBase()}/reports/${type}/export${qs({ ...params, format })}`;
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    let message = body;
-    try {
-      message = JSON.parse(body)?.error?.message || body;
-    } catch (_e) {
-      // body wasn't JSON — fall through.
+  // For PDF, open the tab SYNCHRONOUSLY (before the `await fetch` below)
+  // while we're still inside the click's user-activation window — a
+  // browser's popup blocker silently drops `window.open()` called after an
+  // async gap, so opening it here (blank, then navigating it once the blob
+  // is ready) is the only reliable way to auto-open the result.
+  const previewTab = format === 'pdf' ? window.open('about:blank', '_blank') : null;
+
+  try {
+    const token = useAuthStore.getState().token;
+    const url = `${getApiBase()}/reports/${type}/export${qs({ ...params, format })}`;
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      let message = body;
+      try {
+        message = JSON.parse(body)?.error?.message || body;
+      } catch (_e) {
+        // body wasn't JSON — fall through.
+      }
+      throw new Error(message || `Export failed (${res.status})`);
     }
-    throw new Error(message || `Export failed (${res.status})`);
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = /filename="?([^"]+)"?/i.exec(cd);
+    const filename = match?.[1] || `${type}.${format === 'excel' ? 'xlsx' : format}`;
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // PDF is the one format a browser can render natively — navigate the
+    // tab we pre-opened above so the user sees the report immediately
+    // instead of having to go find the downloaded file. CSV/Excel have no
+    // meaningful in-browser preview (opening the blob URL for those would
+    // just re-trigger a download or show raw text), so they stay
+    // download-only.
+    if (previewTab && !previewTab.closed) {
+      previewTab.location.href = objectUrl;
+    }
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    return { filename };
+  } catch (err) {
+    if (previewTab && !previewTab.closed) previewTab.close();
+    throw err;
   }
-  const cd = res.headers.get('Content-Disposition') || '';
-  const match = /filename="?([^"]+)"?/i.exec(cd);
-  const filename = match?.[1] || `${type}.${format === 'excel' ? 'xlsx' : format}`;
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = objectUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
-  return { filename };
 }
 
 // =======================================================================

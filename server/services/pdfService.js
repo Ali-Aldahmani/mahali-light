@@ -35,7 +35,11 @@ function loadPuppeteer() {
 async function getBrowser() {
   if (browserPromise) {
     const browser = await browserPromise;
-    if (browser.isConnected()) return browser;
+    // Puppeteer 22+ replaced the isConnected() method with a `connected`
+    // getter — calling the old method throws "not a function" on every
+    // second PDF export in a process's lifetime (the first call always
+    // skips this branch since browserPromise starts null).
+    if (browser.connected) return browser;
     browserPromise = null;
   }
   const puppeteer = loadPuppeteer();
