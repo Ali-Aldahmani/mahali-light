@@ -5,7 +5,13 @@ const { logActivity } = require('../utils/activityLog');
 // Helpers
 // =======================================================================
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
 function previousMonthBounds(date = new Date()) {

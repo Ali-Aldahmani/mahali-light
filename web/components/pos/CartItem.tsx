@@ -20,11 +20,21 @@ export default function CartItem({
   onRemove: () => void;
 }) {
   const isDecimal = item.soldBy && item.soldBy !== 'piece';
-  const lineSubtotal = Number(item.quantity) * Number(item.unitPrice);
-  const discount = item.discountAmount
-    ? Number(item.discountAmount)
-    : lineSubtotal * (Number(item.discountPercent || 0) / 100);
-  const lineTotal = Math.max(0, lineSubtotal - discount);
+  // Mirrors posStore's computeLineTotal (and the backend's
+  // computeLineFigures) exactly: round the subtotal to 2dp BEFORE deriving
+  // a percent-based discount from it, not after. Rounding only at the end
+  // (the previous behavior here) can disagree by a cent with the cart-level
+  // total and the confirmed invoice for decimal-quantity lines, e.g.
+  // qty 2.5 x unitPrice 3.33 with a 10% discount: subtotal-first-rounding
+  // gives 8.33 -> 0.83 discount -> 7.50, but discounting the raw 8.325
+  // gives 0.8325 -> 7.4925 -> displays 7.49.
+  const round2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
+  const lineSubtotal = round2(Number(item.quantity) * Number(item.unitPrice));
+  let discount = round2(Number(item.discountAmount) || 0);
+  if (!discount && Number(item.discountPercent) > 0) {
+    discount = round2(lineSubtotal * (Number(item.discountPercent) / 100));
+  }
+  const lineTotal = Math.max(0, round2(lineSubtotal - discount));
 
   // UX-only reflection of a pricing restriction — the server is what
   // actually enforces it (invoiceService), this just avoids a round trip
@@ -152,7 +162,15 @@ export default function CartItem({
           <input
             type="number"
             min={0}
-            max={maxDiscountAmountHint}
+            // maxDiscountAmountHint is a PER-UNIT cap (see restrictionHint's
+            // "/unit" label above); this field holds the discount for the
+            // WHOLE line, so the hint must be scaled by quantity or it
+            // under-caps any multi-unit line.
+            max={
+              maxDiscountAmountHint != null
+                ? maxDiscountAmountHint * (Number(item.quantity) || 1)
+                : undefined
+            }
             step="1"
             value={item.discountAmount || ''}
             onChange={(e) =>

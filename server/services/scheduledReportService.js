@@ -236,31 +236,56 @@ async function runScheduleNow(id, user) {
 }
 
 // =======================================================================
-// Cron-like scheduler — fires daily at 08:00. We then filter which
-// schedules should run today based on frequency/day-of-week/day-of-month.
+// Cron-like scheduler — polls every minute and fires whichever schedules
+// are due, honouring each schedule's own send_time (previously the whole
+// loop woke once daily at a single hardcoded 08:00, so a per-schedule
+// send_time was accepted by the API and persisted but silently never used).
 // =======================================================================
 let timer = null;
-
-function msUntilNext(hour, minute) {
-  const now = new Date();
-  const target = new Date(now);
-  target.setHours(hour, minute, 0, 0);
-  if (target <= now) target.setDate(target.getDate() + 1);
-  return target - now;
-}
+const POLL_INTERVAL_MS = 60 * 1000;
 
 function shouldRunToday(schedule, today = new Date()) {
   if (!schedule.is_active) return false;
-  if (schedule.frequency === 'daily') return true;
-  if (schedule.frequency === 'weekly') {
+
+  let dueToday;
+  if (schedule.frequency === 'daily') {
+    dueToday = true;
+  } else if (schedule.frequency === 'weekly') {
     // JS getDay(): 0=Sun..6=Sat. Spec: 1=Mon..7=Sun.
     const dow = ((today.getDay() + 6) % 7) + 1;
-    return Number(schedule.day_of_week) === dow;
+    dueToday = Number(schedule.day_of_week) === dow;
+  } else if (schedule.frequency === 'monthly') {
+    // Clamp to the month's last day so a schedule set for the 29th/30th/31st
+    // still fires (on the last day) in short months instead of being
+    // silently skipped for that whole month.
+    const dom = Number(schedule.day_of_month);
+    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    dueToday = Math.min(dom, lastDayOfMonth) === today.getDate();
+  } else {
+    return false;
   }
-  if (schedule.frequency === 'monthly') {
-    return Number(schedule.day_of_month) === today.getDate();
+  if (!dueToday) return false;
+
+  // Respect the configured time of day. Since the caller now polls every
+  // minute rather than waking once at a fixed hour, we also need to make
+  // sure a schedule that's already run today doesn't fire again on the
+  // next tick.
+  const [h, m] = String(schedule.send_time || '08:00').split(':').map(Number);
+  const dueMinutes = (Number.isFinite(h) ? h : 8) * 60 + (Number.isFinite(m) ? m : 0);
+  const nowMinutes = today.getHours() * 60 + today.getMinutes();
+  if (nowMinutes < dueMinutes) return false;
+
+  if (schedule.last_sent_at) {
+    const last = new Date(schedule.last_sent_at);
+    if (
+      last.getFullYear() === today.getFullYear() &&
+      last.getMonth() === today.getMonth() &&
+      last.getDate() === today.getDate()
+    ) {
+      return false;
+    }
   }
-  return false;
+  return true;
 }
 
 async function runScheduledReports({ io = null } = {}) {
@@ -281,14 +306,15 @@ async function runScheduledReports({ io = null } = {}) {
 }
 
 function schedule(io) {
-  const delay = msUntilNext(8, 0);
-  if (timer) clearTimeout(timer);
-  timer = setTimeout(async () => {
-    await runScheduledReports({ io });
-    schedule(io);
-  }, delay);
-  const next = new Date(Date.now() + delay);
-  console.log(`[scheduledReports] next run at ${next.toISOString()}`);
+  if (timer) clearInterval(timer);
+  timer = setInterval(async () => {
+    try {
+      await runScheduledReports({ io });
+    } catch (err) {
+      console.error('[scheduledReports] tick failed:', err.message);
+    }
+  }, POLL_INTERVAL_MS);
+  console.log(`[scheduledReports] polling every ${POLL_INTERVAL_MS / 1000}s for due schedules`);
 }
 
 function startScheduledReportJob(io) {

@@ -1,12 +1,27 @@
 const { query } = require('../db/postgres');
 
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
+// Postgres DATE columns are parsed by the pg driver as local midnight, so
+// converting via toISOString() (UTC) rolls the date back one day for any
+// positive UTC offset (e.g. this store's Asia/Dubai, UTC+4). Read the local
+// getters instead to avoid the round-trip — same fix as billService.js.
 function dateOnly(input) {
   if (!input) return null;
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (input instanceof Date) {
+    const y = input.getFullYear();
+    const m = String(input.getMonth() + 1).padStart(2, '0');
+    const d = String(input.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
   return String(input).slice(0, 10);
 }
 
@@ -176,16 +191,45 @@ async function buildPLPeriod(startDate, endDate) {
 // =======================================================================
 // Balance Sheet
 // =======================================================================
+// Balance of a chart-of-accounts code, as of a date, straight from the
+// journal — the only way to get a figure that's actually true "as of" a
+// past date, since cash_drawer/bank_accounts/customers/product_variants/
+// purchase_orders only ever hold the CURRENT live balance with no history.
+// `normal` is 'debit' for asset accounts (cash/bank/AR/inventory) or
+// 'credit' for liability accounts (AP/VAT payable) — it picks which side
+// of debit-credit represents a positive balance for that account type.
+async function accountBalanceAsOf(code, asOf, normal = 'debit') {
+  const { rows } = await query(
+    `SELECT COALESCE(SUM(jl.debit - jl.credit), 0)::float8 AS bal
+       FROM journal_lines jl
+       JOIN chart_of_accounts ca ON ca.id = jl.account_id
+       JOIN journal_entries je ON je.id = jl.journal_entry_id
+      WHERE ca.code = $1
+        AND je.date <= $2::date`,
+    [code, asOf],
+  );
+  const bal = Number(rows[0]?.bal || 0);
+  return money(normal === 'credit' ? -bal : bal);
+}
+
 async function getBalanceSheet({ asOfDate }) {
   const asOf = dateOnly(asOfDate);
 
-  // Cash drawer current balance.
-  const { rows: cashRows } = await query(
-    `SELECT COALESCE(current_balance, 0)::float8 AS bal FROM cash_drawer LIMIT 1`,
-  );
-  const cashBalance = money(cashRows[0]?.bal || 0);
+  const cashBalance = await accountBalanceAsOf('1001', asOf, 'debit');
+  const bankTotal = await accountBalanceAsOf('1002', asOf, 'debit');
+  const receivables = await accountBalanceAsOf('1003', asOf, 'debit');
+  const inventory = await accountBalanceAsOf('1004', asOf, 'debit');
+  const payables = await accountBalanceAsOf('2001', asOf, 'credit');
+  const vatPayable = await accountBalanceAsOf('2002', asOf, 'credit');
 
-  // Bank accounts (active).
+  // Per-bank-account breakdown: journal entries post to the single
+  // aggregate '1002' account, not a per-account code, so there's no journal
+  // data to reconstruct each individual bank's historical balance from —
+  // only the *live* current_balance columns give a breakdown at all. This
+  // list is therefore always "as of now" even when the rest of this report
+  // is historical; it exists for display only and is NOT what bankTotal
+  // (used in totalAssets) is derived from, so the two can legitimately
+  // disagree for a past asOfDate.
   const { rows: bankRows } = await query(
     `SELECT id, account_name, bank_name, current_balance
        FROM bank_accounts
@@ -197,40 +241,6 @@ async function getBalanceSheet({ asOfDate }) {
     label: `${r.bank_name} – ${r.account_name}`,
     balance: money(r.current_balance),
   }));
-  const bankTotal = money(banks.reduce((s, b) => s + b.balance, 0));
-
-  // Receivables.
-  const { rows: arRows } = await query(
-    `SELECT COALESCE(SUM(credit_balance), 0)::float8 AS bal FROM customers`,
-  );
-  const receivables = money(arRows[0].bal || 0);
-
-  // Inventory value: stock_qty × cost_price across all variants.
-  const { rows: invRows } = await query(
-    `SELECT COALESCE(SUM(stock_qty * cost_price), 0)::float8 AS bal
-       FROM product_variants`,
-  );
-  const inventory = money(invRows[0].bal || 0);
-
-  // Payables = open balance_due on purchase orders.
-  const { rows: apRows } = await query(
-    `SELECT COALESCE(SUM(balance_due), 0)::float8 AS bal
-       FROM purchase_orders
-      WHERE status NOT IN ('cancelled')`,
-  );
-  const payables = money(apRows[0].bal || 0);
-
-  // VAT payable from the journal account, balance as of date.
-  const { rows: vatRows } = await query(
-    `SELECT COALESCE(SUM(jl.credit - jl.debit), 0)::float8 AS bal
-       FROM journal_lines jl
-       JOIN chart_of_accounts ca ON ca.id = jl.account_id
-       JOIN journal_entries je ON je.id = jl.journal_entry_id
-      WHERE ca.code = '2002'
-        AND je.date <= $1::date`,
-    [asOf],
-  );
-  const vatPayable = money(vatRows[0].bal || 0);
 
   const totalAssets = money(cashBalance + bankTotal + receivables + inventory);
   const totalLiabilities = money(payables + vatPayable);

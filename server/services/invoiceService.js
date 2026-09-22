@@ -45,7 +45,13 @@ async function resolveInvoiceTaxRate(client = null) {
 }
 
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
 function clampNonNegative(n) {
@@ -95,7 +101,10 @@ function computeTotals({ items, payments, invoiceDiscount = 0, taxRate = DEFAULT
   );
   const balanceDue = clampNonNegative(money(total - amountPaid));
   let paymentStatus = 'unpaid';
-  if (balanceDue <= 0.001 && amountPaid > 0.001) paymentStatus = 'paid';
+  // Nothing owed means paid, regardless of amountPaid — otherwise a
+  // fully-discounted (total = 0) invoice with amountPaid = 0 never reaches
+  // 'paid' and stays flagged as outstanding forever.
+  if (balanceDue <= 0.001) paymentStatus = 'paid';
   else if (amountPaid > 0.001) paymentStatus = 'partial';
 
   return {
@@ -1190,6 +1199,21 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
           quantity: newQty, unit_price: newPrice, discount_amount: newDisc,
         });
 
+        // discount_percent is stored purely as a display/audit label for
+        // discount_amount — it must be kept consistent with whatever amount
+        // actually ends up charged, or a receipt/report reading it back
+        // shows a percent that no longer matches (e.g. only quantity was
+        // edited: the OLD absolute discount_amount is correctly carried
+        // forward above, but the OLD discount_percent no longer describes
+        // it as a share of the NEW subtotal). Respect an explicit percent
+        // from the edit request; otherwise re-derive it from the amount.
+        const newDiscPercent =
+          requested.discount_percent != null
+            ? Number(requested.discount_percent) || 0
+            : lineSubtotal > 0
+              ? Math.round((discountAmount / lineSubtotal) * 10000) / 100
+              : 0;
+
         if (newQty > 0) {
           const vp = editVariantPricing.get(requested.variant_id);
           if (vp) {
@@ -1211,9 +1235,9 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
             await client.query(
               `UPDATE invoice_items
                   SET quantity = $1, unit_price = $2, discount_amount = $3,
-                      line_subtotal = $4, line_total = $5
-                WHERE id = $6`,
-              [newQty, newPrice, discountAmount, lineSubtotal, lineTotal, cur.id],
+                      discount_percent = $4, line_subtotal = $5, line_total = $6
+                WHERE id = $7`,
+              [newQty, newPrice, discountAmount, newDiscPercent, lineSubtotal, lineTotal, cur.id],
             );
           }
         }
@@ -1247,10 +1271,25 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
       await journalService.reverseSaleEntries(client, req.invoice_id, {
         invoiceNumber: invoice.invoice_number, date, userId: managerId,
       });
+      // Same split as the original confirm path (see there for why): a
+      // custom/third-party line's cost was never held in Inventory, so it
+      // must post to thirdPartyCostAmount (credits Accounts Payable), not be
+      // lumped into cogsAmount (credits Inventory) alongside real catalog
+      // items — otherwise re-posting after an edit permanently loses the
+      // payable owed to the third party and wrongly drains Inventory by a
+      // cost that was never actually in stock.
+      let cogsAmount = 0;
+      let thirdPartyCostAmount = 0;
+      for (const it of items) {
+        const lineCost = (Number(it.cost_price_at_time) || 0) * Number(it.quantity);
+        if (it.is_custom) thirdPartyCostAmount += lineCost;
+        else cogsAmount += lineCost;
+      }
       await journalService.postSaleEntry(client, {
         invoiceId: req.invoice_id, invoiceNumber: invoice.invoice_number, date,
         subtotal: totals.taxableAmount, taxAmount: totals.taxAmount, payments,
-        cogsAmount: money(items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.cost_price_at_time), 0)),
+        cogsAmount: money(cogsAmount),
+        thirdPartyCostAmount: money(thirdPartyCostAmount),
         userId: managerId,
       });
     }

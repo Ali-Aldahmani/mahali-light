@@ -10,16 +10,35 @@ const FREQUENCIES = new Set(['monthly', 'quarterly', 'yearly']);
 const PAYMENT_METHODS = new Set(['cash', 'bank']);
 
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
+}
+
+// Extracts a Date object's LOCAL calendar date as YYYY-MM-DD. Postgres DATE
+// columns are parsed by the pg driver as local midnight, so converting via
+// toISOString() (UTC) rolls the date back one day for any positive UTC
+// offset (e.g. this store's Asia/Dubai, UTC+4: local midnight Oct 23 is
+// 2026-10-22T20:00:00Z, so toISOString().slice(0,10) wrongly returns
+// "2026-10-22"). Reading the local getters instead avoids the round-trip.
+function localDateOnly(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateOnly(new Date());
 }
 
 function dateOnly(input) {
   if (!input) return null;
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (input instanceof Date) return localDateOnly(input);
   return String(input).slice(0, 10);
 }
 
@@ -46,7 +65,7 @@ function addCycle(dateStr, frequency) {
   if (target.getDate() !== day) {
     target.setDate(0); // last day of previous month (= last day after rollover)
   }
-  return target.toISOString().slice(0, 10);
+  return localDateOnly(target);
 }
 
 function shapeBill(row, extra = {}) {

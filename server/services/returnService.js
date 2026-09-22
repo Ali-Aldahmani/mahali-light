@@ -19,7 +19,10 @@ const REQUEST_NOTE_MIN = 10;
 
 function money(n) {
   const v = Number(n) || 0;
-  return Math.round(v * 100) / 100;
+  // A tiny epsilon avoids IEEE-754 float drift mis-rounding values that land
+  // exactly on a half-cent boundary (e.g. 2.90*0.05 stores as
+  // 0.14499999999999999, which would round down to 0.14 instead of 0.15).
+  return v < 0 ? -Math.round(-v * 100 + 1e-9) / 100 : Math.round(v * 100 + 1e-9) / 100;
 }
 
 function stockActionFor(condition, override) {
@@ -683,6 +686,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
     );
 
     const executionEvents = [];
+    let supplierReturnCost = 0;
 
     // Reload invoice (if any) to grab the customer + status fresh.
     let invoice = null;
@@ -745,9 +749,9 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
     const { rows: orderRows } = await client.query(
       `INSERT INTO return_orders (
          return_order_number, return_request_id, return_type, customer_id,
-         supplier_id, original_invoice_id, employee_id, total_value,
+         supplier_id, original_invoice_id, original_po_id, employee_id, total_value,
          refund_total, status, notes
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,'completed',$9)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,'completed',$10)
        RETURNING *`,
       [
         orderNumber,
@@ -756,6 +760,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
         request.customer_id,
         request.supplier_id,
         request.reference_type === 'invoice' ? request.reference_id : null,
+        request.reference_type === 'purchase_order' ? request.reference_id : null,
         managerId,
         totalValue,
         notes || null,
@@ -781,6 +786,15 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
             notes: `Supplier return ${orderNumber}`,
             io: null,
           });
+          // Journal/inventory valuation must use COST, not the request's
+          // stored total_value/unit_price (those are priced at selling_price
+          // for non-invoice-referenced returns — see buildRequestItems —
+          // which is the wrong basis for what the supplier actually owes us).
+          const { rows: costRows } = await client.query(
+            `SELECT cost_price FROM product_variants WHERE id = $1`,
+            [it.variant_id],
+          );
+          supplierReturnCost += Number(it.quantity) * Number(costRows[0]?.cost_price || 0);
           executionEvents.push({
             event: 'stock_updated',
             payload: {
@@ -917,6 +931,13 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       }, 0));
       await journalService.postReturnedInventoryEntry(client, {
         returnOrderId: orderId, returnOrderNumber: orderNumber, amount: returnedCost,
+        date: new Date().toISOString().slice(0, 10), userId: managerId,
+      });
+    }
+
+    if (request.return_type === 'supplier_return') {
+      await journalService.postSupplierReturnEntry(client, {
+        returnOrderId: orderId, returnOrderNumber: orderNumber, amount: money(supplierReturnCost),
         date: new Date().toISOString().slice(0, 10), userId: managerId,
       });
     }

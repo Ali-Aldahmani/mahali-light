@@ -266,11 +266,19 @@ async function applyStockMovement(params) {
     ? await doWork(params.client)
     : await withTransaction(doWork);
 
-  // Reorder check (outside the inner txn so a failure can't poison the move).
+  // Reorder check. When the caller supplied their own client (an outer,
+  // still-open transaction), run the check through that SAME client so it
+  // sees this movement's own uncommitted write instead of stale pre-commit
+  // data from the shared pool — otherwise a sale that empties a caller-owned
+  // transaction's last unit could read the pre-sale stock_qty and silently
+  // skip (or wrongly clear) the reorder alert. When we own the transaction
+  // ourselves (no params.client), it's already committed by this point, so
+  // using the pool here is fine and keeps a reorder-check failure from being
+  // able to poison the move.
   let reorderResult = null;
   if (!skipReorderCheck) {
     try {
-      reorderResult = await checkReorderThreshold(variantId);
+      reorderResult = await checkReorderThreshold(variantId, params.client);
     } catch (err) {
       console.error('[stockService] reorder check failed', err);
     }

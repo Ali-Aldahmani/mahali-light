@@ -22,7 +22,13 @@ const ALLOWED_TX_TYPES = new Set([
 ]);
 
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
 function nowIso() {
@@ -32,9 +38,15 @@ function nowIso() {
 // =======================================================================
 // Drawer lookup helpers
 // =======================================================================
+// Migration 033 enforces cash_drawer as a true singleton (unique index on a
+// constant expression), so in practice there's only ever one row here. The
+// ORDER BY is defense-in-depth for a database that predates that migration:
+// picking the MOST recently touched row (not the least) means an old,
+// abandoned duplicate never gets selected instead of the one actually in
+// use.
 async function getDrawerRow(client) {
   const { rows } = await client.query(
-    `SELECT * FROM cash_drawer ORDER BY updated_at ASC LIMIT 1 FOR UPDATE`,
+    `SELECT * FROM cash_drawer ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`,
   );
   if (!rows.length) {
     // Auto-seed the singleton drawer (the migration already inserts one but
@@ -43,7 +55,7 @@ async function getDrawerRow(client) {
       `INSERT INTO cash_drawer (name, status) VALUES ('Main Cash Drawer','closed')`,
     );
     const { rows: again } = await client.query(
-      `SELECT * FROM cash_drawer ORDER BY updated_at ASC LIMIT 1 FOR UPDATE`,
+      `SELECT * FROM cash_drawer ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`,
     );
     return again[0];
   }
@@ -68,7 +80,7 @@ async function getDrawerState() {
        FROM cash_drawer d
        LEFT JOIN users ou ON ou.id = d.opened_by
        LEFT JOIN users cu ON cu.id = d.closed_by
-       ORDER BY d.updated_at ASC LIMIT 1`,
+       ORDER BY d.updated_at DESC LIMIT 1`,
   );
   if (!rows.length) {
     return {

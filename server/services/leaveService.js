@@ -9,9 +9,19 @@ const LEAVE_TYPES = new Set(['annual', 'sick', 'unpaid', 'emergency']);
 const BALANCE_BACKED = new Set(['annual', 'sick']);
 const MAX_CARRY_OVER = 15;
 
+// Postgres DATE columns are parsed by the pg driver as local midnight, so
+// converting via toISOString() (UTC) rolls the date back one day for any
+// positive UTC offset (e.g. this store's Asia/Dubai, UTC+4). Read the local
+// getters instead to avoid the round-trip — same fix as billService.js /
+// financialReportService.js.
 function dateOnly(input) {
   if (!input) return null;
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (input instanceof Date) {
+    const y = input.getFullYear();
+    const m = String(input.getMonth() + 1).padStart(2, '0');
+    const d = String(input.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
   return String(input).slice(0, 10);
 }
 
@@ -78,11 +88,33 @@ async function calculateWorkingDays(startDate, endDate, client = null) {
   const cursor = new Date(start);
   while (cursor <= end) {
     const dow = cursor.getDay();
-    const iso = cursor.toISOString().slice(0, 10);
+    const iso = dateOnly(cursor);
     if (!UAE_WEEKEND.has(dow) && !holidaySet.has(iso)) count += 1;
     cursor.setDate(cursor.getDate() + 1);
   }
   return count;
+}
+
+// Same as calculateWorkingDays, but split by calendar year so a request
+// spanning a year boundary (e.g. Dec 29 - Jan 3) can be validated and
+// deducted against EACH year's own leave_balances row, proportional to how
+// many working days actually fall in that year — rather than the whole
+// span being charged entirely against the start date's year, which both
+// wrongly depletes that year's balance by days that aren't really its own
+// and never touches the following year's balance for the days that are.
+async function calculateWorkingDaysByYear(startDate, endDate, client = null) {
+  const start = dateOnly(startDate);
+  const end = dateOnly(endDate);
+  const startYear = yearOf(start);
+  const endYear = yearOf(end);
+  const byYear = new Map();
+  for (let y = startYear; y <= endYear; y++) {
+    const segStart = y === startYear ? start : `${y}-01-01`;
+    const segEnd = y === endYear ? end : `${y}-12-31`;
+    const days = await calculateWorkingDays(segStart, segEnd, client);
+    if (days > 0) byYear.set(y, days);
+  }
+  return byYear;
 }
 
 // =======================================================================
@@ -217,27 +249,31 @@ async function submitLeave({
       });
     }
 
-    // Balance check for annual / sick.
+    // Balance check for annual / sick — per calendar year, so a request
+    // spanning a year boundary is checked against each year's own balance
+    // rather than entirely against the start date's year.
     if (BALANCE_BACKED.has(leaveType)) {
-      const year = yearOf(start);
-      const balance = await ensureBalance(client, { employeeId, year, leaveType });
-      const remaining =
-        Number(balance.remaining_days) ||
-        Math.max(
-          0,
-          Number(balance.entitled_days || 0) +
-            Number(balance.carried_over_days || 0) -
-            Number(balance.used_days || 0),
-        );
-      if (totalDays > remaining) {
-        throw new AppError(
-          ERROR_CODES.BIZ_INSUFFICIENT_LEAVE_BALANCE,
-          `Requested ${totalDays} days, but only ${remaining} ${leaveType} day(s) remaining.`,
-          {
-            status: 409,
-            details: { requested: totalDays, remaining, leaveType, year },
-          },
-        );
+      const daysByYear = await calculateWorkingDaysByYear(start, end, client);
+      for (const [year, daysInYear] of daysByYear) {
+        const balance = await ensureBalance(client, { employeeId, year, leaveType });
+        const remaining =
+          Number(balance.remaining_days) ||
+          Math.max(
+            0,
+            Number(balance.entitled_days || 0) +
+              Number(balance.carried_over_days || 0) -
+              Number(balance.used_days || 0),
+          );
+        if (daysInYear > remaining) {
+          throw new AppError(
+            ERROR_CODES.BIZ_INSUFFICIENT_LEAVE_BALANCE,
+            `Requested ${daysInYear} day(s) in ${year}, but only ${remaining} ${leaveType} day(s) remaining for ${year}.`,
+            {
+              status: 409,
+              details: { requested: daysInYear, remaining, leaveType, year },
+            },
+          );
+        }
       }
     }
 
@@ -329,26 +365,50 @@ async function approveLeave({ leaveId, managerId, io = null }) {
     );
 
     if (BALANCE_BACKED.has(leave.leave_type)) {
-      const year = yearOf(dateOnly(leave.start_date));
-      const balance = await ensureBalance(client, {
-        employeeId: leave.employee_id,
-        year,
-        leaveType: leave.leave_type,
-      });
-      const newUsed = Number(balance.used_days || 0) + Number(leave.total_days);
-      const newRemaining = Math.max(
-        0,
-        Number(balance.entitled_days || 0) +
-          Number(balance.carried_over_days || 0) -
-          newUsed,
+      // Deduct per calendar year — a request spanning a year boundary (e.g.
+      // Dec 29 - Jan 3) must draw down EACH year's own leave_balances row
+      // by however many of its working days actually fall in that year,
+      // not have its whole total_days charged entirely to the start date's
+      // year while the following year's balance goes untouched.
+      const daysByYear = await calculateWorkingDaysByYear(
+        dateOnly(leave.start_date), dateOnly(leave.end_date), client,
       );
-      await client.query(
-        `UPDATE leave_balances
-            SET used_days = $1,
-                remaining_days = $2
-          WHERE id = $3`,
-        [newUsed, newRemaining, balance.id],
-      );
+      for (const [year, daysInYear] of daysByYear) {
+        const balance = await ensureBalance(client, {
+          employeeId: leave.employee_id,
+          year,
+          leaveType: leave.leave_type,
+        });
+        const newUsed = Number(balance.used_days || 0) + daysInYear;
+        const entitledTotal = Number(balance.entitled_days || 0) + Number(balance.carried_over_days || 0);
+        // submitLeave only checked the balance AS OF request creation, against
+        // whatever was still 'pending' at that moment — it doesn't account for
+        // other requests that get approved first. Two non-overlapping requests
+        // can each individually pass that check and still overdraw the balance
+        // once both are approved (ensureBalance's FOR UPDATE above serializes
+        // concurrent approvals, but nothing previously re-validated the total
+        // before writing it), silently clamping remaining_days to 0 instead of
+        // surfacing the overrun. Re-check here, right before the deduction.
+        if (newUsed > entitledTotal + 0.001) {
+          const remainingBeforeApproval = entitledTotal - Number(balance.used_days || 0);
+          throw new AppError(
+            ERROR_CODES.BIZ_INSUFFICIENT_LEAVE_BALANCE,
+            `Approving would use ${newUsed} day(s) in ${year}, but only ${remainingBeforeApproval} ${leave.leave_type} day(s) remain for ${year}.`,
+            {
+              status: 409,
+              details: { requested: daysInYear, remaining: remainingBeforeApproval, leaveType: leave.leave_type, year },
+            },
+          );
+        }
+        const newRemaining = Math.max(0, entitledTotal - newUsed);
+        await client.query(
+          `UPDATE leave_balances
+              SET used_days = $1,
+                  remaining_days = $2
+            WHERE id = $3`,
+          [newUsed, newRemaining, balance.id],
+        );
+      }
     }
 
     await attendanceService.createLeaveAttendanceRecords(client, {

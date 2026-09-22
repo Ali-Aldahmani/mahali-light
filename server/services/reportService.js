@@ -7,7 +7,13 @@ const errorLogService = require('./errorLogService');
 // Helpers
 // =======================================================================
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
 function dateOnly(input) {
@@ -57,9 +63,24 @@ async function salesSummary(params) {
        (SELECT COALESCE(SUM(discount_amount + invoice_discount),0)::float8 FROM inv) AS discounts,
        (SELECT COALESCE(SUM(taxable_amount),0)::float8 FROM inv) AS net_sales,
        (SELECT COALESCE(SUM(tax_amount),0)::float8 FROM inv) AS vat,
-       (SELECT COALESCE(SUM(total),0)::float8 FROM inv) AS total_collected,
-       (SELECT COALESCE(SUM(ro.refund_total),0)::float8 FROM return_orders ro
-         WHERE ro.created_at::date BETWEEN $1::date AND $2::date) AS refunds`,
+       (SELECT COALESCE(SUM(ro.refund_total),0)::float8
+          FROM return_orders ro
+         WHERE ro.created_at::date BETWEEN $1::date AND $2::date
+           AND ro.return_type IN ('customer_refund','customer_replace')) AS refunds,
+       -- refund_total is tax-INCLUSIVE (mirrors what was actually paid out),
+       -- while net_sales above is taxable_amount, tax-EXCLUSIVE. De-tax each
+       -- return using its own originating invoice's rate before netting
+       -- them against net_sales, or netRevenue silently overshoots by the
+       -- VAT portion of every refund (mirrors the same fix already applied
+       -- to analyticsService.getKPIs' returned_revenue).
+       (SELECT COALESCE(SUM(
+                 CASE WHEN i.tax_rate > 0 THEN ro.refund_total / (1 + i.tax_rate / 100)
+                      ELSE ro.refund_total END
+               ),0)::float8
+          FROM return_orders ro
+          LEFT JOIN invoices i ON i.id = ro.original_invoice_id
+         WHERE ro.created_at::date BETWEEN $1::date AND $2::date
+           AND ro.return_type IN ('customer_refund','customer_replace')) AS refunds_taxable`,
     [startDate, endDate],
   );
   const { rows: byMethod } = await query(
@@ -73,7 +94,11 @@ async function salesSummary(params) {
     [startDate, endDate],
   );
   const a = agg[0] || {};
-  const netRevenue = money((a.net_sales || 0) - (a.refunds || 0));
+  // "Total Collected" is actual cash received (sum of invoice_payments), not
+  // invoiced revenue — a confirmed invoice can be partially paid or fully on
+  // credit, so it must NOT be SUM(invoices.total).
+  const totalCollected = money(byMethod.reduce((s, r) => s + Number(r.amount), 0));
+  const netRevenue = money((a.net_sales || 0) - (a.refunds_taxable || 0));
   return {
     type: 'sales_summary',
     title: 'Sales Summary',
@@ -84,7 +109,7 @@ async function salesSummary(params) {
       discounts: money(a.discounts || 0),
       netSales: money(a.net_sales || 0),
       vat: money(a.vat || 0),
-      totalCollected: money(a.total_collected || 0),
+      totalCollected,
       refunds: money(a.refunds || 0),
       netRevenue,
     },
@@ -99,13 +124,13 @@ async function salesSummary(params) {
       payments: r.payments,
       amount: money(r.amount),
       share:
-        a.total_collected > 0
-          ? Math.round((r.amount / a.total_collected) * 1000) / 10
+        totalCollected > 0
+          ? Math.round((r.amount / totalCollected) * 1000) / 10
           : 0,
     })),
     totals: {
       payments: byMethod.reduce((s, r) => s + r.payments, 0),
-      amount: money(a.total_collected || 0),
+      amount: totalCollected,
       share: 100,
     },
   };
@@ -1239,6 +1264,7 @@ async function payroll(params) {
     const hours = Number(emp.hours_worked) || 0;
     const overtime = Number(emp.overtime_hours) || 0;
     const unpaid = Number(emp.unpaid_leave_days) || 0;
+    const daysAbsent = Number(emp.days_absent) || 0;
 
     let gross;
     if (type === 'daily') gross = base * daysWorked;
@@ -1247,7 +1273,7 @@ async function payroll(params) {
 
     // Per-day rate used for unpaid-leave + absence deductions on monthly.
     const dayRate = type === 'monthly' && daysInMonth > 0 ? base / daysInMonth : base;
-    const deductions = type === 'monthly' ? money(dayRate * unpaid) : 0;
+    const deductions = type === 'monthly' ? money(dayRate * (unpaid + daysAbsent)) : 0;
 
     // Overtime at 1.5× hourly rate. Hourly rate inferred from standard hours
     // and the salary type.
@@ -1339,7 +1365,7 @@ async function attendanceMonthlySheet(params) {
     }
     row.days[day] = a.status;
     row.summary[a.status] = (row.summary[a.status] || 0) + 1;
-    if (a.status === 'present' || a.status === 'late') {
+    if (a.status === 'present' || a.status === 'late' || a.status === 'half_day') {
       row.summary.hours += Number(a.working_hours) || 0;
     }
   }

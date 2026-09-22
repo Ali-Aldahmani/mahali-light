@@ -5,7 +5,13 @@ const { logActivity } = require('../utils/activityLog');
 const VALID_TYPES = new Set(['asset', 'liability', 'equity', 'revenue', 'expense']);
 
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
 function dateOnly(input) {
@@ -422,6 +428,23 @@ async function postReturnedInventoryEntry(client, { returnOrderId, returnOrderNu
     lines: [
       { accountId: await getAccountIdByCode('1004', client), debit: value, credit: 0 },
       { accountId: await getAccountIdByCode('5001', client), debit: 0, credit: value },
+    ],
+  });
+}
+
+// Returning defective/excess stock to a supplier: the inventory asset goes
+// down (credit 1004) and what we owe the supplier goes down by the same
+// cost value (debit 2001 Accounts Payable) — the mirror of
+// postPurchaseReceiveEntry's DR inventory / CR payable on receipt.
+async function postSupplierReturnEntry(client, { returnOrderId, returnOrderNumber, amount, date, userId }) {
+  const value = money(amount);
+  if (value <= 0) return null;
+  return postJournalEntryWith(client, {
+    referenceType: 'return_order', referenceId: returnOrderId, date, userId,
+    description: `Supplier return ${returnOrderNumber}`,
+    lines: [
+      { accountId: await getAccountIdByCode('2001', client), debit: value, credit: 0 },
+      { accountId: await getAccountIdByCode('1004', client), debit: 0, credit: value },
     ],
   });
 }
@@ -1028,8 +1051,17 @@ async function getEntry(id) {
       ORDER BY jl.debit DESC, ca.code`,
     [id],
   );
+  // Unlike listEntries, this row query has no total_debit/total_credit
+  // subqueries, so shapeEntry() would read those as undefined -> 0 and
+  // always report "0.00 / 0.00, balanced: true" regardless of the entry's
+  // actual lines. Derive them from the `lines` we already fetched instead.
+  const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+  const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
   return {
     ...shapeEntry(rows[0]),
+    totalDebit: money(totalDebit),
+    totalCredit: money(totalCredit),
+    balanced: Math.abs(totalDebit - totalCredit) < 0.001,
     lines: lines.map((l) => ({
       id: l.id,
       accountId: l.account_id,
@@ -1075,6 +1107,7 @@ module.exports = {
   // Domain helpers
   postSaleEntry,
   postReturnedInventoryEntry,
+  postSupplierReturnEntry,
   reverseSaleEntries,
   postCustomerPaymentEntry,
   reverseCustomerPaymentEntries,

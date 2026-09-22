@@ -1,0 +1,21 @@
+-- Migration 033: enforce cash_drawer as a true singleton table.
+--
+-- cashService.getDrawerRow self-heals an empty table by inserting a fresh
+-- "Main Cash Drawer" row, but that check-then-insert isn't atomic: two
+-- concurrent requests hitting an empty table (e.g. right after a fresh
+-- install, two POS terminals starting up at once) could each see zero rows
+-- and each insert their own drawer. From then on, every cash transaction
+-- alternates between the two rows (each write bumps updated_at, so
+-- `ORDER BY updated_at ASC LIMIT 1` picks whichever row was NOT just
+-- touched), splitting the ledger and reporting a different, wrong
+-- current_balance depending on which row happens to be picked.
+--
+-- A unique index on a constant expression makes every row collide on that
+-- expression, so Postgres enforces "at most one row in this table" — the
+-- same trick used for bank_accounts.is_default (one default account) but
+-- applied to the whole table rather than a flag. If a duplicate already
+-- exists in this database, this migration fails loudly (and rolls back,
+-- per server/db/migrate.js) rather than silently deleting data — an
+-- existing duplicate needs a deliberate manual reconciliation, not an
+-- automated guess.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cash_drawer_singleton ON cash_drawer ((true));

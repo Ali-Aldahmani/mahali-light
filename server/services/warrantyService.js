@@ -5,16 +5,36 @@ const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('./notificationService');
 
+// Normalizes a Date object or date-like string to a plain YYYY-MM-DD. A
+// Date from the pg driver represents LOCAL midnight for a DATE column, so
+// this reads it with local getters; a "YYYY-MM-DD" string is just sliced.
+function toDateOnlyStr(input) {
+  if (input instanceof Date) {
+    const y = input.getFullYear();
+    const m = String(input.getMonth() + 1).padStart(2, '0');
+    const d = String(input.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(input).slice(0, 10);
+}
+
 // Compute end date by adding `months` whole calendar months and clamping to
 // the last valid day of the resulting month (so 31 Jan + 1 month = 28 Feb).
+// All arithmetic below runs on UTC-anchored getters/setters against a
+// normalized date-only string — mixing a UTC-parsed `new Date(str)` with
+// local getters/setters (the previous implementation) desyncs the calendar
+// day in any negative-UTC-offset timezone, e.g. addMonthsDate("2026-01-31",
+// 1) would wrongly return "2026-03-01" instead of "2026-02-28".
 function addMonthsDate(start, months) {
-  const d = new Date(start);
+  const s = toDateOnlyStr(start);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return null;
-  const baseDay = d.getDate();
-  d.setDate(1);
-  d.setMonth(d.getMonth() + months);
-  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  d.setDate(Math.min(baseDay, lastDay));
+  const baseDay = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(baseDay, lastDay));
   return d.toISOString().slice(0, 10);
 }
 
@@ -391,7 +411,11 @@ async function createClaim({
     }
     const w = rows[0];
 
-    if (w.status === 'expired') {
+    // The `status` column is only flipped active -> expired by a daily sweep
+    // (server/jobs/warrantyExpiry.js), so it can lag the real end_date by up
+    // to ~24h. Compare end_date directly so a claim can't be filed on an
+    // item that is actually already out of warranty during that window.
+    if (w.status === 'expired' || (w.end_date && toDateOnlyStr(w.end_date) < toDateOnlyStr(new Date()))) {
       throw new AppError(
         ERROR_CODES.BIZ_WARRANTY_EXPIRED,
         undefined,

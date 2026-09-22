@@ -7,7 +7,13 @@ const bankService = require('./bankService');
 const VALID_METHODS = new Set(['cash', 'bank_transfer', 'cheque']);
 
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
 function computePaymentStatus(totalCost, amountPaid) {
@@ -222,6 +228,20 @@ async function deletePayment({ paymentId }) {
       `SELECT * FROM purchase_orders WHERE id = $1`,
       [po.id],
     );
+
+    // Reverse the journal entry posted by addPayment for this same payment
+    // (cash/bank_transfer only — matches the gate around postSupplierPaymentEntry
+    // above). Without this the general ledger keeps the DR AP / CR Cash-or-Bank
+    // entry forever even though the treasury balance and PO balance below are
+    // both reversed, permanently corrupting getCashFlowStatement's opening/
+    // closing cash (which derives cash from journal_lines, not the treasury
+    // tables directly).
+    if (pm.payment_method === 'cash' || pm.payment_method === 'bank_transfer') {
+      await journalService.reverseSupplierPaymentEntries(client, paymentId, {
+        date: new Date().toISOString().slice(0, 10),
+        userId: pm.employee_id,
+      });
+    }
 
     // Reverse the original treasury posting (cash + bank only).
     let treasury = null;

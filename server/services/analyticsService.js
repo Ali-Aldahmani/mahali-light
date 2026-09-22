@@ -4,7 +4,13 @@ const { query } = require('../db/postgres');
 // Helpers
 // =======================================================================
 function money(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  n = Number(n) || 0;
+  // Math.round(n*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of 0.15).
+  // A tiny epsilon nudges genuine .xx5 boundaries the right way without
+  // affecting any other value.
+  return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
 function isIsoDateOnly(value) {
@@ -192,6 +198,11 @@ async function getTopProducts({
          FROM return_order_items roi
          JOIN return_orders ro ON ro.id = roi.return_order_id
         WHERE ro.created_at::date BETWEEN $1::date AND $2::date
+          -- Customer-facing returns only — a supplier_return of defective
+          -- stock isn't a customer return and must not inflate this
+          -- product's return_rate_pct (matches the filter already applied
+          -- to the equivalent CTEs in getKPIs/getSupplierScorecard below).
+          AND ro.return_type IN ('customer_refund', 'customer_replace')
         GROUP BY roi.product_id, roi.variant_id
      )
      SELECT s.*,
@@ -410,7 +421,15 @@ async function getTopCustomers({ startDate, endDate, limit = 10 } = {}) {
             (CURRENT_DATE - MAX(i.confirmed_at)::date)::int AS last_purchase_days_ago,
             CASE
               WHEN COALESCE(SUM(i.total), 0) = 0 THEN NULL
-              ELSE ((COALESCE(SUM(i.total),0) - c.credit_balance)
+              -- Numerator and denominator must both be scoped to this
+              -- customer's invoices WITHIN the period — mixing a period-
+              -- scoped total_spent with c.credit_balance (the customer's
+              -- current, unscoped, all-time balance) produced a nonsensical
+              -- rate (often deeply negative) whenever the all-time balance
+              -- exceeded what they bought in the selected window. Use each
+              -- invoice's own remaining balance_due instead (mirrors the
+              -- same fix applied to getKPIs' collectionRate above).
+              ELSE ((COALESCE(SUM(i.total),0) - COALESCE(SUM(i.balance_due),0))
                     / NULLIF(COALESCE(SUM(i.total),0), 0) * 100)
             END AS on_time_payment_rate
        FROM customers c

@@ -138,7 +138,13 @@ interface PosState {
 }
 
 function round2(n: any): number {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  const v = Number(n) || 0;
+  // Math.round(v*100)/100 alone mis-rounds values that land exactly on a
+  // half-cent boundary due to IEEE-754 float representation (e.g. 2.90*0.05
+  // is stored as 0.14499999999999999, rounding down to 0.14 instead of
+  // 0.15). A tiny epsilon nudges genuine .xx5 boundaries the right way
+  // without affecting any other value — mirrors server/services money().
+  return v < 0 ? -Math.round(-v * 100 + 1e-9) / 100 : Math.round(v * 100 + 1e-9) / 100;
 }
 
 function loadOfflineQueue(): OfflineQueueEntry[] {
@@ -194,7 +200,9 @@ function computeTotals(state: Pick<PosState, 'cart' | 'invoiceDiscount' | 'taxRa
   const tax = round2(taxable * (taxRate / 100));
   const total = round2(taxable + tax);
   const amountPaid = state.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const balanceDue = round2(total - amountPaid);
+  // Clamp like the backend's computeTotals (invoiceService.js) — an
+  // overpayment must never show as a negative balance in the cart preview.
+  const balanceDue = Math.max(0, round2(total - amountPaid));
   return {
     items,
     subtotal: round2(subtotal),

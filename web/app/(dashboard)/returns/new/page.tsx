@@ -1048,7 +1048,11 @@ function ReplaceStep({
                   <span className="text-ink-muted">× {it.quantity}</span>
                 </span>
                 <span className="font-medium">
-                  {formatCurrency(Number(it.unitPrice) * Number(it.quantity))}
+                  {formatCurrency(
+                    it.totalValue != null
+                      ? it.totalValue
+                      : Number(it.unitPrice) * Number(it.quantity),
+                  )}
                 </span>
               </li>
             ))}
@@ -1257,7 +1261,11 @@ function ReviewStep({
                 </div>
               </div>
               <div className="font-medium">
-                {formatCurrency(Number(it.quantity) * Number(it.unitPrice))}
+                {formatCurrency(
+                  it.totalValue != null
+                    ? it.totalValue
+                    : Number(it.quantity) * Number(it.unitPrice),
+                )}
               </div>
             </li>
           ))}
