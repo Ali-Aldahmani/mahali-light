@@ -135,7 +135,7 @@ export default function CartItem({
             type="number"
             min={0}
             max={maxDiscountPercentHint}
-            step="0.01"
+            step="1"
             value={item.discountPercent || ''}
             onChange={(e) =>
               onDiscountChange({ percent: Number(e.target.value) })
@@ -153,7 +153,7 @@ export default function CartItem({
             type="number"
             min={0}
             max={maxDiscountAmountHint}
-            step="0.01"
+            step="1"
             value={item.discountAmount || ''}
             onChange={(e) =>
               onDiscountChange({ amount: Number(e.target.value) })

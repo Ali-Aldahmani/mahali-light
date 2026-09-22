@@ -1,7 +1,7 @@
 import http from './http';
 import { getBreadcrumbs } from './breadcrumbService';
 
-const APP_VERSION = '1.8.0.2';
+const APP_VERSION = '1.8.0.3';
 
 function collectDeviceInfo() {
   const electron = typeof window !== 'undefined' ? window.electron : null;

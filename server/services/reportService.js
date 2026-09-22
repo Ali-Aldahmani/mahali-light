@@ -2170,19 +2170,19 @@ async function customMonthlySummary(params) {
       query(
         `SELECT COALESCE(SUM(amount), 0)::float8 AS total_received
            FROM customer_payments
-          WHERE paid_at::date BETWEEN $1::date AND $2::date`,
+          WHERE payment_date BETWEEN $1::date AND $2::date`,
         [startDate, endDate],
       ),
       query(
         `SELECT COALESCE(SUM(amount), 0)::float8 AS total
            FROM supplier_payments
-          WHERE paid_at::date BETWEEN $1::date AND $2::date`,
+          WHERE payment_date BETWEEN $1::date AND $2::date`,
         [startDate, endDate],
       ),
       query(
         `SELECT COALESCE(SUM(amount), 0)::float8 AS total
            FROM refund_payments
-          WHERE paid_at::date BETWEEN $1::date AND $2::date`,
+          WHERE "timestamp"::date BETWEEN $1::date AND $2::date`,
         [startDate, endDate],
       ),
       query(
