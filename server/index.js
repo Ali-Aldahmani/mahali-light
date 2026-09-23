@@ -11,6 +11,7 @@ const morgan = require('morgan');
 const compression = require('compression');
 
 const { loadTlsOptions } = require('./utils/tlsCert');
+const { configureTrustProxy } = require('./utils/trustProxy');
 const { waitForDatabase, query } = require('./db/postgres');
 const { extraOrigins, isAllowedOrigin } = require('./utils/corsOrigins');
 const { runMigrations } = require('./db/migrate');
@@ -160,6 +161,8 @@ async function bootstrap() {
   await runSeedSettings();
 
   const app = express();
+  // Before the rate limiters: they key on req.ip.
+  await configureTrustProxy(app);
 
   // ---------------------------------------------------------------------------
   // HTTPS / HTTP server selection

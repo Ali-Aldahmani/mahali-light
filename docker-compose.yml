@@ -45,6 +45,8 @@ services:
       PORT: '3000'
       STORE_TIMEZONE: ${STORE_TIMEZONE:-Asia/Dubai}
       TZ: ${STORE_TIMEZONE:-Asia/Dubai}
+      # Only the Next.js container may forward client IPs (X-Forwarded-For).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-nextjs}
       PGHOST: postgres
       PGPORT: '5432'
       PGUSER: ${POSTGRES_USER:-mahali}
