@@ -343,7 +343,10 @@ async function approveLeave({ leaveId, managerId, io = null }) {
       `SELECT l.*, e.name AS employee_name
          FROM leaves l
          LEFT JOIN employees e ON e.id = l.employee_id
-        WHERE l.id = $1 FOR UPDATE`,
+        WHERE l.id = $1
+        -- OF …: a plain FOR UPDATE with a LEFT JOIN is rejected by the
+        -- planner (0A000), failing every call.
+        FOR UPDATE OF l`,
       [leaveId],
     );
     if (!rows.length) {
@@ -468,7 +471,10 @@ async function rejectLeave({ leaveId, managerId, reason, io = null }) {
       `SELECT l.*, e.name AS employee_name
          FROM leaves l
          LEFT JOIN employees e ON e.id = l.employee_id
-        WHERE l.id = $1 FOR UPDATE`,
+        WHERE l.id = $1
+        -- OF …: a plain FOR UPDATE with a LEFT JOIN is rejected by the
+        -- planner (0A000), failing every call.
+        FOR UPDATE OF l`,
       [leaveId],
     );
     if (!rows.length) {

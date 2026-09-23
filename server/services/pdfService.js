@@ -533,7 +533,9 @@ async function generateReceiptPDF(invoiceId) {
 async function fetchPurchaseOrder(poId) {
   const { rows: poRows } = await query(
     `SELECT po.*, s.name AS supplier_name, s.contact_person, s.phone AS supplier_phone,
-            s.email AS supplier_email, s.trn_number AS supplier_trn, s.address AS supplier_address,
+            -- suppliers has no TRN column; selecting s.trn_number (42703)
+            -- failed every PO PDF. The template skips an empty TRN line.
+            s.email AS supplier_email, NULL::text AS supplier_trn, s.address AS supplier_address,
             s.payment_terms AS supplier_payment_terms,
             u.username AS created_by_username
        FROM purchase_orders po
@@ -814,6 +816,7 @@ module.exports = {
   generateReceiptPDF,
   generatePurchaseOrderPDF,
   generatePurchaseOrderPDFSafe,
+  fetchPurchaseOrder,
   generateReportPDF,
   renderPdf,
   invalidateInvoicePDF,

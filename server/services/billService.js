@@ -455,7 +455,10 @@ async function payBillPayment({
          FROM bill_payments bp
          JOIN bills b ON b.id = bp.bill_id
          LEFT JOIN expense_categories c ON c.id = b.category_id
-        WHERE bp.id = $1 FOR UPDATE`,
+        WHERE bp.id = $1
+        -- OF …: a plain FOR UPDATE with a LEFT JOIN is rejected by the
+        -- planner (0A000), failing every call.
+        FOR UPDATE OF bp, b`,
       [billPaymentId],
     );
     if (!payRows.length) {

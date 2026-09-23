@@ -852,8 +852,10 @@ async function periodCloseChecklist(period) {
     [period.start_date, period.end_date],
   );
   const { rows: returns } = await query(
+    // return_requests has requested_at, not created_at (the latter made
+    // every checklist — and every non-forced period close — fail with 42703).
     `SELECT COUNT(*)::int AS n FROM return_requests
-      WHERE status = 'pending' AND created_at BETWEEN $1::date AND ($2::date + INTERVAL '1 day')`,
+      WHERE status = 'pending' AND requested_at BETWEEN $1::date AND ($2::date + INTERVAL '1 day')`,
     [period.start_date, period.end_date],
   );
   const items = [

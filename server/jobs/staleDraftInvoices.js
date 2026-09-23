@@ -54,4 +54,4 @@ function startStaleDraftInvoiceJob() {
   );
 }
 
-module.exports = { startStaleDraftInvoiceJob };
+module.exports = { startStaleDraftInvoiceJob, sweep };

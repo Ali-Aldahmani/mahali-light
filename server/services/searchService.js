@@ -102,10 +102,12 @@ async function globalSearch(term, { userId, permissions = [] } = {}) {
 
   if (can('return.request') || can('return.approve')) {
     tasks.push(['returns', query(
+      // requested_at: return_requests has no created_at (42703 failed the
+      // whole search for anyone with a return permission — Cashier included).
       `SELECT id, request_number
          FROM return_requests
         WHERE request_number ILIKE $1
-        ORDER BY created_at DESC
+        ORDER BY requested_at DESC
         LIMIT ${LIMIT_PER_TYPE}`,
       [q],
     )]);
