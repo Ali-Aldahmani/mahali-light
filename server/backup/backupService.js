@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const tar = require('tar');
 
-const { query, withTransaction } = require('../db/postgres');
+const { query, withTransaction, getPool } = require('../db/postgres');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('../services/notificationService');
 
@@ -108,12 +108,104 @@ async function safeRm(p) {
   }
 }
 
-// Are we already running a backup? The spec forbids two in flight.
+// =======================================================================
+// One backup at a time — enforced by a Postgres advisory lock, not by the
+// job row's status. A status check alone meant a crash, power loss or
+// restart mid-backup (the self-updater restarts the container) left a row
+// stuck at 'running' forever, and every later backup — scheduled or
+// manual — was refused as "already in progress", silently. A session
+// advisory lock is released by Postgres the moment its connection dies, so
+// it can't outlive the process that holds it.
+// =======================================================================
+const BACKUP_LOCK_KEY = 717171001; // arbitrary, app-wide constant
+const INTERRUPTED_MESSAGE = 'Interrupted — the server stopped before this backup finished.';
+
 async function anyRunning() {
   const { rows } = await query(
-    `SELECT id, job_number FROM backup_jobs WHERE status = 'running' LIMIT 1`,
+    `SELECT id, job_number, started_at FROM backup_jobs
+      WHERE status = 'running' ORDER BY started_at DESC LIMIT 1`,
   );
   return rows[0] || null;
+}
+
+// Only called while holding the lock: no backup can be live anywhere, so
+// any 'running' row was orphaned by a process that died mid-backup.
+async function failInterruptedJobs(client) {
+  const { rows } = await client.query(
+    `UPDATE backup_jobs
+        SET status = 'failed',
+            completed_at = COALESCE(completed_at, NOW()),
+            error_message = COALESCE(error_message, $1)
+      WHERE status = 'running'
+      RETURNING id, job_number, type`,
+    [INTERRUPTED_MESSAGE],
+  );
+  return rows;
+}
+
+async function reportInterruptedJobs(jobs) {
+  if (!jobs.length) return;
+  const settings = await loadSettings().catch(() => ({ notify_on_failure: true }));
+  for (const job of jobs) {
+    console.warn(`[backupService] ${job.job_number} was interrupted; marked failed.`);
+    await logActivity({
+      entityType: 'backup',
+      entityId: job.id,
+      action: 'backup.failed',
+      newValue: { error: INTERRUPTED_MESSAGE },
+    });
+    await notifyFailure({
+      settings, job, jobNumber: job.job_number, type: job.type,
+      destinationResults: [], message: INTERRUPTED_MESSAGE,
+    });
+    emit('backup_failed', { jobId: job.id, jobNumber: job.job_number, type: job.type, error: INTERRUPTED_MESSAGE });
+  }
+}
+
+// Runs fn while holding the backup lock. Returns { locked: false } without
+// running fn if another backup holds it.
+async function withBackupLock(fn) {
+  const client = await getPool().connect();
+  let locked = false;
+  let broken = false;
+  try {
+    const { rows } = await client.query('SELECT pg_try_advisory_lock($1) AS ok', [BACKUP_LOCK_KEY]);
+    locked = rows[0].ok === true;
+    if (!locked) return { locked: false };
+    const interrupted = await failInterruptedJobs(client);
+    await reportInterruptedJobs(interrupted);
+    return { locked: true, result: await fn() };
+  } finally {
+    if (locked) {
+      try {
+        await client.query('SELECT pg_advisory_unlock($1)', [BACKUP_LOCK_KEY]);
+      } catch (_e) {
+        broken = true;
+      }
+    }
+    // Destroy (not pool) a connection we couldn't unlock, so the lock dies with it.
+    client.release(broken);
+  }
+}
+
+// Also cleans up orphaned 'running' rows as a side effect. Used at boot and
+// by the manual-run endpoint to answer 409 instead of queueing a no-op.
+async function isBackupRunning() {
+  const { locked } = await withBackupLock(async () => null);
+  return !locked;
+}
+
+async function recoverInterruptedJobs() {
+  await withBackupLock(async () => null);
+}
+
+function inProgressError(running) {
+  const err = new Error(
+    `Backup already in progress${running ? ` (${running.job_number})` : ''}.`,
+  );
+  err.code = 'BIZ_BACKUP_IN_PROGRESS';
+  err.runningJob = running || null;
+  return err;
 }
 
 // =======================================================================
@@ -123,13 +215,13 @@ async function anyRunning() {
 //   scheduleKey: '6h' | 'nightly' | 'weekly' | 'monthly' | 'manual:full' | 'manual:db_only'
 //   userId:      uuid (manual only)
 // =======================================================================
-async function runBackup({ type, triggeredBy, scheduleKey, userId = null }) {
-  const running = await anyRunning();
-  if (running) {
-    const err = new Error(`Backup already in progress (${running.job_number}).`);
-    err.code = 'BIZ_BACKUP_IN_PROGRESS';
-    throw err;
-  }
+async function runBackup(opts) {
+  const outcome = await withBackupLock(() => runBackupLocked(opts));
+  if (!outcome.locked) throw inProgressError(await anyRunning());
+  return outcome.result;
+}
+
+async function runBackupLocked({ type, triggeredBy, scheduleKey, userId = null }) {
   const settings = await loadSettings();
   const compressionLevel = settings.compression_enabled ? settings.compression_level : 0;
 
@@ -335,6 +427,8 @@ async function runBackup({ type, triggeredBy, scheduleKey, userId = null }) {
       error: err.message,
       destinations: destinationResults,
     });
+    // Admins were already notified above — the scheduler must not repeat it.
+    err.notified = true;
     throw err;
   } finally {
     await safeRm(tempDir);
@@ -647,6 +741,10 @@ module.exports = {
   setIoInstance,
   loadSettings,
   runBackup,
+  isBackupRunning,
+  recoverInterruptedJobs,
+  anyRunning,
+  notifyFailure,
   restoreFromBackup,
   diskUsage,
   destinationsHealth,

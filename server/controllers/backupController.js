@@ -117,6 +117,16 @@ const runSchema = z.object({
 async function runManual(req, res, next) {
   try {
     const body = runSchema.parse(req.body || {});
+    // The run itself is fire-and-forget, so an in-progress refusal would
+    // never reach the client — answer 409 up front instead of "queued".
+    if (await backupService.isBackupRunning()) {
+      const running = await backupService.anyRunning();
+      throw new AppError(
+        ERROR_CODES.BIZ_BACKUP_IN_PROGRESS,
+        `Backup already in progress${running ? ` (${running.job_number})` : ''}.`,
+        { status: 409 },
+      );
+    }
     const scheduleKey = body.type === 'full' ? 'manual:full' : 'manual:db_only';
     // Kick off in background — return immediately so HTTP doesn't time out.
     backupService
