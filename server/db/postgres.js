@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const { STORE_TIMEZONE } = require('../utils/dates');
 
 let pool;
 
@@ -14,6 +15,9 @@ function getPool() {
       max: Number(process.env.PGPOOL_MAX || 10),
       idleTimeoutMillis: Number(process.env.PGPOOL_IDLE_MS || 30000),
       connectionTimeoutMillis: Number(process.env.PGPOOL_CONN_MS || 2000),
+      // Session timezone = store timezone, so ::date, CURRENT_DATE and
+      // date_trunc bucket by the store's business day instead of UTC.
+      options: `-c timezone=${STORE_TIMEZONE}`,
     });
 
     pool.on('error', (err) => {

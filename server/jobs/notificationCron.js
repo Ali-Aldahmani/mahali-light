@@ -1,4 +1,5 @@
 const { query } = require('../db/postgres');
+const { storeDate } = require('../utils/dates');
 const notificationService = require('../services/notificationService');
 
 // =======================================================================
@@ -186,10 +187,10 @@ async function checkVatDue() {
     category: 'finance',
     severity: 'warning',
     title: `VAT return due in ${days} day${days === 1 ? '' : 's'}`,
-    message: `File and pay by ${vatDueDate.toISOString().slice(0, 10)}.`,
+    message: `File and pay by ${storeDate(vatDueDate)}.`,
     actionUrl: '/finance?tab=vat',
     referenceType: 'vat_period',
-    dedupeKey: `finance.vat_due_soon.${vatDueDate.toISOString().slice(0, 10)}`,
+    dedupeKey: `finance.vat_due_soon.${storeDate(vatDueDate)}`,
   });
   return true;
 }

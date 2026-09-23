@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
@@ -135,7 +136,7 @@ async function createWarrantiesFromInvoice(invoiceId, { actorId = null, io = nul
 
     const startDate = (invoice.confirmed_at || invoice.created_at || new Date())
       .toISOString
-      ? new Date(invoice.confirmed_at || invoice.created_at).toISOString().slice(0, 10)
+      ? storeDate(new Date(invoice.confirmed_at || invoice.created_at))
       : String(invoice.confirmed_at || invoice.created_at).slice(0, 10);
 
     const created = [];
@@ -706,7 +707,7 @@ async function resolveWarrantyClaim({
         [claim.warranty_id],
       );
 
-      const startDate = new Date().toISOString().slice(0, 10);
+      const startDate = todayStoreDate();
       const months = Number(claim.duration_months) || 12;
       const endDate = addMonthsDate(startDate, months);
       const newNumber = await generateWarrantyNumber(client);

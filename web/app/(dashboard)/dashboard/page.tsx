@@ -25,6 +25,7 @@ import CategoryBreakdownBars from '@/components/analytics/CategoryBreakdownBars'
 import PeakHoursHeatmap from '@/components/analytics/PeakHoursHeatmap';
 import AlertsPanel from '@/components/analytics/AlertsPanel';
 import FinanceDashboardWidget from '@/components/ui/FinanceDashboardWidget';
+import { localIsoDate } from '@/lib/utils/format';
 import {
   getKPIs,
   getSparkline,
@@ -68,8 +69,8 @@ function rangeDates(key: string) {
     end = new Date(y, m + 1, 0);
   }
   return {
-    start_date: start.toISOString().slice(0, 10),
-    end_date: end.toISOString().slice(0, 10),
+    start_date: localIsoDate(start),
+    end_date: localIsoDate(end),
   };
 }
 

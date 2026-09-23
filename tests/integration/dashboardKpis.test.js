@@ -30,7 +30,9 @@ describe.skipIf(!enabled)('dashboard KPIs react to returns on real PostgreSQL', 
   let productId, variantId, customerId, supplierId;
   const database = `kpi_regression_${randomUUID().replaceAll('-', '')}`;
   let createdDatabase = false;
-  const today = new Date().toISOString().slice(0, 10);
+  // The store's business day (Asia/Dubai) — what the app books sales under.
+  // The UTC day differs between 00:00 and 04:00 Dubai time.
+  const today = require('../../server/utils/dates').todayStoreDate();
 
   beforeAll(async () => {
     Object.assign(process.env, {

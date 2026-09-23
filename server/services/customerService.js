@@ -1,4 +1,5 @@
 const { withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
@@ -89,7 +90,7 @@ async function collectPayment({
         amt,
         method,
         bankAccountId,
-        paymentDate || new Date().toISOString().slice(0, 10),
+        paymentDate || todayStoreDate(),
         employeeId,
         notes,
       ],
@@ -179,8 +180,8 @@ async function voidPayment({ paymentId }) {
     }
     const pm = pmRows[0];
 
-    const today = new Date().toISOString().slice(0, 10);
-    const createdDay = new Date(pm.created_at).toISOString().slice(0, 10);
+    const today = todayStoreDate();
+    const createdDay = storeDate(new Date(pm.created_at));
     if (createdDay !== today) {
       throw new AppError(
         ERROR_CODES.BIZ_INVALID_STATE,
@@ -248,7 +249,7 @@ async function voidPayment({ paymentId }) {
 
       // Reverse the journal entries from the original collection.
       await journalService.reverseCustomerPaymentEntries(client, paymentId, {
-        date: new Date().toISOString().slice(0, 10),
+        date: todayStoreDate(),
         userId: pm.employee_id,
       });
     }

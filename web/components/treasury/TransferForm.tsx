@@ -4,7 +4,7 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
 import Textarea from '../ui/Textarea';
-import { formatCurrency } from '@/lib/utils/format';
+import { formatCurrency, storeDate } from '@/lib/utils/format';
 
 // Reusable transfer form. Source/destination are chosen from the union of the
 // cash drawer + every active bank account. The caller wires `onSubmit` to the
@@ -45,7 +45,7 @@ export default function TransferForm({
   const [fromKey, setFromKey] = useState(initial);
   const [toKey, setToKey] = useState(sources[1]?.id || '');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => storeDate());
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
 

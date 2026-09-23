@@ -7,6 +7,7 @@ import LeaveBalanceBar from '../ui/LeaveBalanceBar';
 import { calculateLeaveDays, submitLeave } from '@/services/leaveService';
 import { getEmployeeBalances } from '@/services/leaveBalanceService';
 import { toast } from '@/store/toastStore';
+import { storeDate } from '@/lib/utils/format';
 
 const LEAVE_TYPES = [
   { value: 'annual', label: 'Annual' },
@@ -16,7 +17,7 @@ const LEAVE_TYPES = [
 ];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 export default function RequestLeaveSlideOver({

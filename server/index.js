@@ -1,4 +1,6 @@
 require('dotenv').config();
+// Before anything creates a Date or opens a pg connection — see utils/dates.js.
+require('./utils/dates').applyProcessTimezone();
 
 const http = require('http');
 const https = require('https');

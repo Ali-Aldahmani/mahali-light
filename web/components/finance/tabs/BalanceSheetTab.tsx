@@ -6,9 +6,10 @@ import BalanceSheetTable from '@/components/ui/BalanceSheetTable';
 import Spinner from '@/components/ui/Spinner';
 import EmptyState from '@/components/ui/EmptyState';
 import { getBalanceSheet } from '@/services/financeService';
+import { storeDate } from '@/lib/utils/format';
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 export default function BalanceSheetTab() {

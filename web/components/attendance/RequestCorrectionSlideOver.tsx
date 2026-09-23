@@ -8,6 +8,7 @@ import {
   submitCorrection,
 } from '@/services/attendanceService';
 import { toast } from '@/store/toastStore';
+import { storeDate } from '@/lib/utils/format';
 
 const REASONS = [
   { value: 'forgot_checkout', label: 'Forgot to check out' },
@@ -19,11 +20,11 @@ const REASONS = [
 function lastNDaysIso(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return storeDate(d);
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 function combineLocal(dateStr, timeStr) {

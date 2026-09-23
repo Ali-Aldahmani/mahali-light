@@ -17,7 +17,7 @@ import MovementTypeBadge, {
 import { listMovements } from '@/services/stockService';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useAuthStore } from '@/store/authStore';
-import { formatDateTime, formatQty, formatCurrency } from '@/lib/utils/format';
+import { formatDateTime, formatQty, formatCurrency, storeDate } from '@/lib/utils/format';
 import { onStockUpdate } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
 
@@ -258,7 +258,7 @@ function StockMovementsPageContent() {
         );
       }
       downloadCsv(
-        `stock-movements-${new Date().toISOString().slice(0, 10)}.csv`,
+        `stock-movements-${storeDate()}.csv`,
         toCsv(all, cols),
       );
     } catch (err: any) {

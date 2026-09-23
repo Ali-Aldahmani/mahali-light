@@ -11,6 +11,7 @@ import { listCustomers } from '@/services/customerService';
 import { createWarranty } from '@/services/warrantyService';
 import { toast } from '@/store/toastStore';
 import type { SelectOption } from './types';
+import { storeDate } from '@/lib/utils/format';
 
 const TYPE_OPTIONS: SelectOption[] = [
   { value: 'customer', label: 'Customer warranty' },
@@ -46,7 +47,7 @@ export default function WarrantyFormSlideOver({ open, onClose }: WarrantyFormSli
   const [customerId, setCustomerId] = useState('');
   const [serial, setSerial] = useState('');
   const [warrantyType, setWarrantyType] = useState('customer');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(() => storeDate());
   const [duration, setDuration] = useState('12');
   const [terms, setTerms] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -98,7 +99,7 @@ export default function WarrantyFormSlideOver({ open, onClose }: WarrantyFormSli
     setCustomerId('');
     setSerial('');
     setWarrantyType('customer');
-    setStartDate(new Date().toISOString().slice(0, 10));
+    setStartDate(storeDate());
     setDuration('12');
     setTerms('');
     setSubmitting(false);

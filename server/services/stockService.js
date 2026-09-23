@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { checkReorderThreshold } = require('./reorderService');
 const journalService = require('./journalService');
@@ -243,7 +244,7 @@ async function applyStockMovement(params) {
           variantId,
           delta: movementQuantity,
           costPrice,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayStoreDate(),
           userId: employeeId,
         });
       }

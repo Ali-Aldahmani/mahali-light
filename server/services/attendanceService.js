@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('./notificationService');
@@ -23,13 +24,13 @@ function money(n) {
 }
 
 function todayDateString() {
-  // Local server day; the store runs in Asia/Dubai timezone via OS TZ.
-  return new Date().toISOString().slice(0, 10);
+  // The store's business day (STORE_TIMEZONE), not the UTC day.
+  return todayStoreDate();
 }
 
 function dateOnly(input) {
   if (!input) return null;
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (input instanceof Date) return storeDate(input);
   return String(input).slice(0, 10);
 }
 
@@ -1014,7 +1015,7 @@ async function createLeaveAttendanceRecords(client, { employeeId, startDate, end
   const end = new Date(`${dateOnly(endDate)}T00:00:00`);
   const cursor = new Date(start);
   while (cursor <= end) {
-    const day = cursor.toISOString().slice(0, 10);
+    const day = storeDate(cursor);
     const weekend = UAE_WEEKEND.has(cursor.getDay());
     const holiday = await isHoliday(client, day);
     if (!weekend && !holiday) {

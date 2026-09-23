@@ -1,4 +1,5 @@
 const { query } = require('../db/postgres');
+const { storeDate } = require('../utils/dates');
 
 function money(n) {
   n = Number(n) || 0;
@@ -116,8 +117,8 @@ async function getProfitAndLoss({ startDate, endDate, compare = false }) {
   const prevStart = new Date(prevEnd);
   prevStart.setDate(prevStart.getDate() - span + 1);
   const prev = await buildPLPeriod(
-    prevStart.toISOString().slice(0, 10),
-    prevEnd.toISOString().slice(0, 10),
+    storeDate(prevStart),
+    storeDate(prevEnd),
   );
   return {
     ...period,
@@ -431,7 +432,7 @@ async function getVATReport({ startDate, endDate }) {
   // Due date: 28 days after the period end (UAE FTA quarterly cycle).
   const endD = new Date(`${to}T00:00:00`);
   endD.setDate(endD.getDate() + 28);
-  const dueDate = endD.toISOString().slice(0, 10);
+  const dueDate = storeDate(endD);
 
   return {
     startDate: from,
@@ -466,7 +467,7 @@ async function getDashboardSnapshot() {
   // VAT due date: end of current quarter + 28 days.
   const quarter = Math.floor(month / 3);
   const qEnd = new Date(Date.UTC(year, quarter * 3 + 3, 0));
-  qEnd.setDate(qEnd.getDate() + 28);
+  qEnd.setUTCDate(qEnd.getUTCDate() + 28);
   const vatDueDate = qEnd.toISOString().slice(0, 10);
   const vatDaysLeft = Math.max(
     0,

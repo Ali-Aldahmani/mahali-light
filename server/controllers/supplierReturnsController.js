@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { todayStoreDate } = require('../utils/dates');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -209,7 +210,7 @@ async function create(req, res, next) {
           body.supplierId,
           body.purchaseOrderId || null,
           req.user.id,
-          body.returnDate || new Date().toISOString().slice(0, 10),
+          body.returnDate || todayStoreDate(),
           body.reason,
           Math.round(totalValue * 100) / 100,
         ],

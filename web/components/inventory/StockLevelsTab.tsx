@@ -26,7 +26,7 @@ import { useProductStore } from '@/store/productStore';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useAuthStore } from '@/store/authStore';
 import { fileUrl } from '@/lib/config';
-import { formatQty, formatCurrency } from '@/lib/utils/format';
+import { formatQty, formatCurrency, storeDate } from '@/lib/utils/format';
 import RequestAdjustmentSlideOver from './RequestAdjustmentSlideOver';
 import StockMovementsDrawer from './StockMovementsDrawer';
 import { onStockUpdate } from '@/store/socketStore';
@@ -306,7 +306,7 @@ export default function StockLevelsTab() {
         { label: 'Stock value', value: (r) => r.stockValue ?? '' },
       );
     }
-    downloadCsv(`stock-levels-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(rows, cols));
+    downloadCsv(`stock-levels-${storeDate()}.csv`, toCsv(rows, cols));
   }
 
   return (

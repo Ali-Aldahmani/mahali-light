@@ -1,4 +1,5 @@
 const { query } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const financialReportService = require('./financialReportService');
 const errorLogService = require('./errorLogService');
@@ -18,12 +19,12 @@ function money(n) {
 
 function dateOnly(input) {
   if (!input) return null;
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (input instanceof Date) return storeDate(input);
   return String(input).slice(0, 10);
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return todayStoreDate();
 }
 
 // Parses date range params. Defaults to "this month" so a missing query
@@ -1957,7 +1958,7 @@ async function netProfit(params) {
     const cur = new Date(`${startDate}T00:00:00`);
     const end = new Date(`${endDate}T00:00:00`);
     while (cur <= end) {
-      const d = cur.toISOString().slice(0, 10);
+      const d = storeDate(cur);
       buckets.push({ label: d, start: d, end: d });
       cur.setDate(cur.getDate() + 1);
     }

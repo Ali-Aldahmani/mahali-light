@@ -7,6 +7,7 @@ import { createBill, updateBill } from '@/services/billService';
 import { listCategories } from '@/services/expenseCategoryService';
 import { listBankAccounts } from '@/services/bankAccountService';
 import { toast } from '@/store/toastStore';
+import { storeDate, localIsoDate } from '@/lib/utils/format';
 
 const FREQ_OPTIONS = [
   { value: 'monthly', label: 'Monthly' },
@@ -19,7 +20,7 @@ const METHOD_OPTIONS = [
 ];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 // Returns the same day-of-month +N months, capping for short months (matches
@@ -33,7 +34,7 @@ function addCycle(dateStr, frequency) {
   else if (frequency === 'quarterly') target.setMonth(target.getMonth() + 3);
   else target.setFullYear(target.getFullYear() + 1);
   if (target.getDate() !== day) target.setDate(0);
-  return target.toISOString().slice(0, 10);
+  return localIsoDate(target);
 }
 
 export default function BillFormSlideOver({ open, onClose, bill = null, onSaved }) {

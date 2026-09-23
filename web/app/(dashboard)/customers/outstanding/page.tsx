@@ -23,7 +23,7 @@ import { type CustomerRecord } from '@/components/customers/CustomerFormSlideOve
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import { getOutstandingReceivables } from '@/services/customerService';
-import { formatCurrency, formatDate } from '@/lib/utils/format';
+import { formatCurrency, formatDate, storeDate } from '@/lib/utils/format';
 import { onCustomerBalanceUpdate } from '@/store/socketStore';
 
 interface ReceivableRow extends CustomerRecord {
@@ -127,7 +127,7 @@ function OutstandingReceivablesPageContent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receivables-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `receivables-${storeDate()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -5,6 +5,7 @@ import Input from '../ui/Input';
 import Select from '../ui/Select';
 import { createManualAttendance } from '@/services/attendanceService';
 import { toast } from '@/store/toastStore';
+import { storeDate } from '@/lib/utils/format';
 
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
@@ -15,7 +16,7 @@ const STATUS_OPTIONS = [
 ];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 function combineLocal(dateStr, timeStr) {

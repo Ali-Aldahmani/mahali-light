@@ -9,9 +9,10 @@ import AccountSelector from '@/components/ui/AccountSelector';
 import { cn } from '@/lib/utils/cn';
 import { listAccounts, postManualJournalEntry } from '@/services/financeService';
 import { toast } from '@/store/toastStore';
+import { storeDate } from '@/lib/utils/format';
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 function emptyLine() {

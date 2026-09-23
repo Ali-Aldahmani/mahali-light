@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 
@@ -160,7 +161,7 @@ async function postTransactionWith(client, params) {
   }
 
   const txDate =
-    transactionDate || new Date().toISOString().slice(0, 10);
+    transactionDate || todayStoreDate();
 
   const { rows: txRows } = await client.query(
     `INSERT INTO bank_transactions

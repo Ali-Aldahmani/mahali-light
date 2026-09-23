@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { todayStoreDate } = require('../utils/dates');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -256,7 +257,7 @@ async function transferToBank(req, res, next) {
           out.drawerId,
           body.toId,
           body.amount,
-          body.transferDate || new Date().toISOString().slice(0, 10),
+          body.transferDate || todayStoreDate(),
           req.user.id,
           body.notes || null,
         ],

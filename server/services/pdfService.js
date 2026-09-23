@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { todayStoreDate } = require('../utils/dates');
 const path = require('path');
 const QRCode = require('qrcode');
 const { query } = require('../db/postgres');
@@ -721,7 +722,7 @@ async function generateReportPDF({ title, html, reportType = 'report' }) {
   }
 
   const dir = ensurePdfDir('reports');
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = todayStoreDate();
   const safeType = String(reportType).replace(/[^a-z0-9-]+/gi, '-').toLowerCase();
   const file = path.join(dir, `${safeType}-${stamp}-${Date.now()}.pdf`);
 

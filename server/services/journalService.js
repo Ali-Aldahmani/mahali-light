@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 
@@ -15,8 +16,8 @@ function money(n) {
 }
 
 function dateOnly(input) {
-  if (!input) return new Date().toISOString().slice(0, 10);
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (!input) return todayStoreDate();
+  if (input instanceof Date) return storeDate(input);
   return String(input).slice(0, 10);
 }
 
@@ -363,7 +364,7 @@ async function reverseJournalEntryWith(client, sourceEntryId, { description, dat
   return postJournalEntryWith(client, {
     referenceType: src.reference_type,
     referenceId: src.reference_id,
-    date: date || new Date().toISOString().slice(0, 10),
+    date: date || todayStoreDate(),
     description: description || `Reversal of ${src.entry_number}`,
     lines: reversed,
     userId,

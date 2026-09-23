@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
@@ -931,14 +932,14 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       }, 0));
       await journalService.postReturnedInventoryEntry(client, {
         returnOrderId: orderId, returnOrderNumber: orderNumber, amount: returnedCost,
-        date: new Date().toISOString().slice(0, 10), userId: managerId,
+        date: todayStoreDate(), userId: managerId,
       });
     }
 
     if (request.return_type === 'supplier_return') {
       await journalService.postSupplierReturnEntry(client, {
         returnOrderId: orderId, returnOrderNumber: orderNumber, amount: money(supplierReturnCost),
-        date: new Date().toISOString().slice(0, 10), userId: managerId,
+        date: todayStoreDate(), userId: managerId,
       });
     }
 
@@ -994,7 +995,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
             returnOrderNumber: orderNumber,
             amount,
             method: p.method,
-            date: new Date().toISOString().slice(0, 10),
+            date: todayStoreDate(),
             userId: managerId,
             taxRate: invoice ? Number(invoice.tax_rate) || 0 : 0,
           });
@@ -1342,7 +1343,7 @@ async function buildReplacementInvoice(
   }
 
   await journalService.postSaleEntry(client, {
-    invoiceId, invoiceNumber, date: new Date().toISOString().slice(0, 10),
+    invoiceId, invoiceNumber, date: todayStoreDate(),
     subtotal: total, taxAmount: 0,
     payments: total > 0 ? [{ method: 'cash', amount: total }] : [],
     cogsAmount, userId: managerId,

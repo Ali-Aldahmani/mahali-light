@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const attendanceService = require('./attendanceService');
@@ -716,7 +717,7 @@ async function getLeave(id) {
 }
 
 async function upcomingApprovedLeaves(employeeId) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStoreDate();
   const { rows } = await query(
     `SELECT * FROM leaves
       WHERE employee_id = $1

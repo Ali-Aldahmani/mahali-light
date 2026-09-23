@@ -1,4 +1,5 @@
 const { withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const journalService = require('./journalService');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const cashService = require('./cashService');
@@ -91,7 +92,7 @@ async function addPayment({
         amt,
         method,
         bankAccountId,
-        paymentDate || new Date().toISOString().slice(0, 10),
+        paymentDate || todayStoreDate(),
         employeeId,
         receiptAttachment,
         notes,
@@ -186,8 +187,8 @@ async function deletePayment({ paymentId }) {
     }
     const pm = pmRows[0];
 
-    const today = new Date().toISOString().slice(0, 10);
-    const createdDay = new Date(pm.created_at).toISOString().slice(0, 10);
+    const today = todayStoreDate();
+    const createdDay = storeDate(new Date(pm.created_at));
     if (createdDay !== today) {
       throw new AppError(
         ERROR_CODES.BIZ_INVALID_STATE,
@@ -238,7 +239,7 @@ async function deletePayment({ paymentId }) {
     // tables directly).
     if (pm.payment_method === 'cash' || pm.payment_method === 'bank_transfer') {
       await journalService.reverseSupplierPaymentEntries(client, paymentId, {
-        date: new Date().toISOString().slice(0, 10),
+        date: todayStoreDate(),
         userId: pm.employee_id,
       });
     }

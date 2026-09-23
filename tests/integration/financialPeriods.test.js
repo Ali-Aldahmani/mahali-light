@@ -79,6 +79,25 @@ describe.skipIf(!enabled)('financial periods beyond the seeded year on real Post
     ]);
   });
 
+  it('books an instant by the Dubai business day, in both JS and SQL', async () => {
+    // 00:30 on 1 Jan 2028 in Dubai = 20:30 UTC on 31 Dec 2027.
+    const instant = new Date('2027-12-31T20:30:00Z');
+    const result = await journal.postJournalEntry(entry(instant));
+    const { rows: [row] } = await db.query(
+      `SELECT je.date::text AS date, p.name
+         FROM journal_entries je JOIN financial_periods p ON p.id = je.period_id
+        WHERE je.id = $1`,
+      [result.entry.id],
+    );
+    expect(row).toEqual({ date: '2028-01-01', name: 'January 2028' });
+
+    const { rows: [sql] } = await db.query(
+      `SELECT current_setting('TimeZone') AS tz, ($1::timestamptz)::date::text AS day`,
+      [instant.toISOString()],
+    );
+    expect(sql).toEqual({ tz: 'Asia/Dubai', day: '2028-01-01' });
+  });
+
   it('survives concurrent first postings into a brand-new month', async () => {
     await Promise.all([
       journal.postJournalEntry(entry('2027-05-03')),

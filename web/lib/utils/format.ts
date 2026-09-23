@@ -1,5 +1,30 @@
 import { TIMEZONE } from '@/lib/config';
 
+const storeDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+// YYYY-MM-DD of an instant in the store timezone (default: now). Use for
+// "today" defaults and for bucketing timestamps (createdAt) by business day —
+// never toISOString().slice(0, 10), which is the UTC day and reads as
+// yesterday between 00:00 and 04:00 in Dubai.
+export function storeDate(value: Date | string | number = new Date()): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return storeDayFormatter.format(date);
+}
+
+// YYYY-MM-DD of a calendar date built with local constructors
+// (new Date(y, m, d)). Reads local getters so no UTC shift is applied.
+export function localIsoDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export function formatDateTime(value, options = {}) {
   if (!value) return '—';
   const date = value instanceof Date ? value : new Date(value);

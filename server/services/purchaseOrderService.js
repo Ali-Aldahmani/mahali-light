@@ -1,4 +1,5 @@
 const { withTransaction, query } = require('../db/postgres');
+const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { applyStockMovement } = require('./stockService');
 const { nextDocumentNumber } = require('../utils/docNumbers');
@@ -256,7 +257,7 @@ async function receiveItems({ poId, items, employeeId }) {
       await journalService.postPurchaseReceiveEntry(client, {
         poId,
         poNumber: po.po_number,
-        date: new Date().toISOString().slice(0, 10),
+        date: todayStoreDate(),
         inventoryValue: receivedValue,
         vatAmount: 0,
         userId: employeeId,
