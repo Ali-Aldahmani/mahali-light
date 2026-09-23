@@ -139,7 +139,9 @@ function ensureScheduledDir() {
 async function runSchedule(schedule, { io = null, actor = null } = {}) {
   const filters = schedule.filters || {};
   try {
-    const data = await reportService.generateReport(schedule.report_type, filters);
+    const data = await reportService.generateReport(schedule.report_type, filters, {
+      viewer: actor || undefined,
+    });
     let exported;
     if (schedule.format === 'csv') {
       const body = await reportExporter.exportToCSV(data);
