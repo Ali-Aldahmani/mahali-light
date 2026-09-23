@@ -28,14 +28,17 @@ async function status(_req, res, next) {
         if (addr.family === 'IPv4' && !addr.internal) ips.push(addr.address);
       }
     }
-    const setupToken = await setupTokenService.issueSetupToken();
+    // The setup code is never returned here: it lives only in the server
+    // log / setup-code.txt (see setupTokenService). Only an expired code is
+    // replaced — a live one is never rotated by a status check.
+    await setupTokenService.ensureLiveSetupToken();
     ok(res, {
       ...settings,
       setup_completed: false,
       has_admin: hasAdmin,
       local_ips: ips,
       server_port: Number(process.env.PORT || 3000),
-      setup_token: setupToken,
+      setup_code_required: true,
     });
   } catch (err) {
     next(err);
@@ -124,6 +127,7 @@ async function complete(req, res, next) {
       performedBy: null,
       newValue: { store_name: settings.store_name },
     });
+    setupTokenService.removeSetupCodeFile();
     created(res, settings);
   } catch (err) {
     if (err.code === 'SETUP_ALREADY_DONE' || err.code === 'SETUP_ADMIN_EXISTS') {
@@ -140,6 +144,17 @@ async function complete(req, res, next) {
   }
 }
 
+// Lets the wizard check the code on its first screen instead of failing at
+// the very end. Rate-limited (index.js) like /complete.
+async function verifyCode(req, res, next) {
+  try {
+    await setupTokenService.assertValidSetupToken(req.body?.code || req.headers['x-setup-token']);
+    ok(res, { valid: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function testConnection(req, res, next) {
   try {
     ok(res, { ok: true, message: 'Server is reachable.' });
@@ -148,4 +163,4 @@ async function testConnection(req, res, next) {
   }
 }
 
-module.exports = { status, complete, testConnection };
+module.exports = { status, complete, verifyCode, testConnection };

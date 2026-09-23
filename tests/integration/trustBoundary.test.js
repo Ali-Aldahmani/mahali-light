@@ -106,9 +106,12 @@ describe.skipIf(!enabled)('trust boundary on real PostgreSQL', () => {
   });
 
   it('completes setup once with valid token then rejects replay', async () => {
+    // The code is never returned by /status any more — the operator reads it
+    // from the server log. Issue it the way the server does at boot.
     const statusRes = await request.get('/api/setup/status');
     expect(statusRes.status).toBe(200);
-    const setupToken = statusRes.body.data.setup_token;
+    expect(statusRes.body.data.setup_token).toBeUndefined();
+    const setupToken = await require('../../server/services/setupTokenService').issueSetupToken();
     expect(setupToken).toBeTruthy();
 
     const completeRes = await request

@@ -13,6 +13,8 @@ out/
 .env.local
 .env.production
 server/.env
+# First-run setup code (server/services/setupTokenService.js) — a secret.
+setup-code.txt
 
 # Database dumps
 *.dump

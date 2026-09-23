@@ -70,13 +70,14 @@ const setupRouter = require('./routes/setup');
 const searchRouter = require('./routes/search');
 const updatesRouter = require('./routes/updates');
 const { isServerMode } = require('./utils/serverMode');
+const setupTokenService = require('./services/setupTokenService');
 
 const {
   notFoundHandler,
   errorHandler,
   registerProcessHandlers,
 } = require('./middleware/errors');
-const { authLimiter, apiLimiter } = require('./middleware/rateLimiter');
+const { authLimiter, apiLimiter, setupLimiter } = require('./middleware/rateLimiter');
 const { requestId } = require('./middleware/requestId');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
 const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
@@ -159,6 +160,10 @@ async function bootstrap() {
   await runSeed();
   await runSeedProducts();
   await runSeedSettings();
+  // Fresh first-run setup code in the server log while setup is pending
+  // (services/setupTokenService.js). Server mode only, so a client-mode API
+  // sharing the database can't rotate the code the operator is using.
+  if (isServerMode()) await setupTokenService.issueSetupTokenAtBoot();
 
   const app = express();
   // Before the rate limiters: they key on req.ip.
@@ -277,6 +282,8 @@ async function bootstrap() {
   // At a 5-PC store a busy cashier generates ~25 req/min, so this leaves
   // ample headroom while still stopping runaway clients or scanning loops.
   app.use('/api/auth/login', authLimiter);
+  app.use('/api/setup/verify-code', setupLimiter);
+  app.use('/api/setup/complete', setupLimiter);
   app.use('/api', apiLimiter);
 
   // Phase 17 — short-circuit writes during a restore so the database isn't

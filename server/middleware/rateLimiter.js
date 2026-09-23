@@ -47,4 +47,15 @@ const apiLimiter = rateLimit({
   handler,
 });
 
-module.exports = { authLimiter, apiLimiter };
+// First-run setup code guesses (/api/setup/verify-code, /complete). The
+// code is ~80 bits, so this is defence in depth, not the main barrier.
+const setupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator,
+  handler,
+});
+
+module.exports = { authLimiter, apiLimiter, setupLimiter };
