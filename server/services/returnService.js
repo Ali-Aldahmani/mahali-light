@@ -174,7 +174,69 @@ async function loadCatalogVariant(client, variantId) {
   return rows[0];
 }
 
+// Re-load a replacement plan already frozen into return_requests.replacement_plan
+// at request-creation time (see resolveReplacementPlan), for use at approval.
+// Approval must NOT re-price against the current catalog selling_price: the
+// refund_plan being validated alongside it was computed and shown to the
+// customer against the prices captured when the request was created, so
+// re-deriving prices here would make an otherwise-valid approval fail with
+// BIZ_REFUND_PLAN_MISMATCH whenever a product's price simply changed in the
+// meantime. We still confirm each variant is still active — that's a real
+// reason to block, just not a price mismatch.
+async function loadFrozenReplacementPlan(client, plan) {
+  if (!plan) return null;
+  let parsed = plan;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (_e) {
+      throw new AppError(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Replacement plan is malformed.',
+      );
+    }
+  }
+  if (!Array.isArray(parsed.items) || !parsed.items.length) {
+    throw new AppError(
+      ERROR_CODES.VALIDATION_FAILED,
+      'Replacement plan items must be an array.',
+    );
+  }
+  const items = [];
+  for (const it of parsed.items) {
+    if (
+      !it.variantId ||
+      !Number.isFinite(Number(it.quantity)) ||
+      Number(it.quantity) <= 0 ||
+      !Number.isFinite(Number(it.unitPrice)) ||
+      Number(it.unitPrice) < 0
+    ) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid replacement item.');
+    }
+    const v = await loadCatalogVariant(client, it.variantId);
+    const qty = Number(it.quantity);
+    const unitPrice = money(it.unitPrice);
+    items.push({
+      variantId: v.id,
+      productId: v.product_id,
+      productName: v.product_name,
+      quantity: qty,
+      unitPrice,
+      lineTotal: money(unitPrice * qty),
+    });
+  }
+  const replacementTotal = money(items.reduce((sum, it) => sum + it.lineTotal, 0));
+  return {
+    items,
+    replacementTotal,
+    priceDifference: 0,
+    differenceDirection: 'none',
+  };
+}
+
 // Resolve replacement lines from catalog selling prices — never trust client unitPrice.
+// Used only at request-creation time; approval reuses the frozen snapshot this
+// produces via loadFrozenReplacementPlan instead of calling this again.
 async function resolveReplacementPlan(client, plan) {
   if (!plan) return null;
   let parsed = plan;
@@ -733,7 +795,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       items.reduce((acc, it) => acc + Number(it.total_value || 0), 0),
     );
     const replacementPlan = request.return_type === 'customer_replace'
-      ? await resolveReplacementPlan(client, request.replacement_plan) : null;
+      ? await loadFrozenReplacementPlan(client, request.replacement_plan) : null;
     if (request.return_type === 'customer_replace' && !replacementPlan) {
       throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Replacement items are required.');
     }
@@ -1263,7 +1325,12 @@ async function buildReplacementInvoice(
     }
     const v = vRows[0];
     cogsAmount += Number(v.cost_price || 0) * qty;
-    const unitPrice = money(v.selling_price);
+    // Charge the price frozen into the replacement plan (see
+    // loadFrozenReplacementPlan), not the catalog's current selling_price —
+    // the invoice total must match what was already validated against the
+    // refund plan, or the two would silently diverge if the price changed
+    // between request creation and approval.
+    const unitPrice = money(it.unitPrice);
 
     await client.query(
       `INSERT INTO invoice_items (
