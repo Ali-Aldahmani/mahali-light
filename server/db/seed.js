@@ -106,6 +106,7 @@ const ALL_PERMISSIONS = [
   ['backup.view', 'View Backups', 'backup'],
   ['backup.run_manual', 'Run Manual Backup', 'backup'],
   ['backup.restore', 'Restore Backup', 'backup'],
+  ['backup.download', 'Download Backup Archives', 'backup'],
   ['backup.configure', 'Configure Backup', 'backup'],
   ['settings.view', 'View Settings', 'settings'],
   ['settings.edit', 'Edit Settings', 'settings'],

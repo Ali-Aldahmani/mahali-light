@@ -71,6 +71,7 @@ function BackupSettingsPageInner() {
   const hasPerm = useAuthStore((s) => s.hasPermission);
   const canConfigure = role === 'Admin' || hasPerm('backup.configure');
   const canRestore = role === 'Admin' || hasPerm('backup.restore');
+  const canDownload = hasPerm('backup.download');
 
   const [tab, setTab] = useState('status');
   const [draft, setDraft] = useState<Record<string, any> | null>(null);
@@ -235,7 +236,7 @@ function BackupSettingsPageInner() {
                   <BackupJobRow
                     key={job.id}
                     job={job}
-                    canDownload
+                    canDownload={canDownload}
                     canRestore={canRestore}
                     onDownload={handleDownload}
                     onRestore={(j: any) => setRestoreJob(j)}
