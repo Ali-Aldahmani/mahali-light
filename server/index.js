@@ -82,6 +82,7 @@ const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
 const { startWarrantyExpiryJob } = require('./jobs/warrantyExpiry');
 const { startAttendanceSweepJob } = require('./jobs/attendanceSweep');
 const { startBillStatusSweepJob } = require('./jobs/billStatusSweep');
+const { startFinancialPeriodsJob } = require('./jobs/financialPeriods');
 const { startScheduledReportJob } = require('./services/scheduledReportService');
 const { startForecastJob } = require('./services/forecastService');
 const notificationService = require('./services/notificationService');
@@ -366,6 +367,7 @@ async function bootstrap() {
     startWarrantyExpiryJob(io);
     startAttendanceSweepJob(io);
     startBillStatusSweepJob(io);
+    startFinancialPeriodsJob();
     startScheduledReportJob(io);
     startForecastJob();
     notificationService.setIoInstance(io);
