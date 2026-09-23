@@ -16,6 +16,7 @@ const nasDestination = require('./destinations/nasDestination');
 const usbDestination = require('./destinations/usbDestination');
 
 const maintenanceMode = require('./maintenanceMode');
+const encryption = require('./encryption');
 
 // =======================================================================
 // Schedule keys map to local-disk sub-directories AND drive retention.
@@ -248,13 +249,16 @@ async function runBackupLocked({ type, triggeredBy, scheduleKey, userId = null }
   const startedAt = Date.now();
   const tempDir = await tempJobDir(job.id);
   const timestamp = timestampForFile();
-  const archiveName = `${type === 'full' ? 'full' : 'db'}-${timestamp}.tar.gz`;
+  let archiveName = `${type === 'full' ? 'full' : 'db'}-${timestamp}.tar.gz`;
   let finalArchivePath = null;
   const destinationResults = [];
   let errorMessage = null;
   let strategiesSucceeded = false;
 
   try {
+    // Fail before dumping anything rather than silently writing plaintext.
+    if (settings.encryption_enabled) encryption.backupSecret();
+
     // -------------------- 1. Strategies --------------------
     const dbOut = path.join(tempDir, `${timestamp}-db.dump`);
     await dbBackup.backupDatabase(dbOut, { pgDumpPath: settings.pg_dump_path });
@@ -290,6 +294,14 @@ async function runBackupLocked({ type, triggeredBy, scheduleKey, userId = null }
       },
       componentPaths.map((p) => path.basename(p)),
     );
+    if (settings.encryption_enabled) {
+      // Only the encrypted copy ever leaves the temp dir (local, NAS, USB).
+      const plainArchive = finalArchivePath;
+      archiveName = `${archiveName}.enc`;
+      finalArchivePath = path.join(tempDir, archiveName);
+      await encryption.encryptFile(plainArchive, finalArchivePath);
+      await safeRm(plainArchive);
+    }
     strategiesSucceeded = true;
 
     // -------------------- 3. Save to destinations --------------------
@@ -517,6 +529,31 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
     throw err;
   }
 
+  // -------------------- Step 0: decrypt (encrypted archives only) --------
+  // Up front, so a wrong MAHALI_BACKUP_SECRET or a corrupted file fails
+  // before users are warned and the API goes into maintenance mode.
+  // Plaintext archives from before encryption was enabled still restore.
+  const restoreDir = path.join(os.tmpdir(), 'mahali-restore', jobId);
+  let archivePath = filePath;
+  if (await encryption.isEncryptedFile(filePath)) {
+    try {
+      await fs.promises.mkdir(restoreDir, { recursive: true });
+      archivePath = path.join(restoreDir, 'archive.tar.gz');
+      await encryption.decryptFile(filePath, archivePath);
+    } catch (err) {
+      await safeRm(restoreDir);
+      await logActivity({
+        entityType: 'backup',
+        entityId: jobId,
+        action: 'backup.restore_failed',
+        performedBy: userId,
+        notes: err.message,
+      });
+      emit('restore_progress', { step: 'error', percent: 0, message: err.message });
+      throw err;
+    }
+  }
+
   // -------------------- Step 1: warn users --------------------
   emit('restore_imminent', { startsIn: confirmDelaySeconds, jobId });
   await logActivity({
@@ -532,10 +569,9 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
   maintenanceMode.enable('System restore in progress — please wait.');
   emit('restore_progress', { step: 'extract', percent: 10, message: 'Extracting backup archive…' });
 
-  const restoreDir = path.join(os.tmpdir(), 'mahali-restore', jobId);
   try {
     await fs.promises.mkdir(restoreDir, { recursive: true });
-    await tar.x({ file: filePath, cwd: restoreDir });
+    await tar.x({ file: archivePath, cwd: restoreDir });
     const files = await fs.promises.readdir(restoreDir);
     const dumpFile = files.find((f) => f.endsWith('-db.dump'));
     if (!dumpFile) throw new Error('No database dump inside backup archive.');
