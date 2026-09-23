@@ -851,7 +851,10 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     const treasuryPostings = [];
     if (invoice.status === 'confirmed') {
       const items = await loadItemsForInvoice(client, invoiceId);
-      for (const it of items) {
+      // Custom/third-party lines never left stock at confirm (see
+      // confirmInvoice's catalogItems), so there is nothing to put back.
+      const catalogItems = items.filter((it) => !it.is_custom);
+      for (const it of catalogItems) {
         const { variant } = await applyStockMovement({
           client,
           variantId: it.variant_id,

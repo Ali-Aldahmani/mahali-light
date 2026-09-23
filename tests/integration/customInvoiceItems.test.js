@@ -235,6 +235,75 @@ describe.skipIf(!enabled)('custom/third-party invoice items on real PostgreSQL',
     expect(unbalanced).toHaveLength(0);
   });
 
+  it('cancels a confirmed invoice with a custom line, reversing stock, cash and journal', async () => {
+    await db.query(`UPDATE app_settings SET vat_enabled = true, vat_rate = 5`);
+    const stockOf = async () => Number((await db.query(
+      `SELECT stock_qty FROM product_variants WHERE id = $1`, [variantId])).rows[0].stock_qty);
+    const drawerBalance = async () => Number((await db.query(
+      `SELECT current_balance FROM cash_drawer ORDER BY updated_at DESC LIMIT 1`)).rows[0].current_balance);
+
+    const createRes = await request(app)
+      .post('/invoices')
+      .auth(adminToken, { type: 'bearer' })
+      .send({
+        customerId,
+        items: [
+          { variantId, quantity: 1 },
+          {
+            isCustom: true,
+            customDescription: 'Third-party fan',
+            thirdPartyName: 'Acme Lighting',
+            quantity: 1,
+            unitPrice: 100,
+            customCostPrice: 70,
+          },
+        ],
+      });
+    expect(createRes.status).toBe(201);
+    const invoiceId = createRes.body.data.id;
+    expect(createRes.body.data.total).toBe(210);
+
+    const payRes = await request(app)
+      .post(`/invoices/${invoiceId}/payments`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ idempotencyKey: randomUUID(), method: 'cash', amount: 210 });
+    expect(payRes.status).toBe(201);
+
+    const stockBefore = await stockOf();
+    const cashBefore = await drawerBalance();
+    const confirmRes = await request(app)
+      .post(`/invoices/${invoiceId}/confirm`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({});
+    expect(confirmRes.status).toBe(200);
+    expect(await stockOf()).toBe(stockBefore - 1);
+    expect(await drawerBalance()).toBe(cashBefore + 210);
+
+    const cancelRes = await request(app)
+      .post(`/invoices/${invoiceId}/cancel`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ reason: 'Customer changed mind' });
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.data.status).toBe('cancelled');
+
+    // Only the catalog line comes back into stock; cash leaves the drawer.
+    expect(await stockOf()).toBe(stockBefore);
+    expect(await drawerBalance()).toBe(cashBefore);
+
+    // Sale + reversal net to zero on every account, incl. the third-party
+    // payable (2001) and inventory (1004).
+    const { rows: nonZero } = await db.query(`
+      SELECT a.code, SUM(jl.debit - jl.credit) AS net
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.journal_entry_id
+        JOIN chart_of_accounts a ON a.id = jl.account_id
+       WHERE je.reference_id = $1
+       GROUP BY a.code
+      HAVING SUM(jl.debit - jl.credit) <> 0
+    `, [invoiceId]);
+    expect(nonZero).toEqual([]);
+  });
+
   it('ignores a client-supplied taxRate and uses app_settings VAT rate', async () => {
     await db.query(`UPDATE app_settings SET vat_enabled = true, vat_rate = 5`);
 
