@@ -80,6 +80,16 @@ async function recalculatePOTotals(client, poId) {
 // Receive items against a PO. Items: [{ id, quantityReceived }].
 // All work is atomic and stock movements are routed through applyStockMovement.
 // Returns { po, affectedVariants, costChanges } for the caller to emit sockets.
+// Net value received so far on a PO (quantity_received × unit cost).
+async function receivedValueOf(client, poId) {
+  const { rows } = await client.query(
+    `SELECT COALESCE(SUM(quantity_received * cost_price_per_unit), 0)::numeric AS value
+       FROM purchase_order_items WHERE purchase_order_id = $1`,
+    [poId],
+  );
+  return money(rows[0].value);
+}
+
 async function receiveItems({ poId, items, employeeId }) {
   if (!Array.isArray(items) || !items.length) {
     throw new AppError(
@@ -111,6 +121,7 @@ async function receiveItems({ poId, items, employeeId }) {
     const costChanges = [];
     // Track value received in this call to post a single journal entry below.
     let receivedValue = 0;
+    const receivedValueBefore = await receivedValueOf(client, poId);
 
     for (const i of items) {
       if (!i.id || !Number.isFinite(Number(i.quantityReceived))) continue;
@@ -217,6 +228,23 @@ async function receiveItems({ poId, items, employeeId }) {
       affectedVariants.push(item.variant_id);
     }
 
+    // Input VAT for what arrived in this call: the PO's VAT (tax_amount, on
+    // subtotal) allocated by received value. Cumulative — VAT through the
+    // new received value minus VAT through the old — so partial receipts
+    // of a fully received PO sum to exactly tax_amount, with no rounding
+    // drift. vat_amount keeps a running total of input VAT booked.
+    const receivedValueAfter = await receivedValueOf(client, poId);
+    const vatThrough = (value) => {
+      const subtotal = Number(po.subtotal) || 0;
+      if (subtotal <= 0) return 0;
+      return money((Number(po.tax_amount) || 0) * Math.min(value, subtotal) / subtotal);
+    };
+    const receivedVat = money(vatThrough(receivedValueAfter) - vatThrough(receivedValueBefore));
+    await client.query(
+      `UPDATE purchase_orders SET vat_amount = $1 WHERE id = $2`,
+      [vatThrough(receivedValueAfter), poId],
+    );
+
     // Re-read item state to compute new PO status.
     const { rows: allItems } = await client.query(
       `SELECT quantity, quantity_received FROM purchase_order_items
@@ -236,10 +264,13 @@ async function receiveItems({ poId, items, employeeId }) {
         ? 'partially_received'
         : po.status;
 
+    // $1 is cast explicitly: used both as the varchar status and in a text
+    // comparison, Postgres rejected it ("inconsistent types deduced for
+    // parameter $1", 42P08), so every receive failed with a 500.
     await client.query(
       `UPDATE purchase_orders
-          SET status = $1,
-              received_date = CASE WHEN $1 = 'received' THEN CURRENT_DATE ELSE received_date END,
+          SET status = $1::varchar,
+              received_date = CASE WHEN $1::varchar = 'received' THEN CURRENT_DATE ELSE received_date END,
               updated_at = NOW()
         WHERE id = $2`,
       [nextStatus, poId],
@@ -250,16 +281,17 @@ async function receiveItems({ poId, items, employeeId }) {
       [poId],
     );
 
-    // Post the receive's journal entry. VAT on the PO is captured separately
-    // by the VAT report straight from purchase_orders.vat_amount, so we keep
-    // the receive entry to inventory ↔ payables only.
-    if (receivedValue > 0) {
+    // DR Inventory + DR input VAT (2002), CR Payables for the gross amount —
+    // supplier payments are capped at total_cost (VAT-inclusive), so posting
+    // payables net of VAT drove them negative, and input VAT was never
+    // recorded anywhere (vat_amount was never written; the VAT report read 0).
+    if (receivedValue > 0 || receivedVat > 0) {
       await journalService.postPurchaseReceiveEntry(client, {
         poId,
         poNumber: po.po_number,
         date: todayStoreDate(),
         inventoryValue: receivedValue,
-        vatAmount: 0,
+        vatAmount: receivedVat,
         userId: employeeId,
       });
     }

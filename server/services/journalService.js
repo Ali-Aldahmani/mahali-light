@@ -518,16 +518,28 @@ async function postReturnedInventoryEntry(client, { returnOrderId, returnOrderNu
 // down (credit 1004) and what we owe the supplier goes down by the same
 // cost value (debit 2001 Accounts Payable) — the mirror of
 // postPurchaseReceiveEntry's DR inventory / CR payable on receipt.
-async function postSupplierReturnEntry(client, { returnOrderId, returnOrderNumber, amount, date, userId }) {
+// Goods returned to a supplier: DR payables for the gross amount, CR
+// inventory at cost and CR 2002 to reverse the input VAT booked when they
+// were received (postPurchaseReceiveEntry).
+async function postSupplierReturnEntry(client, {
+  returnOrderId, returnOrderNumber, amount, vatAmount = 0, date, userId,
+}) {
   const value = money(amount);
-  if (value <= 0) return null;
+  const vat = money(vatAmount);
+  if (value <= 0 && vat <= 0) return null;
+  const lines = [
+    { accountId: await getAccountIdByCode('2001', client), debit: money(value + vat), credit: 0 },
+  ];
+  if (value > 0) {
+    lines.push({ accountId: await getAccountIdByCode('1004', client), debit: 0, credit: value });
+  }
+  if (vat > 0) {
+    lines.push({ accountId: await getAccountIdByCode('2002', client), debit: 0, credit: vat });
+  }
   return postJournalEntryWith(client, {
     referenceType: 'return_order', referenceId: returnOrderId, date, userId,
     description: `Supplier return ${returnOrderNumber}`,
-    lines: [
-      { accountId: await getAccountIdByCode('2001', client), debit: value, credit: 0 },
-      { accountId: await getAccountIdByCode('1004', client), debit: 0, credit: value },
-    ],
+    lines,
   });
 }
 

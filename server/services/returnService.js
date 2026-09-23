@@ -937,9 +937,24 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
     }
 
     if (request.return_type === 'supplier_return') {
+      // Reverse input VAT at the originating PO's own rate. Without a PO
+      // reference we don't know what VAT (if any) was claimed on these goods,
+      // so none is reversed.
+      let supplierReturnVat = 0;
+      if (request.reference_type === 'purchase_order' && request.reference_id) {
+        const { rows: [po] } = await client.query(
+          `SELECT subtotal, tax_amount FROM purchase_orders WHERE id = $1`,
+          [request.reference_id],
+        );
+        if (po && Number(po.subtotal) > 0) {
+          supplierReturnVat = money(
+            supplierReturnCost * (Number(po.tax_amount) || 0) / Number(po.subtotal),
+          );
+        }
+      }
       await journalService.postSupplierReturnEntry(client, {
         returnOrderId: orderId, returnOrderNumber: orderNumber, amount: money(supplierReturnCost),
-        date: todayStoreDate(), userId: managerId,
+        vatAmount: supplierReturnVat, date: todayStoreDate(), userId: managerId,
       });
     }
 
