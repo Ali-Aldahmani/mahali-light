@@ -324,34 +324,65 @@ async function updateItems(req, res, next) {
       );
     }
 
+    // Sales keep running during a count, so a line is compared with the stock
+    // the system held at the moment it was counted — not the snapshot taken
+    // when the count was opened, which could be hours stale. The variant row
+    // is locked while reading it and stamping counted_at, and movements are
+    // stamped under the same lock (stockService), so approve() can tell
+    // exactly which movements happened after this line was counted.
     await withTransaction(async (client) => {
-      for (const item of body.items) {
-        const { rows } = await client.query(
-          `SELECT id, system_qty, cost_price FROM stock_count_items
-            WHERE id = $1 AND stock_count_id = $2`,
-          [item.id, id],
+      const byId = new Map(body.items.map((i) => [i.id, i]));
+      const { rows: lines } = await client.query(
+        `SELECT id, variant_id, counted_qty, counted_at, cost_price, notes
+           FROM stock_count_items
+          WHERE stock_count_id = $1 AND id = ANY($2::uuid[])
+          ORDER BY variant_id`, // consistent lock order
+        [id, [...byId.keys()]],
+      );
+      for (const line of lines) {
+        const item = byId.get(line.id);
+        const notes = item.notes === undefined ? line.notes : item.notes;
+        if (item.countedQty === undefined) {
+          await client.query(`UPDATE stock_count_items SET notes = $1 WHERE id = $2`, [notes, line.id]);
+          continue;
+        }
+        if (item.countedQty === null) {
+          await client.query(
+            `UPDATE stock_count_items
+                SET counted_qty = NULL, difference = NULL, value_impact = NULL,
+                    counted_by = NULL, counted_at = NULL, notes = $1
+              WHERE id = $2`,
+            [notes, line.id],
+          );
+          continue;
+        }
+        const counted = Number(item.countedQty);
+        const unchanged =
+          line.counted_at && line.counted_qty != null && Number(line.counted_qty) === counted;
+        if (unchanged) {
+          // Same number re-saved: the line still stands as of its original count.
+          await client.query(`UPDATE stock_count_items SET notes = $1 WHERE id = $2`, [notes, line.id]);
+          continue;
+        }
+        const { rows: [variant] } = await client.query(
+          `SELECT stock_qty FROM product_variants WHERE id = $1 FOR SHARE`,
+          [line.variant_id],
         );
-        if (!rows.length) continue;
-        const system = Number(rows[0].system_qty);
-        const counted =
-          item.countedQty === null || item.countedQty === undefined
-            ? null
-            : Number(item.countedQty);
-        const diff = counted === null ? null : counted - system;
-        const cost = rows[0].cost_price == null ? null : Number(rows[0].cost_price);
-        const valImpact =
-          diff !== null && cost !== null ? diff * cost : null;
-
+        if (!variant) continue;
+        const system = Number(variant.stock_qty);
+        const diff = counted - system;
+        const cost = line.cost_price == null ? null : Number(line.cost_price);
         await client.query(
           `UPDATE stock_count_items
-              SET counted_qty = $1,
-                  difference = $2,
-                  value_impact = $3,
-                  notes = $4,
-                  counted_by = $5,
-                  counted_at = CASE WHEN $1 IS NULL THEN NULL ELSE NOW() END
-            WHERE id = $6`,
-          [counted, diff, valImpact, item.notes ?? null, req.user.id, item.id],
+              SET system_qty = $1,
+                  counted_qty = $2,
+                  difference = $3,
+                  value_impact = $4,
+                  notes = $5,
+                  counted_by = $6,
+                  counted_at = clock_timestamp()
+            WHERE id = $7`,
+          [system, counted, diff, cost === null ? null : diff * cost, notes, req.user.id, line.id],
         );
       }
     });
@@ -511,29 +542,70 @@ async function approve(req, res, next) {
         );
       }
 
-      // Apply a count_correction movement for every item with a non-zero diff.
+      // A counted line says "the shelf held counted_qty at counted_at". Sales
+      // (and receipts, returns…) keep moving stock afterwards, so the
+      // correction is counted_qty minus what the system held AT counted_at —
+      // today's stock minus every movement since. Applying the stored
+      // difference instead double-counted any sale made while the count was
+      // open (snapshot 10, 2 sold, shelf counted 8 → approved down to 6).
+      // Every counted line is re-evaluated, including ones that matched
+      // earlier, since movements can open a gap after the fact.
       const { rows: items } = await client.query(
-        `SELECT id, product_id, variant_id, difference, counted_qty
+        `SELECT id, product_id, variant_id, counted_qty, counted_at, cost_price, difference
            FROM stock_count_items
           WHERE stock_count_id = $1
             AND counted_qty IS NOT NULL
-            AND difference IS NOT NULL
-            AND difference <> 0`,
+            AND variant_id IS NOT NULL
+          ORDER BY variant_id`, // consistent lock order
         [id],
       );
 
       const variantIds = [];
+      const round4 = (n) => Math.round(n * 10000) / 10000;
       for (const it of items) {
+        const { rows: [variant] } = await client.query(
+          `SELECT stock_qty FROM product_variants WHERE id = $1 FOR UPDATE`,
+          [it.variant_id],
+        );
+        if (!variant) continue;
+        const counted = Number(it.counted_qty);
+        let systemAtCount;
+        if (it.counted_at) {
+          // Row is locked, so no movement for it can commit mid-calculation.
+          const { rows: [since] } = await client.query(
+            `SELECT COALESCE(SUM(quantity), 0) AS net
+               FROM stock_movements
+              WHERE variant_id = $1 AND timestamp > $2`,
+            [it.variant_id, it.counted_at],
+          );
+          systemAtCount = round4(Number(variant.stock_qty) - Number(since.net));
+        } else {
+          // Legacy line with no count time: best available is its stored diff.
+          systemAtCount = round4(counted - Number(it.difference || 0));
+        }
+        const correction = round4(counted - systemAtCount);
+
+        // Record what was actually applied, so the count's difference /
+        // value impact match the stock movement and journal entry.
+        const cost = it.cost_price == null ? null : Number(it.cost_price);
+        await client.query(
+          `UPDATE stock_count_items
+              SET system_qty = $1, difference = $2, value_impact = $3
+            WHERE id = $4`,
+          [systemAtCount, correction, cost === null ? null : correction * cost, it.id],
+        );
+
+        if (correction === 0) continue;
         await applyStockMovement({
           client,
           variantId: it.variant_id,
           productId: it.product_id,
           type: 'count_correction',
-          quantity: Number(it.difference),
+          quantity: correction,
           referenceType: 'stock_count',
           referenceId: id,
           employeeId: req.user.id,
-          notes: 'Approved stock count correction',
+          notes: `Approved stock count: counted ${counted}, system held ${systemAtCount} at count time`,
           skipReorderCheck: true,
         });
         variantIds.push(it.variant_id);

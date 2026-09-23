@@ -209,11 +209,15 @@ async function applyStockMovement(params) {
       ? finalAfter - before
       : delta;
 
+    // clock_timestamp(), not the column's NOW() default (= transaction start):
+    // stamped while this row lock is held, so ordering against a stock-count
+    // line's counted_at (also stamped under the row lock) is exact — see
+    // stockCountsController.approve.
     const { rows: movementRows } = await client.query(
       `INSERT INTO stock_movements
          (product_id, variant_id, movement_type, quantity, qty_before, qty_after,
-          reference_type, reference_id, unit_label, employee_id, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          reference_type, reference_id, unit_label, employee_id, notes, timestamp)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, clock_timestamp())
        RETURNING *`,
       [
         productId,
