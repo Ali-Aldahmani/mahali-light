@@ -193,7 +193,9 @@ describe('computeTotals', () => {
     expect(result.subtotal).toBe(0);
     expect(result.total).toBe(0);
     expect(result.balanceDue).toBe(0);
-    expect(result.paymentStatus).toBe('unpaid');
+    // Nothing owed means paid (computeTotals, since bbae713) — a zero-total
+    // invoice must not stay flagged as outstanding forever.
+    expect(result.paymentStatus).toBe('paid');
   });
 
   it('correctly sums multiple items', () => {
