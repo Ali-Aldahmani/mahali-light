@@ -333,8 +333,18 @@ http://SERVER_IP
 `WEB_PORT=8080`).
 
 You'll land on the **setup wizard** — production does **not** ship a default
-`admin`/`admin123` account. Follow the 8 steps (store profile, VAT, network
-mode, admin account, cash drawer, bank account) to finish setup, then log in.
+`admin`/`admin123` account. The wizard first asks for a **setup code**, which
+the API prints to its log on startup (so only someone with access to the
+server can create the Admin account):
+
+```bash
+docker compose logs express-api | grep -A1 "SETUP CODE"
+```
+
+It is also saved as `setup-code.txt` inside the API container (native
+installs: in the app folder) and is valid for 24 hours; restart the API to get
+a new one. Then follow the remaining steps (store profile, VAT, network mode,
+admin account, cash drawer, bank account) to finish setup, and log in.
 
 Follow live logs any time with:
 ```bash

@@ -37,7 +37,9 @@ describe.skipIf(!enabled)('refund reverses revenue + VAT in the journal on real 
   let adminToken, adminId, productId, variantId, customerId;
   const database = `refund_journal_regression_${randomUUID().replaceAll('-', '')}`;
   let createdDatabase = false;
-  const today = new Date().toISOString().slice(0, 10);
+  // The store's business day (Asia/Dubai) — what the app books sales under.
+  // The UTC day differs between 00:00 and 04:00 Dubai time.
+  const today = require('../../server/utils/dates').todayStoreDate();
 
   beforeAll(async () => {
     Object.assign(process.env, {

@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { storeDate } = require('../utils/dates');
 const { query } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -53,7 +54,7 @@ async function list(req, res, next) {
       rows.map((r) => ({
         id: r.id,
         name: r.name,
-        date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10),
+        date: storeDate(r.date),
         type: r.type,
         createdBy: r.created_by,
         createdByUsername: r.created_by_username,

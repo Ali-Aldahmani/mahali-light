@@ -17,13 +17,11 @@ const loginSchema = z.object({
   hostname: z.string().max(100).optional(),
 });
 
-// Use only the TCP socket address for login-attempt logging.
-// Trusting the X-Forwarded-For header without a configured proxy allowlist
-// lets any client inject a fake IP and pollute the audit log.  The server
-// runs directly on the LAN (no reverse proxy), so the socket address is
-// always authoritative.
+// req.ip honours X-Forwarded-For only from the configured proxy allowlist
+// (utils/trustProxy.js), so browser tills behind the Next.js rewrite are
+// logged with their own address and direct callers can't inject one.
 function clientIp(req) {
-  return req.socket?.remoteAddress || req.ip || null;
+  return req.ip || req.socket?.remoteAddress || null;
 }
 
 async function recordAttempt({ username, ipAddress, pcIdentifier, success }) {

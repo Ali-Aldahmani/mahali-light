@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
@@ -993,14 +994,29 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       }, 0));
       await journalService.postReturnedInventoryEntry(client, {
         returnOrderId: orderId, returnOrderNumber: orderNumber, amount: returnedCost,
-        date: new Date().toISOString().slice(0, 10), userId: managerId,
+        date: todayStoreDate(), userId: managerId,
       });
     }
 
     if (request.return_type === 'supplier_return') {
+      // Reverse input VAT at the originating PO's own rate. Without a PO
+      // reference we don't know what VAT (if any) was claimed on these goods,
+      // so none is reversed.
+      let supplierReturnVat = 0;
+      if (request.reference_type === 'purchase_order' && request.reference_id) {
+        const { rows: [po] } = await client.query(
+          `SELECT subtotal, tax_amount FROM purchase_orders WHERE id = $1`,
+          [request.reference_id],
+        );
+        if (po && Number(po.subtotal) > 0) {
+          supplierReturnVat = money(
+            supplierReturnCost * (Number(po.tax_amount) || 0) / Number(po.subtotal),
+          );
+        }
+      }
       await journalService.postSupplierReturnEntry(client, {
         returnOrderId: orderId, returnOrderNumber: orderNumber, amount: money(supplierReturnCost),
-        date: new Date().toISOString().slice(0, 10), userId: managerId,
+        vatAmount: supplierReturnVat, date: todayStoreDate(), userId: managerId,
       });
     }
 
@@ -1056,7 +1072,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
             returnOrderNumber: orderNumber,
             amount,
             method: p.method,
-            date: new Date().toISOString().slice(0, 10),
+            date: todayStoreDate(),
             userId: managerId,
             taxRate: invoice ? Number(invoice.tax_rate) || 0 : 0,
           });
@@ -1409,7 +1425,7 @@ async function buildReplacementInvoice(
   }
 
   await journalService.postSaleEntry(client, {
-    invoiceId, invoiceNumber, date: new Date().toISOString().slice(0, 10),
+    invoiceId, invoiceNumber, date: todayStoreDate(),
     subtotal: total, taxAmount: 0,
     payments: total > 0 ? [{ method: 'cash', amount: total }] : [],
     cogsAmount, userId: managerId,

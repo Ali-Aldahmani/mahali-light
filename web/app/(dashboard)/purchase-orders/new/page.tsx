@@ -16,7 +16,7 @@ import {
   confirmPurchaseOrder,
 } from '@/services/purchaseOrderService';
 import { getSupplier } from '@/services/supplierService';
-import { formatCurrency } from '@/lib/utils/format';
+import { formatCurrency, storeDate } from '@/lib/utils/format';
 import type { POItem, VariantSearchResult } from '@/components/purchases/types';
 import type { Supplier } from '@/components/suppliers/types';
 
@@ -27,7 +27,7 @@ const STEPS = [
 ];
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 interface DraftItem extends POItem {

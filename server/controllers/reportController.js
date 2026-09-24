@@ -77,7 +77,7 @@ async function runReport(req, res, next) {
     }
     checkPermission(req, type);
     const params = maybeScopeEmployee(req, type, paramsFromQuery(req));
-    const result = await reportService.generateReport(type, params);
+    const result = await reportService.generateReport(type, params, { viewer: req.user });
     await logActivity({
       entityType: 'report',
       action: 'report.generated',
@@ -116,7 +116,7 @@ async function exportReport(req, res, next) {
     }
 
     const params = maybeScopeEmployee(req, type, paramsFromQuery(req));
-    const data = await reportService.generateReport(type, params);
+    const data = await reportService.generateReport(type, params, { viewer: req.user });
 
     if (format === 'csv') {
       const body = await reportExporter.exportToCSV(data);

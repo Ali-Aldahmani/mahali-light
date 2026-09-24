@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
@@ -135,7 +136,7 @@ async function createWarrantiesFromInvoice(invoiceId, { actorId = null, io = nul
 
     const startDate = (invoice.confirmed_at || invoice.created_at || new Date())
       .toISOString
-      ? new Date(invoice.confirmed_at || invoice.created_at).toISOString().slice(0, 10)
+      ? storeDate(new Date(invoice.confirmed_at || invoice.created_at))
       : String(invoice.confirmed_at || invoice.created_at).slice(0, 10);
 
     const created = [];
@@ -401,7 +402,9 @@ async function createClaim({
          FROM warranties w
          LEFT JOIN products p ON p.id = w.product_id
         WHERE w.id = $1
-        FOR UPDATE`,
+        -- OF …: a plain FOR UPDATE with a LEFT JOIN is rejected by the
+        -- planner (0A000), failing every call.
+        FOR UPDATE OF w`,
       [warrantyId],
     );
     if (!rows.length) {
@@ -706,7 +709,7 @@ async function resolveWarrantyClaim({
         [claim.warranty_id],
       );
 
-      const startDate = new Date().toISOString().slice(0, 10);
+      const startDate = todayStoreDate();
       const months = Number(claim.duration_months) || 12;
       const endDate = addMonthsDate(startDate, months);
       const newNumber = await generateWarrantyNumber(client);
@@ -755,17 +758,20 @@ async function resolveWarrantyClaim({
       }
     }
 
-    // Resolve the claim row.
+    // Resolve the claim row. $1 is cast explicitly: it's both assigned to the
+    // varchar resolution column and compared with text literals, which
+    // Postgres rejected ("inconsistent types deduced for parameter $1",
+    // 42P08) — every claim resolution failed with a 500.
     const { rows: updated } = await client.query(
       `UPDATE warranty_claims
-          SET resolution = $1,
-              status = CASE WHEN $1 = 'rejected' THEN 'rejected' ELSE 'resolved' END,
+          SET resolution = $1::varchar,
+              status = CASE WHEN $1::varchar = 'rejected' THEN 'rejected' ELSE 'resolved' END,
               resolved_by = $2,
               resolved_date = CURRENT_DATE,
               notes = COALESCE(NULLIF($3,''), notes),
               replacement_invoice_id = $4,
               supplier_claim_raised = CASE
-                WHEN $1 = 'replaced' AND $5::uuid IS NOT NULL THEN true
+                WHEN $1::varchar = 'replaced' AND $5::uuid IS NOT NULL THEN true
                 ELSE supplier_claim_raised
               END,
               updated_at = NOW()

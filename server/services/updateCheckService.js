@@ -50,25 +50,39 @@ function tarballUrlFor(version) {
 }
 
 function parseVersion(v) {
-  // 'v1.2.3-beta' -> { major: 1, minor: 2, patch: 3, pre: 'beta' }
+  // 'v1.8.0.5-beta' -> { major: 1, minor: 8, patch: 0, parts: [1, 8, 0, 5], pre: 'beta' }
+  // Releases use four segments (1.8.0.4 → 1.8.0.5), so every numeric
+  // segment is kept in `parts`, not just major/minor/patch.
   const s = String(v || '').trim().replace(/^[vV]/, '');
-  const [core, pre] = s.split('-');
-  const parts = (core || '').split('.').map((n) => parseInt(n, 10));
+  const dash = s.indexOf('-');
+  const core = dash === -1 ? s : s.slice(0, dash);
+  const pre = dash === -1 ? null : s.slice(dash + 1) || null;
+  const parts = core
+    .split('.')
+    .map((n) => parseInt(n, 10))
+    .map((n) => (Number.isFinite(n) ? n : 0));
   return {
-    major: Number.isFinite(parts[0]) ? parts[0] : 0,
-    minor: Number.isFinite(parts[1]) ? parts[1] : 0,
-    patch: Number.isFinite(parts[2]) ? parts[2] : 0,
-    pre: pre || null,
+    major: parts[0] || 0,
+    minor: parts[1] || 0,
+    patch: parts[2] || 0,
+    parts,
+    pre,
   };
 }
 
-// Returns 1 if a > b, -1 if a < b, 0 if equal. Prereleases sort below the
-// corresponding release (e.g. 1.2.0-beta < 1.2.0).
+// Returns 1 if a > b, -1 if a < b, 0 if equal. Compares every numeric
+// segment, a missing one counting as 0 (1.8.0 == 1.8.0.0). Comparing only
+// major/minor/patch made 1.8.0.5 "equal" to 1.8.0.4, so four-segment
+// releases were never offered. Prereleases sort below the corresponding
+// release (e.g. 1.2.0-beta < 1.2.0).
 function compareVersions(a, b) {
   const p = parseVersion(a);
   const q = parseVersion(b);
-  for (const key of ['major', 'minor', 'patch']) {
-    if (p[key] !== q[key]) return p[key] > q[key] ? 1 : -1;
+  const len = Math.max(p.parts.length, q.parts.length);
+  for (let i = 0; i < len; i += 1) {
+    const x = p.parts[i] || 0;
+    const y = q.parts[i] || 0;
+    if (x !== y) return x > y ? 1 : -1;
   }
   if (!!p.pre === !!q.pre) return 0;
   return p.pre ? -1 : 1;

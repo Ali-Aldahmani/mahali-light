@@ -1,4 +1,5 @@
 const { query } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const financialReportService = require('./financialReportService');
 const errorLogService = require('./errorLogService');
@@ -18,12 +19,12 @@ function money(n) {
 
 function dateOnly(input) {
   if (!input) return null;
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (input instanceof Date) return storeDate(input);
   return String(input).slice(0, 10);
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return todayStoreDate();
 }
 
 // Parses date range params. Defaults to "this month" so a missing query
@@ -1957,7 +1958,7 @@ async function netProfit(params) {
     const cur = new Date(`${startDate}T00:00:00`);
     const end = new Date(`${endDate}T00:00:00`);
     while (cur <= end) {
-      const d = cur.toISOString().slice(0, 10);
+      const d = storeDate(cur);
       buckets.push({ label: d, start: d, end: d });
       cur.setDate(cur.getDate() + 1);
     }
@@ -2462,18 +2463,30 @@ const REGISTRY = {
   // Sales
   sales_summary: { fn: salesSummary, permission: 'report.sales' },
   sales_by_period: { fn: salesByPeriod, permission: 'report.sales' },
-  sales_by_product: { fn: salesByProduct, permission: 'report.sales' },
+  sales_by_product: {
+    fn: salesByProduct,
+    permission: 'report.sales',
+    costFields: ['cost', 'profit', 'margin'],
+  },
   sales_by_category: { fn: salesByCategory, permission: 'report.sales' },
   sales_by_employee: { fn: salesByEmployee, permission: 'report.sales' },
   sales_by_payment_method: { fn: salesByPaymentMethod, permission: 'report.sales' },
   sales_invoices: { fn: salesInvoices, permission: 'report.sales' },
 
   // Inventory
-  inventory_stock_levels: { fn: inventoryStockLevels, permission: 'report.inventory' },
+  inventory_stock_levels: {
+    fn: inventoryStockLevels,
+    permission: 'report.inventory',
+    costFields: ['cost_value'],
+  },
   inventory_movements: { fn: inventoryMovements, permission: 'report.inventory' },
-  inventory_valuation: { fn: inventoryValuation, permission: 'report.inventory' },
+  inventory_valuation: {
+    fn: inventoryValuation,
+    permission: 'report.inventory',
+    costFields: ['cost_value', 'potential_profit'],
+  },
   low_stock: { fn: lowStock, permission: 'report.inventory' },
-  dead_stock: { fn: deadStock, permission: 'report.inventory' },
+  dead_stock: { fn: deadStock, permission: 'report.inventory', costFields: ['cost_value'] },
   inventory_stock_counts: { fn: stockCounts, permission: 'report.inventory' },
 
   // Suppliers
@@ -2518,8 +2531,16 @@ const REGISTRY = {
   bills_overdue: { fn: billsOverdue, permission: 'report.bills' },
 
   // Custom shop reports (quick-access buttons on the Reports hub)
-  custom_product_inventory: { fn: customProductInventory, permission: 'report.inventory' },
-  custom_costing_sales: { fn: customCostingSales, permission: 'report.sales' },
+  custom_product_inventory: {
+    fn: customProductInventory,
+    permission: 'report.inventory',
+    costFields: ['cost_price'],
+  },
+  custom_costing_sales: {
+    fn: customCostingSales,
+    permission: 'report.sales',
+    costFields: ['cost_price', 'total_cost', 'vat_input', 'balance', 'profit_pct'],
+  },
   custom_monthly_summary: { fn: customMonthlySummary, permission: 'report.financial' },
 
   // Error log export (Error Logs page)
@@ -2534,7 +2555,39 @@ function requiredPermission(type) {
   return REGISTRY[type]?.permission || 'report.sales';
 }
 
-async function generateReport(type, params = {}) {
+function canViewCost(viewer) {
+  const perms = viewer?.permissions || [];
+  return perms.includes('product.view_cost') || perms.includes('*');
+}
+
+// Drop a report's costFields (REGISTRY) from its columns, rows and totals.
+// Report permissions like report.sales / report.inventory are held by
+// Cashier / Warehouse, who must not see product cost or margin — the same
+// rule the product, stock and invoice endpoints enforce via
+// product.view_cost. Every renderer and exporter reads columns + rows, so
+// redacting here covers the UI, PDF, CSV and Excel alike.
+function redactCostFields(data, costFields) {
+  const hidden = new Set(costFields);
+  const strip = (obj) => {
+    if (!obj || typeof obj !== 'object') return obj;
+    const out = { ...obj };
+    for (const key of hidden) delete out[key];
+    return out;
+  };
+  return {
+    ...data,
+    columns: Array.isArray(data.columns)
+      ? data.columns.filter((c) => !hidden.has(c.key))
+      : data.columns,
+    rows: Array.isArray(data.rows) ? data.rows.map(strip) : data.rows,
+    totals: data.totals ? strip(data.totals) : data.totals,
+  };
+}
+
+// `viewer` is the requesting user. Pass it for every user-facing request so
+// cost columns are redacted; omit it only for system runs (scheduled
+// reports), which are configured by holders of report.schedule.
+async function generateReport(type, params = {}, { viewer } = {}) {
   if (!isValidType(type)) {
     throw new AppError(
       ERROR_CODES.VALIDATION_FAILED,
@@ -2542,12 +2595,22 @@ async function generateReport(type, params = {}) {
       { status: 400 },
     );
   }
-  const data = await REGISTRY[type].fn(params);
+  const { fn, costFields } = REGISTRY[type];
+  const redact = Boolean(viewer && costFields?.length && !canViewCost(viewer));
+  let effectiveParams = params;
+  if (redact && costFields.includes(params.sort)) {
+    // Ordering by profit/margin would leak the hidden values' ranking.
+    effectiveParams = { ...params };
+    delete effectiveParams.sort;
+  }
+  let data = await fn(effectiveParams);
+  if (redact) data = redactCostFields(data, costFields);
   return {
     ...data,
     meta: {
       generatedAt: new Date().toISOString(),
       rowCount: data.rows?.length || 0,
+      ...(redact ? { costRedacted: true } : {}),
     },
   };
 }

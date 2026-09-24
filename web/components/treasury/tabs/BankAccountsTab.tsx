@@ -28,7 +28,7 @@ import {
 import { useTreasuryStore } from '@/store/treasuryStore';
 import { onTreasuryEvent } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
-import { formatCurrency, formatDateTime } from '@/lib/utils/format';
+import { formatCurrency, formatDateTime, storeDate } from '@/lib/utils/format';
 
 export interface BankAccount {
   id: string;
@@ -435,7 +435,7 @@ function BankMovementSlideOver({
   mode: 'deposit' | 'withdraw';
 }) {
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => storeDate());
   const [description, setDescription] = useState('');
   const [notes, setNotes] = useState('');
   const [allowOverdraft, setAllowOverdraft] = useState(false);

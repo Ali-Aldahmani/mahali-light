@@ -14,6 +14,7 @@ import { addHoliday, listHolidays, removeHoliday } from '@/services/holidayServi
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import { cn } from '@/lib/utils/cn';
+import { storeDate } from '@/lib/utils/format';
 
 interface Holiday {
   id: string;
@@ -39,7 +40,7 @@ function fmtDate(input: string) {
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 function AddHolidaySlideOver({

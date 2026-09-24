@@ -8,6 +8,7 @@ import { createExpense } from '@/services/expenseService';
 import { listCategories } from '@/services/expenseCategoryService';
 import { listBankAccounts } from '@/services/bankAccountService';
 import { toast } from '@/store/toastStore';
+import { storeDate } from '@/lib/utils/format';
 
 const METHOD_OPTIONS = [
   { value: 'cash', label: 'Cash' },
@@ -15,7 +16,7 @@ const METHOD_OPTIONS = [
 ];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 export default function AddExpenseSlideOver({ open, onClose, onSaved }) {

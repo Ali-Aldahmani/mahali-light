@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
@@ -20,12 +21,12 @@ function money(n) {
 
 function dateOnly(input) {
   if (!input) return null;
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (input instanceof Date) return storeDate(input);
   return String(input).slice(0, 10);
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return todayStoreDate();
 }
 
 function shapeExpense(row) {
@@ -338,7 +339,7 @@ async function deleteExpense({ id, userId }) {
 
     // Same-day enforcement uses created_at (the row's clock) so back-dated
     // entries can still be deleted within their actual entry window.
-    const createdDay = new Date(expense.created_at).toISOString().slice(0, 10);
+    const createdDay = storeDate(new Date(expense.created_at));
     if (createdDay !== todayIso()) {
       throw new AppError(ERROR_CODES.BIZ_EXPENSE_LOCKED, undefined, { status: 409 });
     }

@@ -20,9 +20,15 @@ function flatten(obj, acc = []) {
 describe('permission catalog contract', () => {
   const keys = flatten(PERMISSIONS);
 
-  it('exposes 107 unique permission keys', () => {
-    expect(keys).toHaveLength(107);
-    expect(new Set(keys).size).toBe(107);
+  it('exposes 108 unique permission keys', () => {
+    expect(keys).toHaveLength(108);
+    expect(new Set(keys).size).toBe(108);
+  });
+
+  it('keeps backup archive downloads off the Manager role', () => {
+    // backup.view (Manager) must not imply downloading the whole database.
+    expect(ROLE_DEFAULTS.Manager).toContain('backup.view');
+    expect(ROLE_DEFAULTS.Manager).not.toContain('backup.download');
   });
 
   it('does not give Cashier user administration', () => {

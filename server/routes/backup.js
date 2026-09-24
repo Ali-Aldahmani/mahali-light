@@ -10,7 +10,9 @@ router.use(requireAuth());
 router.get('/status', ctrl.maintenanceStatus);
 router.get('/jobs', requirePermission('backup.view'), ctrl.listJobs);
 router.get('/jobs/:id', requirePermission('backup.view'), ctrl.getJob);
-router.get('/jobs/:id/download', requirePermission('backup.view'), ctrl.downloadJob);
+// Not backup.view: an archive is the whole database, including data (password
+// hashes, all costs) that backup.view holders like Manager can't otherwise see.
+router.get('/jobs/:id/download', requirePermission('backup.download'), ctrl.downloadJob);
 router.get('/disk-usage', requirePermission('backup.view'), ctrl.diskUsage);
 router.get('/destinations', requirePermission('backup.view'), ctrl.destinations);
 router.get('/usb-drives', requirePermission('backup.view'), ctrl.usbDrives);

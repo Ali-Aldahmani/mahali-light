@@ -20,6 +20,7 @@ import AttendanceGridReport from '@/components/reports/AttendanceGridReport';
 import SalesChart from '@/components/reports/SalesChart';
 import CategoryBreakdownChart from '@/components/reports/CategoryBreakdownChart';
 import { runReport, findReport } from '@/services/reportService';
+import { useAuthStore } from '@/store/authStore';
 import { getQuickRange } from '@/components/ui/PeriodSelector';
 import { toast } from '@/store/toastStore';
 
@@ -240,6 +241,9 @@ function renderExtras(type: string, extra: any, setExtra: (v: any) => void) {
     );
   }
   if (type === 'sales_by_product') {
+    // The server drops cost/profit/margin (and ignores those sorts) for
+    // users without product.view_cost — don't offer sorts it will ignore.
+    const canViewCost = useAuthStore.getState().hasPermission('product.view_cost');
     return (
       <div className="flex items-center gap-2">
         <span className="text-sm text-ink-muted">Sort by:</span>
@@ -248,8 +252,12 @@ function renderExtras(type: string, extra: any, setExtra: (v: any) => void) {
           onChange={(v: any) => onChange({ sort: v })}
           options={[
             { value: 'revenue', label: 'Revenue' },
-            { value: 'profit', label: 'Profit' },
-            { value: 'margin', label: 'Margin %' },
+            ...(canViewCost
+              ? [
+                  { value: 'profit', label: 'Profit' },
+                  { value: 'margin', label: 'Margin %' },
+                ]
+              : []),
             { value: 'quantity', label: 'Quantity' },
           ]}
           searchable={false}

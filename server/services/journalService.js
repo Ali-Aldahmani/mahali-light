@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 
@@ -15,8 +16,8 @@ function money(n) {
 }
 
 function dateOnly(input) {
-  if (!input) return new Date().toISOString().slice(0, 10);
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (!input) return todayStoreDate();
+  if (input instanceof Date) return storeDate(input);
   return String(input).slice(0, 10);
 }
 
@@ -97,8 +98,89 @@ async function getPeriodForDate(date, client) {
   return rows[0] || null;
 }
 
+// Period rows are named and typed exactly like the 2026 seed in
+// migrations/013_finance.sql ("March 2027"/monthly, "Q1 2027"/quarterly,
+// "H1 2027"/yearly, "FY 2027"/yearly) so ON CONFLICT (name, period_type)
+// dedupes against both the seed and earlier auto-created rows. Pure string
+// arithmetic on YYYY-MM-DD — no Date/timezone round-trip can shift a boundary.
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function isoDay(year, month, day) {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function lastDayOfMonth(year, month) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function periodDefinitionsForDate(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ''));
+  if (!m) return [];
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return [];
+  const quarter = Math.ceil(month / 3);
+  const qStart = (quarter - 1) * 3 + 1;
+  const half = month <= 6 ? 1 : 2;
+  const hStart = half === 1 ? 1 : 7;
+  // Monthly first: callers insert in this fixed order so two concurrent
+  // posters always take the unique-index locks in the same sequence.
+  return [
+    {
+      name: `${MONTH_NAMES[month - 1]} ${year}`,
+      type: 'monthly',
+      start: isoDay(year, month, 1),
+      end: isoDay(year, month, lastDayOfMonth(year, month)),
+    },
+    {
+      name: `Q${quarter} ${year}`,
+      type: 'quarterly',
+      start: isoDay(year, qStart, 1),
+      end: isoDay(year, qStart + 2, lastDayOfMonth(year, qStart + 2)),
+    },
+    {
+      name: `H${half} ${year}`,
+      type: 'yearly',
+      start: isoDay(year, hStart, 1),
+      end: isoDay(year, hStart + 5, lastDayOfMonth(year, hStart + 5)),
+    },
+    { name: `FY ${year}`, type: 'yearly', start: isoDay(year, 1, 1), end: isoDay(year, 12, 31) },
+  ];
+}
+
+// Idempotently create the month/quarter/half/year periods covering `date`.
+// Never touches an existing row, so a closed period stays closed.
+async function ensurePeriodsForDate(date, client) {
+  const exec = client || { query: (sql, params) => query(sql, params) };
+  for (const p of periodDefinitionsForDate(dateOnly(date))) {
+    await exec.query(
+      `INSERT INTO financial_periods (name, period_type, start_date, end_date, status)
+       VALUES ($1, $2, $3::date, $4::date, 'open')
+       ON CONFLICT (name, period_type) DO NOTHING`,
+      [p.name, p.type, p.start, p.end],
+    );
+  }
+}
+
+async function ensurePeriodsForYear(year, client) {
+  for (let month = 1; month <= 12; month += 1) {
+    await ensurePeriodsForDate(isoDay(year, month, 1), client);
+  }
+}
+
 async function assertPeriodOpenFor(date, client) {
-  const period = await getPeriodForDate(date, client);
+  let period = await getPeriodForDate(date, client);
+  // Periods used to exist only for the seeded year, so every posting after
+  // it failed with BIZ_PERIOD_NOT_FOUND. Create the covering periods on
+  // demand. Also heal when only a quarterly/yearly bucket covers the date:
+  // monthly is the intended posting target.
+  if (!period || period.period_type !== 'monthly') {
+    await ensurePeriodsForDate(date, client);
+    period = await getPeriodForDate(date, client);
+  }
   if (!period) {
     throw new AppError(
       ERROR_CODES.BIZ_PERIOD_NOT_FOUND,
@@ -282,7 +364,7 @@ async function reverseJournalEntryWith(client, sourceEntryId, { description, dat
   return postJournalEntryWith(client, {
     referenceType: src.reference_type,
     referenceId: src.reference_id,
-    date: date || new Date().toISOString().slice(0, 10),
+    date: date || todayStoreDate(),
     description: description || `Reversal of ${src.entry_number}`,
     lines: reversed,
     userId,
@@ -436,16 +518,28 @@ async function postReturnedInventoryEntry(client, { returnOrderId, returnOrderNu
 // down (credit 1004) and what we owe the supplier goes down by the same
 // cost value (debit 2001 Accounts Payable) — the mirror of
 // postPurchaseReceiveEntry's DR inventory / CR payable on receipt.
-async function postSupplierReturnEntry(client, { returnOrderId, returnOrderNumber, amount, date, userId }) {
+// Goods returned to a supplier: DR payables for the gross amount, CR
+// inventory at cost and CR 2002 to reverse the input VAT booked when they
+// were received (postPurchaseReceiveEntry).
+async function postSupplierReturnEntry(client, {
+  returnOrderId, returnOrderNumber, amount, vatAmount = 0, date, userId,
+}) {
   const value = money(amount);
-  if (value <= 0) return null;
+  const vat = money(vatAmount);
+  if (value <= 0 && vat <= 0) return null;
+  const lines = [
+    { accountId: await getAccountIdByCode('2001', client), debit: money(value + vat), credit: 0 },
+  ];
+  if (value > 0) {
+    lines.push({ accountId: await getAccountIdByCode('1004', client), debit: 0, credit: value });
+  }
+  if (vat > 0) {
+    lines.push({ accountId: await getAccountIdByCode('2002', client), debit: 0, credit: vat });
+  }
   return postJournalEntryWith(client, {
     referenceType: 'return_order', referenceId: returnOrderId, date, userId,
     description: `Supplier return ${returnOrderNumber}`,
-    lines: [
-      { accountId: await getAccountIdByCode('2001', client), debit: value, credit: 0 },
-      { accountId: await getAccountIdByCode('1004', client), debit: 0, credit: value },
-    ],
+    lines,
   });
 }
 
@@ -758,8 +852,10 @@ async function periodCloseChecklist(period) {
     [period.start_date, period.end_date],
   );
   const { rows: returns } = await query(
+    // return_requests has requested_at, not created_at (the latter made
+    // every checklist — and every non-forced period close — fail with 42703).
     `SELECT COUNT(*)::int AS n FROM return_requests
-      WHERE status = 'pending' AND created_at BETWEEN $1::date AND ($2::date + INTERVAL '1 day')`,
+      WHERE status = 'pending' AND requested_at BETWEEN $1::date AND ($2::date + INTERVAL '1 day')`,
     [period.start_date, period.end_date],
   );
   const items = [
@@ -786,22 +882,19 @@ async function periodCloseChecklist(period) {
 }
 
 async function ensureNextPeriodAfter(client, period) {
-  // Only auto-create monthly successors — quarterly + yearly are pre-seeded.
   if (period.period_type !== 'monthly') return;
-  const startNext = new Date(`${dateOnly(period.end_date)}T00:00:00`);
-  startNext.setDate(startNext.getDate() + 1);
-  const startStr = startNext.toISOString().slice(0, 10);
-  const endNext = new Date(startNext);
-  endNext.setMonth(endNext.getMonth() + 1);
-  endNext.setDate(0);
-  const endStr = endNext.toISOString().slice(0, 10);
-  const name = `${startNext.toLocaleString('default', { month: 'long' })} ${startNext.getFullYear()}`;
-  await client.query(
-    `INSERT INTO financial_periods (name, period_type, start_date, end_date, status)
-     VALUES ($1,'monthly',$2::date,$3::date,'open')
-     ON CONFLICT (name, period_type) DO NOTHING`,
-    [name, startStr, endStr],
-  );
+  // pg parses DATE as local midnight, so read it with local getters —
+  // toISOString() would roll it back a day for positive UTC offsets.
+  const end = period.end_date instanceof Date
+    ? period.end_date
+    : new Date(`${String(period.end_date).slice(0, 10)}T00:00:00`);
+  let year = end.getFullYear();
+  let month = end.getMonth() + 2; // month after end_date, 1-based
+  if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  await ensurePeriodsForDate(isoDay(year, month, 1), client);
 }
 
 async function closePeriod({ periodId, userId, force = false, notes = null }) {
@@ -1125,6 +1218,9 @@ module.exports = {
   getExpenseAccountIdForCategory,
   getPeriodForDate,
   assertPeriodOpenFor,
+  periodDefinitionsForDate,
+  ensurePeriodsForDate,
+  ensurePeriodsForYear,
   // CRUD
   listAccounts,
   addAccount,

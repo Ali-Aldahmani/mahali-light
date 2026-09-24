@@ -117,6 +117,24 @@ const runSchema = z.object({
 async function runManual(req, res, next) {
   try {
     const body = runSchema.parse(req.body || {});
+    // The run itself is fire-and-forget, so an in-progress refusal would
+    // never reach the client — answer 409 up front instead of "queued".
+    if (await backupService.isBackupRunning()) {
+      const running = await backupService.anyRunning();
+      throw new AppError(
+        ERROR_CODES.BIZ_BACKUP_IN_PROGRESS,
+        `Backup already in progress${running ? ` (${running.job_number})` : ''}.`,
+        { status: 409 },
+      );
+    }
+    const settings = await backupService.loadSettings();
+    if (settings.encryption_enabled && !process.env.MAHALI_BACKUP_SECRET) {
+      throw new AppError(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Backup encryption is enabled but MAHALI_BACKUP_SECRET is not set on the server.',
+        { status: 409 },
+      );
+    }
     const scheduleKey = body.type === 'full' ? 'manual:full' : 'manual:db_only';
     // Kick off in background — return immediately so HTTP doesn't time out.
     backupService
@@ -277,6 +295,14 @@ async function getSettings(req, res, next) {
 async function updateSettings(req, res, next) {
   try {
     const body = settingsSchema.parse(req.body || {});
+    if (body.encryption_enabled === true && !process.env.MAHALI_BACKUP_SECRET) {
+      // Refuse rather than save a setting every backup would then fail on.
+      throw new AppError(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Set MAHALI_BACKUP_SECRET on the server before enabling backup encryption.',
+        { status: 400, field: 'encryption_enabled' },
+      );
+    }
     const fields = [];
     const params = [];
     const colMap = {
@@ -418,7 +444,8 @@ async function downloadJob(req, res, next) {
         { status: 410 },
       );
     }
-    res.setHeader('Content-Type', 'application/gzip');
+    const encrypted = job.local_file_path.endsWith('.enc');
+    res.setHeader('Content-Type', encrypted ? 'application/octet-stream' : 'application/gzip');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${path.basename(job.local_file_path)}"`,

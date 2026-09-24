@@ -13,13 +13,14 @@ import { listCategories } from '@/services/expenseCategoryService';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import PrivateFileLink from '@/components/ui/PrivateFileLink';
+import { storeDate } from '@/lib/utils/format';
 
 function aed(n: any) {
   return `AED ${Number(n || 0).toFixed(2)}`;
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 function csvEscape(v: any) {
@@ -195,7 +196,7 @@ export default function OneTimeExpensesTab({
       render: (r: any) => {
         // Same-day rule mirrors the server: compare the created_at calendar day.
         const created = r.createdAt
-          ? new Date(r.createdAt).toISOString().slice(0, 10)
+          ? storeDate(r.createdAt)
           : null;
         const canDelete =
           hasPermission('bills.pay') && created && created === todayIso();

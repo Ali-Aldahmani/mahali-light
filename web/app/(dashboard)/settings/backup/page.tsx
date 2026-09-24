@@ -71,6 +71,7 @@ function BackupSettingsPageInner() {
   const hasPerm = useAuthStore((s) => s.hasPermission);
   const canConfigure = role === 'Admin' || hasPerm('backup.configure');
   const canRestore = role === 'Admin' || hasPerm('backup.restore');
+  const canDownload = hasPerm('backup.download');
 
   const [tab, setTab] = useState('status');
   const [draft, setDraft] = useState<Record<string, any> | null>(null);
@@ -157,7 +158,7 @@ function BackupSettingsPageInner() {
 
   const handleDownload = async (job: any) => {
     try {
-      await downloadBackup(job.id, job.job_number);
+      await downloadBackup(job.id, job.job_number, job.local_file_path);
     } catch (err: any) {
       toast.error(err.message || 'Download failed.');
     }
@@ -235,7 +236,7 @@ function BackupSettingsPageInner() {
                   <BackupJobRow
                     key={job.id}
                     job={job}
-                    canDownload
+                    canDownload={canDownload}
                     canRestore={canRestore}
                     onDownload={handleDownload}
                     onRestore={(j: any) => setRestoreJob(j)}
@@ -508,6 +509,13 @@ function SettingsForm({
           max={9}
           unit="(1 fast → 9 small)"
           onChange={(v: number) => set({ compression_level: v })}
+        />
+        <Toggle
+          checked={!!draft.encryption_enabled}
+          onChange={(v) => set({ encryption_enabled: v })}
+          label="Encrypt backup archives"
+          helper="AES-256 with the server's MAHALI_BACKUP_SECRET. Keep a copy of that secret off this server — without it, encrypted backups cannot be restored."
+          disabled={!canConfigure}
         />
         <Toggle
           checked={!!draft.notify_on_success}

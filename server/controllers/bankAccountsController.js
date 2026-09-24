@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { todayStoreDate } = require('../utils/dates');
 const { withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -269,7 +270,7 @@ async function transfer(req, res, next) {
           body.toType,
           body.toType === 'cash_drawer' ? drawerId : body.toId,
           body.amount,
-          body.transferDate || new Date().toISOString().slice(0, 10),
+          body.transferDate || todayStoreDate(),
           req.user.id,
           body.notes || null,
         ],

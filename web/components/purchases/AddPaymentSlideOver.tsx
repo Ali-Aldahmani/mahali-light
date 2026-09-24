@@ -7,7 +7,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { toast } from '@/store/toastStore';
 import { addPoPayment, uploadPaymentReceipt } from '@/services/supplierPaymentService';
-import { formatCurrency } from '@/lib/utils/format';
+import { formatCurrency, storeDate } from '@/lib/utils/format';
 import type { PurchaseOrder } from './types';
 
 const METHODS = [
@@ -17,7 +17,7 @@ const METHODS = [
 ];
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 interface AddPaymentSlideOverProps {

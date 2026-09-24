@@ -28,8 +28,11 @@ RUN groupadd -r nextjs && useradd -r -g nextjs nextjs
 COPY --from=build --chown=nextjs:nextjs /repo/web/.next/standalone ./
 COPY --from=build --chown=nextjs:nextjs /repo/web/.next/static ./web/.next/static
 COPY --from=build --chown=nextjs:nextjs /repo/web/public ./web/public
+COPY --from=build --chown=nextjs:nextjs /repo/web/forwarded-for.cjs ./web/forwarded-for.cjs
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=8s --start-period=40s --retries=5 \
   CMD node -e "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "web/server.js"]
+# Overwrites client-supplied X-Forwarded-For with the real socket address so
+# Express can rate-limit and audit per till (see web/forwarded-for.cjs).
+CMD ["node", "--require", "./web/forwarded-for.cjs", "web/server.js"]

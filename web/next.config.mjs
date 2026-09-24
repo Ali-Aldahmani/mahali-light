@@ -1,5 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Real client IP in X-Forwarded-For for `next dev` / `next start` (the
+// standalone Docker image preloads it via `node --require` instead).
+import './forwarded-for.cjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const expressBase = (process.env.EXPRESS_INTERNAL_URL || 'http://127.0.0.1:3000').replace(

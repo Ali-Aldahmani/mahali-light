@@ -1,4 +1,5 @@
 const { query } = require('../db/postgres');
+const { todayStoreDate } = require('../utils/dates');
 const { ok } = require('../utils/response');
 const cashService = require('../services/cashService');
 const bankService = require('../services/bankService');
@@ -32,7 +33,7 @@ async function summary(_req, res, next) {
     const netPosition = round2(totalAssets - payables);
 
     // Today's flow across cash + bank.
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStoreDate();
     const { rows: cashFlow } = await query(
       `SELECT direction, COALESCE(SUM(amount), 0)::numeric AS total,
               COUNT(*)::int AS count

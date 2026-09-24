@@ -12,7 +12,7 @@ import {
   resolveErrorLog,
   cleanupErrorLogs,
 } from '@/services/errorLogService';
-import { formatDateTime } from '@/lib/utils/format';
+import { formatDateTime, storeDate } from '@/lib/utils/format';
 import { toast } from '@/store/toastStore';
 
 const SEV_TONE: Record<string, string> = {
@@ -93,7 +93,7 @@ function ErrorLogsAdminPageInner() {
                 start_date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
                   .toISOString()
                   .slice(0, 10),
-                end_date: new Date().toISOString().slice(0, 10),
+                end_date: storeDate(),
                 severity: severity || undefined,
                 resolved: resolved || undefined,
               }}

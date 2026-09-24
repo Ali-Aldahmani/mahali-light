@@ -54,10 +54,13 @@ export function runRetentionCleanup() {
 // Download a backup archive. We hand the browser a real download dialog
 // when running in a regular tab, and the Electron save-dialog when the
 // preload bridge is available.
-export async function downloadBackup(jobId, jobNumber) {
+export async function downloadBackup(jobId, jobNumber, localFilePath?: string | null) {
   const token = useAuthStore.getState().token;
   const url = `${getApiBase()}/backup/jobs/${jobId}/download`;
-  const filename = `${jobNumber || 'backup'}.tar.gz`;
+  // Encrypted archives keep their .enc suffix so nobody mistakes them for a
+  // plain tarball (decrypt with scripts/decryptBackup.js).
+  const ext = localFilePath?.endsWith('.enc') ? '.tar.gz.enc' : '.tar.gz';
+  const filename = `${jobNumber || 'backup'}${ext}`;
   const ipc = typeof window !== 'undefined' && window.electron;
   if (ipc && typeof ipc.backupDownload === 'function') {
     return ipc.backupDownload({ url, token, filename, jobId });

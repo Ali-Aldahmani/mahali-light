@@ -122,6 +122,9 @@ const PERMISSIONS = {
     view: 'backup.view',
     runManual: 'backup.run_manual',
     restore: 'backup.restore',
+    // A backup archive is the entire database (password hashes, every
+    // customer and cost) — separate from backup.view, Admin-only by default.
+    download: 'backup.download',
     configure: 'backup.configure',
   },
   settings: { view: 'settings.view', edit: 'settings.edit' },

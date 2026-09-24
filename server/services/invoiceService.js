@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
@@ -626,7 +627,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     await journalService.postSaleEntry(client, {
       invoiceId,
       invoiceNumber: invoice.invoice_number,
-      date: new Date().toISOString().slice(0, 10),
+      date: todayStoreDate(),
       subtotal: totals.taxableAmount,
       taxAmount: totals.taxAmount,
       payments: payments.map((p) => ({
@@ -851,7 +852,10 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     const treasuryPostings = [];
     if (invoice.status === 'confirmed') {
       const items = await loadItemsForInvoice(client, invoiceId);
-      for (const it of items) {
+      // Custom/third-party lines never left stock at confirm (see
+      // confirmInvoice's catalogItems), so there is nothing to put back.
+      const catalogItems = items.filter((it) => !it.is_custom);
+      for (const it of catalogItems) {
         const { variant } = await applyStockMovement({
           client,
           variantId: it.variant_id,
@@ -944,7 +948,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     if (invoice.status === 'confirmed') {
       await journalService.reverseSaleEntries(client, invoiceId, {
         invoiceNumber: invoice.invoice_number,
-        date: new Date().toISOString().slice(0, 10),
+        date: todayStoreDate(),
         userId: employeeId,
       });
     }
@@ -1267,7 +1271,7 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
       const items = await loadItemsForInvoice(client, req.invoice_id);
       if (!items.length) throw new AppError(ERROR_CODES.BIZ_INVOICE_EMPTY);
       const payments = await loadPaymentsForInvoice(client, req.invoice_id);
-      const date = new Date().toISOString().slice(0, 10);
+      const date = todayStoreDate();
       await journalService.reverseSaleEntries(client, req.invoice_id, {
         invoiceNumber: invoice.invoice_number, date, userId: managerId,
       });

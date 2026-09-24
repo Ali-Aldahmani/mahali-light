@@ -20,6 +20,7 @@ describe('parseVersion', () => {
       major: 1,
       minor: 2,
       patch: 3,
+      parts: [1, 2, 3],
       pre: null,
     });
   });
@@ -29,6 +30,7 @@ describe('parseVersion', () => {
       major: 1,
       minor: 2,
       patch: 0,
+      parts: [1, 2, 0],
       pre: 'beta',
     });
   });
@@ -38,7 +40,18 @@ describe('parseVersion', () => {
       major: 0,
       minor: 0,
       patch: 0,
+      parts: [0],
       pre: null,
+    });
+  });
+
+  it('keeps every segment of a four-part version and the whole prerelease', () => {
+    expect(service.parseVersion('v1.8.0.5-rc-2')).toEqual({
+      major: 1,
+      minor: 8,
+      patch: 0,
+      parts: [1, 8, 0, 5],
+      pre: 'rc-2',
     });
   });
 });
@@ -55,6 +68,21 @@ describe('compareVersions', () => {
 
   it('returns 0 for equal versions', () => {
     expect(service.compareVersions('v1.1.0', '1.1.0')).toBe(0);
+  });
+
+  // Releases are tagged with four segments (v1.8.0.4, v1.8.0.5 …). Comparing
+  // only major/minor/patch treated these as equal, so no store was ever
+  // offered a four-segment update.
+  it('compares the fourth segment', () => {
+    expect(service.compareVersions('1.8.0.5', '1.8.0.4')).toBe(1);
+    expect(service.compareVersions('v1.8.0.4', '1.8.0.5')).toBe(-1);
+    expect(service.compareVersions('1.8.0.10', '1.8.0.9')).toBe(1);
+    expect(service.compareVersions('1.8.1', '1.8.0.9')).toBe(1);
+  });
+
+  it('treats missing trailing segments as zero', () => {
+    expect(service.compareVersions('1.8.0', '1.8.0.0')).toBe(0);
+    expect(service.compareVersions('1.8.0.1', '1.8.0')).toBe(1);
   });
 
   it('sorts a prerelease below its release', () => {
@@ -99,6 +127,23 @@ describe('checkForUpdates', () => {
     expect(result.latestVersion).toBe('9.9.9');
     expect(result.currentVersion).not.toBe('9.9.9');
     expect(result.releaseUrl).toBe(OK_RELEASE.html_url);
+  });
+
+  it('offers a four-segment release newer than the installed version', async () => {
+    const current = service.currentVersion();
+    const parts = current.split('.').map(Number);
+    while (parts.length < 4) parts.push(0);
+    parts[3] += 1; // e.g. 1.8.0.4 -> 1.8.0.5
+    const next = parts.join('.');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ...OK_RELEASE, tag_name: `v${next}` }),
+    }));
+
+    const result = await service.checkForUpdates();
+    expect(result.updateAvailable).toBe(true);
+    expect(result.latestVersion).toBe(next);
   });
 
   it('reports no update when the remote tag matches the installed version', async () => {

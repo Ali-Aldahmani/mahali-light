@@ -1,4 +1,5 @@
 const { query } = require('../db/postgres');
+const { storeDate } = require('../utils/dates');
 
 function money(n) {
   n = Number(n) || 0;
@@ -116,8 +117,8 @@ async function getProfitAndLoss({ startDate, endDate, compare = false }) {
   const prevStart = new Date(prevEnd);
   prevStart.setDate(prevStart.getDate() - span + 1);
   const prev = await buildPLPeriod(
-    prevStart.toISOString().slice(0, 10),
-    prevEnd.toISOString().slice(0, 10),
+    storeDate(prevStart),
+    storeDate(prevEnd),
   );
   return {
     ...period,
@@ -414,13 +415,22 @@ async function getVATReport({ startDate, endDate }) {
   const netSales = money(outRows[0].net_sales || 0);
   const outputTax = money(outRows[0].output_tax || 0);
 
-  // Input tax: sum of purchase_orders.vat_amount in period (any received PO).
+  // Input tax and net purchases straight from the ledger: PO receipts
+  // (DR inventory + DR input VAT on 2002) net of goods returned to
+  // suppliers, dated when goods arrived / went back. This used to read
+  // purchase_orders.vat_amount, which nothing wrote, so input tax was
+  // always 0 and VAT payable was overstated by every purchase's VAT.
   const { rows: inRows } = await query(
-    `SELECT COALESCE(SUM(subtotal),   0)::float8 AS net_purchases,
-            COALESCE(SUM(vat_amount), 0)::float8 AS input_tax
-       FROM purchase_orders
-      WHERE status NOT IN ('cancelled','draft')
-        AND created_at::date BETWEEN $1::date AND $2::date`,
+    `SELECT COALESCE(SUM(jl.debit - jl.credit) FILTER (WHERE a.code = '1004'), 0)::float8 AS net_purchases,
+            COALESCE(SUM(jl.debit - jl.credit) FILTER (WHERE a.code = '2002'), 0)::float8 AS input_tax
+       FROM journal_entries je
+       JOIN journal_lines jl ON jl.journal_entry_id = je.id
+       JOIN chart_of_accounts a ON a.id = jl.account_id
+      WHERE je.date BETWEEN $1::date AND $2::date
+        AND (je.reference_type = 'purchase_order'
+             OR (je.reference_type = 'return_order' AND EXISTS (
+                   SELECT 1 FROM return_orders ro
+                    WHERE ro.id = je.reference_id AND ro.return_type = 'supplier_return')))`,
     [from, to],
   );
   const netPurchases = money(inRows[0].net_purchases || 0);
@@ -431,7 +441,7 @@ async function getVATReport({ startDate, endDate }) {
   // Due date: 28 days after the period end (UAE FTA quarterly cycle).
   const endD = new Date(`${to}T00:00:00`);
   endD.setDate(endD.getDate() + 28);
-  const dueDate = endD.toISOString().slice(0, 10);
+  const dueDate = storeDate(endD);
 
   return {
     startDate: from,
@@ -466,7 +476,7 @@ async function getDashboardSnapshot() {
   // VAT due date: end of current quarter + 28 days.
   const quarter = Math.floor(month / 3);
   const qEnd = new Date(Date.UTC(year, quarter * 3 + 3, 0));
-  qEnd.setDate(qEnd.getDate() + 28);
+  qEnd.setUTCDate(qEnd.getUTCDate() + 28);
   const vatDueDate = qEnd.toISOString().slice(0, 10);
   const vatDaysLeft = Math.max(
     0,

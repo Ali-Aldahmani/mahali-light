@@ -51,7 +51,7 @@ import {
   getCustomerTimeline,
 } from '@/services/customerService';
 import { voidPayment } from '@/services/customerPaymentService';
-import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/format';
+import { formatCurrency, formatDate, formatDateTime, storeDate } from '@/lib/utils/format';
 import { onCustomerBalanceUpdate } from '@/store/socketStore';
 
 interface CustomerProfile extends CustomerRecord {
@@ -593,7 +593,7 @@ function PaymentsTab({
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = storeDate();
 
   return (
     <div className="space-y-3">
@@ -655,7 +655,7 @@ function PaymentsTab({
             sortable: false,
             render: (r: PaymentRow) => {
               const isToday =
-                new Date(r.createdAt).toISOString().slice(0, 10) === today;
+                storeDate(r.createdAt) === today;
               if (!canCollect || !isToday) return null;
               return (
                 <Button

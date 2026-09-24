@@ -25,6 +25,7 @@ const ADMIN_EXCLUSIVE_PERMISSIONS = [
   'user.change_role',
   'backup.restore',
   'backup.configure',
+  'backup.download',
   'settings.edit',
   'finance.close_period',
   'notification.manage',

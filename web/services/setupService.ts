@@ -4,6 +4,12 @@ export function getSetupStatus() {
   return apiGet('/setup/status');
 }
 
+// The setup code is printed in the server log / setup-code.txt; the server
+// never hands it out over HTTP. Check it before the wizard continues.
+export function verifySetupCode(code: string) {
+  return apiPost('/setup/verify-code', { code });
+}
+
 export function completeSetup(payload, setupToken?: string) {
   const headers = setupToken ? { 'X-Setup-Token': setupToken } : undefined;
   return apiPost('/setup/complete', payload, headers ? { headers } : undefined);

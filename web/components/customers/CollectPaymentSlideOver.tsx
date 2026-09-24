@@ -7,7 +7,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { toast } from '@/store/toastStore';
 import { collectPayment } from '@/services/customerPaymentService';
-import { formatCurrency } from '@/lib/utils/format';
+import { formatCurrency, storeDate } from '@/lib/utils/format';
 
 interface CollectPaymentCustomer {
   id: number | string;
@@ -28,7 +28,7 @@ const METHODS = [
 ];
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 export default function CollectPaymentSlideOver({

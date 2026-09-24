@@ -10,6 +10,7 @@ import {
   completeSetup,
   getSetupStatus,
   testServerConnection,
+  verifySetupCode,
 } from '@/services/setupService';
 import { toast } from '@/store/toastStore';
 import { useSetupStore } from '@/store/setupStore';
@@ -20,7 +21,10 @@ export default function SetupWizardPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [status, setStatus] = useState<any>(null);
-  const [setupToken, setSetupToken] = useState<string | null>(null);
+  // Typed by the operator from the server log / setup-code.txt — the
+  // server no longer hands it to whoever opens this page.
+  const [setupToken, setSetupToken] = useState('');
+  const [verifyingCode, setVerifyingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [connOk, setConnOk] = useState(false);
 
@@ -59,7 +63,6 @@ export default function SetupWizardPage() {
     getSetupStatus()
       .then((s: any) => {
         setStatus(s);
-        if (s?.setup_token) setSetupToken(s.setup_token);
         if (s?.setup_completed) router.replace('/login');
         if (s?.server_port) {
           setNetwork((n) => ({
@@ -90,6 +93,18 @@ export default function SetupWizardPage() {
     if (/[^A-Za-z0-9]/.test(p)) s++;
     return s;
   }, [admin.password]);
+
+  async function checkSetupCode() {
+    setVerifyingCode(true);
+    try {
+      await verifySetupCode(setupToken);
+      setStep(2);
+    } catch (err: any) {
+      toast.error(err?.message || 'Invalid setup code.');
+    } finally {
+      setVerifyingCode(false);
+    }
+  }
 
   async function testConnection() {
     const base = `http://${network.server_ip}:${network.server_port}`;
@@ -166,13 +181,29 @@ export default function SetupWizardPage() {
           <p className="mt-2 text-ink-muted">
             Let&apos;s set up your store in a few quick steps. This will only take about 5 minutes.
           </p>
-          <button
-            type="button"
-            className="mt-8 rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-white hover:bg-accent-hover"
-            onClick={() => setStep(2)}
+          <form
+            className="mt-8 space-y-3 text-left"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (setupToken.trim()) checkSetupCode();
+            }}
           >
-            Get started →
-          </button>
+            <Input
+              label="Setup code"
+              value={setupToken}
+              onChange={(e: any) => setSetupToken(e.target.value)}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+              autoComplete="off"
+              hint="Shown in the server's log when it starts (Docker: docker compose logs express-api) and saved in setup-code.txt on the server."
+            />
+            <button
+              type="submit"
+              disabled={!setupToken.trim() || verifyingCode}
+              className="w-full rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-60"
+            >
+              {verifyingCode ? 'Checking…' : 'Get started →'}
+            </button>
+          </form>
         </div>
       </div>
     );

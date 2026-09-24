@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('./notificationService');
@@ -23,13 +24,13 @@ function money(n) {
 }
 
 function todayDateString() {
-  // Local server day; the store runs in Asia/Dubai timezone via OS TZ.
-  return new Date().toISOString().slice(0, 10);
+  // The store's business day (STORE_TIMEZONE), not the UTC day.
+  return todayStoreDate();
 }
 
 function dateOnly(input) {
   if (!input) return null;
-  if (input instanceof Date) return input.toISOString().slice(0, 10);
+  if (input instanceof Date) return storeDate(input);
   return String(input).slice(0, 10);
 }
 
@@ -301,11 +302,15 @@ async function upsertManualAttendance({
   status = null,
   notes = null,
   userId,
-}) {
+}, outerClient = null) {
   if (!employeeId || !date) {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'employeeId and date are required.');
   }
-  return withTransaction(async (client) => {
+  // outerClient: run inside the caller's transaction. reviewCorrection holds
+  // this attendance row locked; opening a second transaction here to update
+  // it waited on that lock forever (a cross-connection wait Postgres can't
+  // detect), hanging every correction approval.
+  const run = async (client) => {
     const { rows: empRows } = await client.query(
       `SELECT id, name, standard_hours, shift_start, late_threshold_mins
          FROM employees WHERE id = $1`,
@@ -397,7 +402,8 @@ async function upsertManualAttendance({
       notes,
     });
     return shapeAttendance({ ...rows[0], employee_name: employee.name });
-  });
+  };
+  return outerClient ? run(outerClient) : withTransaction(run);
 }
 
 // =======================================================================
@@ -525,7 +531,10 @@ async function reviewCorrection({
          FROM attendance_corrections c
          JOIN attendance a ON a.id = c.attendance_id
          LEFT JOIN employees e ON e.id = a.employee_id
-        WHERE c.id = $1 FOR UPDATE`,
+        WHERE c.id = $1
+        -- OF …: a plain FOR UPDATE with a LEFT JOIN is rejected by the
+        -- planner (0A000), failing every call.
+        FOR UPDATE OF c, a`,
       [correctionId],
     );
     if (!corrRows.length) {
@@ -566,7 +575,7 @@ async function reviewCorrection({
           ).rows[0]?.status || 'present',
         notes: `Corrected via request: ${corr.request_note}`,
         userId: reviewerId,
-      });
+      }, client);
     }
 
     await logActivity({
@@ -1014,7 +1023,7 @@ async function createLeaveAttendanceRecords(client, { employeeId, startDate, end
   const end = new Date(`${dateOnly(endDate)}T00:00:00`);
   const cursor = new Date(start);
   while (cursor <= end) {
-    const day = cursor.toISOString().slice(0, 10);
+    const day = storeDate(cursor);
     const weekend = UAE_WEEKEND.has(cursor.getDay());
     const holiday = await isHoliday(client, day);
     if (!weekend && !holiday) {

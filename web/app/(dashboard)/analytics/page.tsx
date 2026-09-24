@@ -64,7 +64,7 @@ import {
   dismissReorderRecommendation,
 } from '@/services/analyticsService';
 import { searchProducts } from '@/services/productService';
-import { formatCurrency } from '@/lib/utils/format';
+import { formatCurrency, localIsoDate } from '@/lib/utils/format';
 
 const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -73,8 +73,8 @@ function defaultRange() {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return {
-    start_date: start.toISOString().slice(0, 10),
-    end_date: end.toISOString().slice(0, 10),
+    start_date: localIsoDate(start),
+    end_date: localIsoDate(end),
   };
 }
 

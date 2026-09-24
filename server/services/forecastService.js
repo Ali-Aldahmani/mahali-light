@@ -1,5 +1,6 @@
 const { query, withTransaction } = require('../db/postgres');
 const { logActivity } = require('../utils/activityLog');
+const { storeDate } = require('../utils/dates');
 
 // =======================================================================
 // Helpers
@@ -18,8 +19,10 @@ function previousMonthBounds(date = new Date()) {
   // First and last day of the *previous* month relative to the supplied
   // date. We always aggregate the completed prior month — never the
   // current one (which would be a moving target).
-  const y = date.getUTCFullYear();
-  const m = date.getUTCMonth(); // 0-based, so "previous" = m-1.
+  // Calendar month of `date` in the store timezone — UTC getters would still
+  // report the previous month during 00:00–04:00 Dubai on the 1st.
+  const [y, month1] = storeDate(date).split('-').map(Number);
+  const m = month1 - 1; // 0-based, so "previous" = m-1.
   const startDate = new Date(Date.UTC(y, m - 1, 1));
   const endDate = new Date(Date.UTC(y, m, 0));
   return {

@@ -9,6 +9,7 @@ import DaysUntilDueBadge from '../ui/DaysUntilDueBadge';
 import { payBillPayment } from '@/services/billService';
 import { listBankAccounts } from '@/services/bankAccountService';
 import { toast } from '@/store/toastStore';
+import { storeDate } from '@/lib/utils/format';
 
 const METHOD_OPTIONS = [
   { value: 'bank', label: 'Bank' },
@@ -16,7 +17,7 @@ const METHOD_OPTIONS = [
 ];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return storeDate();
 }
 
 // Slide-over for marking a bill_payment paid. Expects the parent to pass

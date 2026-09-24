@@ -13,13 +13,13 @@ function handler(_req, res) {
   });
 }
 
-// Use the raw socket address so a client cannot spoof its IP by injecting an
-// X-Forwarded-For header (there is no trusted reverse proxy in front of this
-// server — it listens directly on the LAN). ipKeyGenerator normalises IPv6
-// addresses to prevent trivial bypass via address notation variants.
+// req.ip is the socket address, or — only when the request came through a
+// trusted proxy (the Next.js /api rewrite, see utils/trustProxy.js) — the
+// client address that proxy forwarded. Keying on the raw socket instead put
+// every browser till in the Next process's single bucket. ipKeyGenerator
+// normalises IPv6 notation variants.
 function keyGenerator(req) {
-  const ip = req.socket?.remoteAddress || req.ip;
-  return ipKeyGenerator(ip);
+  return ipKeyGenerator(req.ip || req.socket?.remoteAddress || '');
 }
 
 // Strict limiter for the login endpoint only.
@@ -47,4 +47,15 @@ const apiLimiter = rateLimit({
   handler,
 });
 
-module.exports = { authLimiter, apiLimiter };
+// First-run setup code guesses (/api/setup/verify-code, /complete). The
+// code is ~80 bits, so this is defence in depth, not the main barrier.
+const setupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator,
+  handler,
+});
+
+module.exports = { authLimiter, apiLimiter, setupLimiter };

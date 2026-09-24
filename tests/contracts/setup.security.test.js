@@ -13,6 +13,7 @@ function wipe(prefix) {
 
 describe('setup POST /complete lifecycle', () => {
   let complete;
+  let status;
   let mockIsSetupComplete;
   let mockHasAdmin;
   let mockCompleteSetup;
@@ -36,8 +37,10 @@ describe('setup POST /complete lifecycle', () => {
       loaded: true,
       exports: {
         issueSetupToken: vi.fn().mockResolvedValue('test-token'),
+        ensureLiveSetupToken: vi.fn().mockResolvedValue(undefined),
         assertValidSetupToken: (...a) => mockAssertValidSetupToken(...a),
         clearSetupToken: vi.fn(),
+        removeSetupCodeFile: vi.fn(),
       },
     };
 
@@ -47,7 +50,7 @@ describe('setup POST /complete lifecycle', () => {
       loaded: true,
       exports: {
         isSetupComplete: (...a) => mockIsSetupComplete(...a),
-        getPublicSettings: vi.fn(),
+        getPublicSettings: vi.fn().mockResolvedValue({ store_name: '' }),
       },
     };
     require.cache[require.resolve('../../server/services/setupService.js')] = {
@@ -66,7 +69,7 @@ describe('setup POST /complete lifecycle', () => {
       exports: { logActivity: vi.fn().mockResolvedValue(null) },
     };
 
-    ({ complete } = require('../../server/controllers/setupController.js'));
+    ({ complete, status } = require('../../server/controllers/setupController.js'));
   });
 
   const validBody = {
@@ -131,6 +134,19 @@ describe('setup POST /complete lifecycle', () => {
     const out = await run(validBody);
     expect(out.err).toBeDefined();
     expect(mockCompleteSetup).not.toHaveBeenCalled();
+  });
+
+  it('status never hands out the setup code (it lives only in the server log)', async () => {
+    mockIsSetupComplete.mockResolvedValue(false);
+    mockHasAdmin.mockResolvedValue(false);
+    const out = await new Promise((resolve) => {
+      const res = { status() { return this; }, json(payload) { resolve(payload); } };
+      status({ headers: {} }, res, (err) => resolve({ err }));
+    });
+    expect(out.err).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain('test-token');
+    expect(out.data).not.toHaveProperty('setup_token');
+    expect(out.data.setup_code_required).toBe(true);
   });
 
   it('fresh install without admin payload is 400', async () => {
