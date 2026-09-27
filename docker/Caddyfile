@@ -1,0 +1,9 @@
+{
+	admin off
+	auto_https off
+}
+
+:443 {
+	tls /certs/cert.pem /certs/key.pem
+	reverse_proxy nextjs:3000
+}

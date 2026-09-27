@@ -115,6 +115,26 @@ services:
       retries: 5
       start_period: 40s
 
+  # HTTPS for phone barcode scanning (camera APIs require a secure context).
+  # Desktop tills can keep using http://SERVER_IP on WEB_PORT.
+  web-tls:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      nextjs:
+        condition: service_healthy
+    environment:
+      SERVER_IP: ${SERVER_IP:-127.0.0.1}
+    ports:
+      - '${WEB_TLS_PORT:-443}:443'
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./docker/caddy-entrypoint.sh:/entrypoint.sh:ro
+      - web_tls:/certs
+    entrypoint: ['/bin/sh', '/entrypoint.sh']
+    networks:
+      - bytecrapos
+
   fastapi:
     profiles: ['ml']
     build:
@@ -143,6 +163,7 @@ volumes:
   api_uploads:
   api_backups:
   api_tls:
+  web_tls:
 
 networks:
   bytecrapos:
