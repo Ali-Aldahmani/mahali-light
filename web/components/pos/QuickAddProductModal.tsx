@@ -7,6 +7,7 @@ import Input from '@/components/ui/Input';
 import CategoryTreeSelect from '@/components/ui/CategoryTreeSelect';
 import { createProduct, searchProducts } from '@/services/productService';
 import { listCategoriesTree } from '@/services/categoryService';
+import { buildSimpleProductPayload } from '@/lib/products/quickCreate';
 import { toast } from '@/store/toastStore';
 import { useAuthStore } from '@/store/authStore';
 
@@ -17,6 +18,9 @@ export interface QuickAddProductModalProps {
   onRefreshProducts?: () => void;
   /** Add the new variant to the cart (POS search shape) */
   onAddToCart?: (variant: any) => void;
+  /** Prefill the barcode (e.g. an unknown code that was just scanned) */
+  initialBarcode?: string;
+  categoryRequired?: boolean;
 }
 
 export default function QuickAddProductModal({
@@ -24,6 +28,8 @@ export default function QuickAddProductModal({
   onClose,
   onRefreshProducts,
   onAddToCart,
+  initialBarcode = '',
+  categoryRequired = true,
 }: QuickAddProductModalProps) {
   const permissions = useAuthStore((s) => s.permissions);
   const canSeeCost = permissions.includes('product.view_cost');
@@ -39,6 +45,10 @@ export default function QuickAddProductModal({
   const [addToCart, setAddToCart] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (open && initialBarcode) setBarcode(initialBarcode);
+  }, [open, initialBarcode]);
+
   useEffect(() => {
     if (!open) return;
     setLoadingTree(true);
@@ -67,7 +77,7 @@ export default function QuickAddProductModal({
   function validate() {
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = 'Product name is required.';
-    if (!categoryId) next.categoryId = 'Choose a category.';
+    if (categoryRequired && !categoryId) next.categoryId = 'Choose a category.';
     const price = Number(sellingPrice);
     if (!Number.isFinite(price) || price < 0) next.sellingPrice = 'Enter a valid sell price.';
     const stock = Number(openingStock);
@@ -84,31 +94,23 @@ export default function QuickAddProductModal({
     if (!validate()) return;
     setSaving(true);
     try {
-      const payload = {
-        name: name.trim(),
+      const payload = buildSimpleProductPayload({
+        name,
         categoryId,
-        hasVariants: false,
-        soldBy: 'piece',
-        unitLabel: 'pcs',
-        isActive: true,
-        simple: {
-          sellingPrice: Number(sellingPrice),
-          costPrice: canSeeCost ? Number(costPrice || 0) : 0,
-          openingStock: Number(openingStock || 0),
-          barcode: barcode.trim() || null,
-          sku: null,
-          supplierBarcode: null,
-        },
-      };
+        sellingPrice: Number(sellingPrice),
+        costPrice: canSeeCost ? Number(costPrice || 0) : 0,
+        openingStock: Number(openingStock || 0),
+        barcode,
+      });
       const created = await createProduct(payload);
       toast.success(`“${created.name}” added to your catalog.`);
 
       onRefreshProducts?.();
 
       if (addToCart && onAddToCart) {
-        const matches = await searchProducts(created.name, 5);
-        const variant =
-          (matches || []).find((v: any) => v.productId === created.id) || matches?.[0];
+        const code = barcode.trim();
+        const matches = await searchProducts(code || created.name, 10);
+        const variant = (matches || []).find((v: any) => v.productId === created.id);
         if (variant && Number(variant.stockQty || 0) > 0) {
           onAddToCart(variant);
           toast.success('Added to this order.');
@@ -138,8 +140,8 @@ export default function QuickAddProductModal({
           <Button variant="secondary" onClick={handleClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={submit} loading={saving} disabled={loadingTree}>
-            Create product
+          <Button onClick={submit} loading={saving} disabled={loadingTree && categoryRequired}>
+            {addToCart && onAddToCart ? 'Save & add to cart' : 'Create product'}
           </Button>
         </>
       }
@@ -155,8 +157,8 @@ export default function QuickAddProductModal({
           placeholder="e.g. LED bulb 12W warm white"
         />
         <CategoryTreeSelect
-          label="Category"
-          required
+          label={categoryRequired ? 'Category' : 'Category (optional)'}
+          required={categoryRequired}
           tree={tree}
           value={categoryId}
           onChange={(id) => setCategoryId(id)}

@@ -1,10 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   Banknote,
   CheckCircle2,
   Loader2,
+  Monitor,
   Package,
   PackagePlus,
   Search,
@@ -38,11 +40,7 @@ import { printReceipt } from '@/services/printService';
 import { toast } from '@/store/toastStore';
 import { searchProducts } from '@/services/productService';
 import { listCategoriesFlat } from '@/services/categoryService';
-import {
-  createInvoice,
-  addInvoicePayment,
-  confirmInvoice as confirmInvoiceApi,
-} from '@/services/invoiceService';
+import { prepareCheckout, submitSale, checkoutErrorMessage } from '@/lib/pos/checkout';
 import { formatCurrency } from '@/lib/utils/format';
 import { useAppSettingsStore } from '@/store/appSettingsStore';
 import { useAuthStore } from '@/store/authStore';
@@ -225,82 +223,25 @@ function POSPageContent() {
   // ---- Submission ------------------------------------------------------
   async function submitInvoice() {
     if (!totals.items.length) return;
-    const totalCents = Math.round(totals.total * 100);
-    const nonCashCents = payments.filter((p) => p.method !== 'cash')
-      .reduce((sum, p) => sum + Math.round(Number(p.amount) * 100), 0);
-    if (nonCashCents > totalCents) {
-      toast.error('Bank and credit payments cannot exceed the invoice total.');
-      return;
-    }
-    // Cash tender can include change; only the retained amount is a payment.
-    let cashRemaining = totalCents - nonCashCents;
-    const allocations = payments.map((p) => {
-      if (p.method !== 'cash') return p;
-      const cents = Math.min(Math.round(Number(p.amount) * 100), cashRemaining);
-      cashRemaining -= cents;
-      return { ...p, amount: cents / 100 };
-    });
-    if (cashRemaining > 0 && selectedCustomer) {
-      allocations.push({ id: 'remaining-customer-credit', method: 'credit', amount: cashRemaining / 100 });
-    }
-    if (Math.abs(totals.balanceDue) > 0.001 && totals.balanceDue > 0) {
-      // The cashier explicitly left a balance → goes onto customer credit
-      // if a registered customer is selected, otherwise block.
-      if (!selectedCustomer) {
-        toast.error('Cannot leave a balance for a guest customer.');
-        return;
-      }
-    }
-    // Serial-number guard: serialised products must have a valid serial.
-    const missingSerial = cart.find(
-      (it: any) => it.requiresSerial && (!it.serialNumber || !it.serialValid),
-    );
-    if (missingSerial) {
-      toast.error(
-        missingSerial.serialError ||
-          `Enter a serial number for ${missingSerial.productName}.`,
-      );
+    const prep = prepareCheckout({ totals, cart, payments, customer: selectedCustomer });
+    if (prep.ok === false) {
+      toast.error(prep.message);
       return;
     }
     setSubmitting(true);
     try {
-      const created = await createInvoice({
-        customerId: selectedCustomer?.id || null,
-        pcIdentifier,
-        notes: usePosStore.getState().notes || null,
-        invoiceDiscount,
-        items: totals.items.map((it: any) =>
-          it.isCustom
-            ? {
-                isCustom: true,
-                customDescription: it.productName,
-                thirdPartyName: it.thirdPartyName || null,
-                quantity: Number(it.quantity),
-                unitPrice: Number(it.unitPrice),
-                customCostPrice: Number(it.costPrice || 0),
-                discountAmount: Number(it.lineDiscount || 0),
-              }
-            : {
-                variantId: it.variantId,
-                quantity: Number(it.quantity),
-                unitPrice: Number(it.unitPrice),
-                discountAmount: Number(it.lineDiscount || 0),
-                serialNumber: it.serialNumber || null,
-              },
-        ),
+      const { invoiceId, confirmed } = await submitSale({
+        draft: {
+          items: totals.items,
+          customerId: selectedCustomer?.id || null,
+          pcIdentifier,
+          notes: usePosStore.getState().notes || null,
+          invoiceDiscount,
+        },
+        allocations: prep.allocations,
+        draftInvoiceId: usePosStore.getState().draftInvoiceId,
+        onDraftSaved: (id, number) => usePosStore.getState().setDraftInvoice(id, number),
       });
-      const invoiceId = created.id;
-
-      for (const pm of allocations) {
-        if (!pm.amount || Number(pm.amount) <= 0) continue;
-        await addInvoicePayment(invoiceId, {
-          idempotencyKey: pm.id,
-          method: pm.method,
-          amount: Number(pm.amount),
-        });
-      }
-
-      const confirmed = await confirmInvoiceApi(invoiceId);
 
       setSuccess({
         invoiceId,
@@ -315,15 +256,7 @@ function POSPageContent() {
       clearCart();
       refreshInvoiceSummary?.();
     } catch (err: any) {
-      if (err?.code === 'BIZ_INSUFFICIENT_STOCK') {
-        toast.error(err.message || 'Some items no longer have enough stock.');
-      } else if (err?.code === 'BIZ_GUEST_NO_CREDIT') {
-        toast.error('Credit payments require a registered customer.');
-      } else if (err?.code === 'BIZ_CREDIT_LIMIT_EXCEEDED') {
-        toast.error(err.message || 'Sale would exceed the customer credit limit.');
-      } else {
-        toast.error(err?.message || 'Could not confirm invoice.');
-      }
+      toast.error(checkoutErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -457,6 +390,13 @@ function ProductBrowser({
               Offline mode
             </span>
           )}
+          <Link
+            href="/cashier"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-accent/40 bg-accent-light/50 px-3 text-sm font-medium text-accent hover:bg-accent-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Monitor className="h-4 w-4" />
+            Cashier Mode
+          </Link>
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-1">

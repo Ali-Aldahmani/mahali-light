@@ -318,6 +318,51 @@ async function loadPaymentsForInvoice(client, invoiceId) {
   return rows;
 }
 
+// The invoice-level discount is not part of any line, so replaceItems can't
+// see it. Spread it across lines in proportion to their line totals and
+// re-check every restricted product — otherwise an invoice discount would
+// slip a restricted item below its minimum / max-discount floor. Only call
+// where the invoice discount can be set or changed (draft create/update,
+// edit-request approval), never on payment/return recalculations.
+async function assertInvoiceDiscountAllowed(client, invoiceId) {
+  const { rows: invRows } = await client.query(
+    `SELECT invoice_discount FROM invoices WHERE id = $1`,
+    [invoiceId],
+  );
+  const invDisc = money(invRows[0]?.invoice_discount || 0);
+  if (invDisc <= 0) return;
+
+  const { rows: items } = await client.query(
+    `SELECT it.product_id, it.product_name, it.quantity, it.line_total, v.selling_price
+       FROM invoice_items it
+       LEFT JOIN product_variants v ON v.id = it.variant_id
+      WHERE it.invoice_id = $1`,
+    [invoiceId],
+  );
+  const base = items.reduce((s, it) => s + Number(it.line_total || 0), 0);
+  if (base <= 0) return;
+
+  const restrictions = await pricingRestrictionService.getRestrictionsMap(
+    client,
+    items.map((it) => it.product_id),
+  );
+  if (!restrictions.size) return;
+
+  for (const it of items) {
+    const restriction = restrictions.get(it.product_id);
+    const qty = Number(it.quantity);
+    if (!restriction || !(qty > 0)) continue;
+    const lineTotal = Number(it.line_total || 0);
+    const share = (invDisc * lineTotal) / base;
+    pricingRestrictionService.assertPriceAllowed({
+      restriction,
+      catalogPrice: it.selling_price,
+      netUnitPrice: (lineTotal - share) / qty,
+      productName: it.product_name,
+    });
+  }
+}
+
 // Recompute and persist invoice totals on the row itself. Used after items
 // or payments change. Returns the totals object.
 async function recalculateAndPersistTotals(
@@ -1262,6 +1307,7 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
       ]);
     }
 
+    if (financialChange) await assertInvoiceDiscountAllowed(client, req.invoice_id);
     const totals = await recalculateAndPersistTotals(client, req.invoice_id);
     if (invoice.status === 'confirmed' && financialChange) {
       if (totals.total !== money(invoice.total) || totals.amountPaid !== totals.total) {
@@ -1472,6 +1518,7 @@ module.exports = {
   computeTotals,
   computeLineFigures,
   replaceItems,
+  assertInvoiceDiscountAllowed,
   recalculateAndPersistTotals,
   resolveInvoiceTaxRate,
   findStockShortfalls,

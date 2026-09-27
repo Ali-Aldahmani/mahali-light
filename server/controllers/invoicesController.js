@@ -6,6 +6,7 @@ const { logActivity } = require('../utils/activityLog');
 const {
   generateInvoiceNumber,
   replaceItems,
+  assertInvoiceDiscountAllowed,
   recalculateAndPersistTotals,
   resolveInvoiceTaxRate,
   confirmInvoice,
@@ -458,6 +459,7 @@ async function create(req, res, next) {
         );
       }
 
+      await assertInvoiceDiscountAllowed(client, id);
       await recalculateAndPersistTotals(client, id);
       await client.query(
         `INSERT INTO invoice_history (invoice_id, action, performed_by, notes)
@@ -554,6 +556,7 @@ async function updateItems(req, res, next) {
         { allowPriceOverride: canOverridePrice(req) },
       );
 
+      await assertInvoiceDiscountAllowed(client, id);
       await recalculateAndPersistTotals(client, id);
     });
 

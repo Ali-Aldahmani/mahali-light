@@ -14,11 +14,12 @@ import { z } from 'zod';
 
 export const invoiceItemSchema = z.object({
   id: z.string(),
-  productId: z.string(),
-  variantId: z.string(),
+  // Custom / third-party lines have no catalog product, variant or SKU.
+  productId: z.string().nullable(),
+  variantId: z.string().nullable(),
   productName: z.string(),
   variantAttributes: z.record(z.any()),
-  sku: z.string(),
+  sku: z.string().nullable(),
   unitLabel: z.string(),
   quantity: z.number(),
   unitPrice: z.number(),
@@ -28,6 +29,8 @@ export const invoiceItemSchema = z.object({
   lineTotal: z.number(),
   position: z.number().nullable(),
   serialNumber: z.string().nullable(),
+  isCustom: z.boolean().optional(),
+  thirdPartyName: z.string().nullable().optional(),
   costPriceAtTime: z.number().optional(),
 });
 

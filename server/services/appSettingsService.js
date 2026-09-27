@@ -167,6 +167,8 @@ async function getPublicSettings() {
     store_timezone: s.store_timezone,
     vat_enabled: s.vat_enabled,
     vat_rate: s.vat_rate,
+    // UX hint for POS stock warnings; confirmInvoice enforces it server-side.
+    pos_allow_negative_stock: !!s.pos_allow_negative_stock,
     language: s.language,
     // The actually-running version, not a value baked into the frontend
     // bundle at build time — a self-update swaps this file and restarts

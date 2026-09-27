@@ -25,7 +25,7 @@ import CategoryBreakdownBars from '@/components/analytics/CategoryBreakdownBars'
 import PeakHoursHeatmap from '@/components/analytics/PeakHoursHeatmap';
 import AlertsPanel from '@/components/analytics/AlertsPanel';
 import FinanceDashboardWidget from '@/components/ui/FinanceDashboardWidget';
-import { localIsoDate } from '@/lib/utils/format';
+import { DASHBOARD_RANGES as RANGES, rangeDates } from '@/lib/dashboard/ranges';
 import {
   getKPIs,
   getSparkline,
@@ -36,43 +36,6 @@ import {
   getCategoryBreakdown,
   getPeakHeatmap,
 } from '@/services/analyticsService';
-
-// Quick-range presets for the dashboard. We deliberately stick to four
-// useful windows; the analytics hub offers the full range editor.
-const RANGES = [
-  { value: 'this_week', label: 'This week' },
-  { value: 'this_month', label: 'This month' },
-  { value: 'this_quarter', label: 'This quarter' },
-  { value: 'this_year', label: 'This year' },
-];
-
-function rangeDates(key: string) {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  let start;
-  let end;
-  if (key === 'this_week') {
-    const day = now.getDay();
-    const diff = (day + 6) % 7; // back to Monday
-    start = new Date(y, m, now.getDate() - diff);
-    end = new Date(y, m, start.getDate() + 6);
-  } else if (key === 'this_quarter') {
-    const qStart = Math.floor(m / 3) * 3;
-    start = new Date(y, qStart, 1);
-    end = new Date(y, qStart + 3, 0);
-  } else if (key === 'this_year') {
-    start = new Date(y, 0, 1);
-    end = new Date(y, 11, 31);
-  } else {
-    start = new Date(y, m, 1);
-    end = new Date(y, m + 1, 0);
-  }
-  return {
-    start_date: localIsoDate(start),
-    end_date: localIsoDate(end),
-  };
-}
 
 const REFRESH_MS_KPI = 5 * 60 * 1000;
 const REFRESH_MS_CHART = 15 * 60 * 1000;

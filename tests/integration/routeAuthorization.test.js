@@ -24,7 +24,7 @@ const enabled = Boolean(process.env.INVOICE_TEST_PG_PORT);
 describe.skipIf(!enabled)('route-level RBAC on real PostgreSQL', () => {
   let db, auth, app, request;
   let adminToken, managerToken, cashierToken, adminId, managerId, cashierId;
-  let cashier2Token;
+  let cashier2Token, manager2Token;
   const database = `rbac_regression_${randomUUID().replaceAll('-', '')}`;
   let createdDatabase = false;
   let admin;
@@ -76,6 +76,8 @@ describe.skipIf(!enabled)('route-level RBAC on real PostgreSQL', () => {
     // authorization check this test wants to prove (403) — session state
     // shouldn't leak between independent test cases.
     ({ token: cashier2Token } = await makeUser('cashier2', 'Cashier'));
+    // Same reason: managerToken's session is force-logged-out below.
+    ({ token: manager2Token } = await makeUser('manager2', 'Manager'));
 
     const express = require('express');
     request = require('supertest');
@@ -83,7 +85,8 @@ describe.skipIf(!enabled)('route-level RBAC on real PostgreSQL', () => {
     app.use(express.json());
     app.use('/users', require('../../server/routes/users'));
     app.use('/roles', require('../../server/routes/roles'));
-    app.use((err, _req, res, _next) => res.status(err.status || (err.name === 'ZodError' ? 400 : 500)).json({ code: err.code, message: err.message }));
+    app.use('/products', require('../../server/routes/products'));
+    app.use((err, _req, res, _next) => res.status(err.status || (err.name === 'ZodError' ? 400 : 500)).json({ code: err.code, message: err.message, details: err.details }));
   }, 30000);
 
   afterAll(async () => {
@@ -157,6 +160,47 @@ describe.skipIf(!enabled)('route-level RBAC on real PostgreSQL', () => {
       .auth(cashier2Token, { type: 'bearer' })
       .send({ name: `ShouldFail-${randomUUID().slice(0, 8)}` });
     expect(res.status).toBe(403);
+  });
+
+  // The mobile Quick Add screen hides its entry point without product.create,
+  // but hiding a button is not security: the API itself must refuse.
+  function simpleProduct(name, barcode) {
+    return {
+      name,
+      categoryId: null,
+      hasVariants: false,
+      soldBy: 'piece',
+      unitLabel: 'pcs',
+      isActive: true,
+      simple: { sellingPrice: 4.5, openingStock: 0, barcode, sku: null, supplierBarcode: null },
+    };
+  }
+
+  it('Cashier gets a real 403 from POST /products (no product.create) and nothing is written', async () => {
+    const res = await request(app)
+      .post('/products')
+      .auth(cashier2Token, { type: 'bearer' })
+      .send(simpleProduct('Should not exist', '4006381333931'));
+    expect(res.status).toBe(403);
+    const { rows } = await db.query(`SELECT id FROM products WHERE name = 'Should not exist'`);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('Manager (product.create) can create a product; a reused barcode is a 409 on the barcode field', async () => {
+    const first = await request(app)
+      .post('/products')
+      .auth(manager2Token, { type: 'bearer' })
+      .send(simpleProduct('Mobile quick add', '96385074'));
+    expect(first.status).toBe(201);
+
+    const dup = await request(app)
+      .post('/products')
+      .auth(manager2Token, { type: 'bearer' })
+      .send(simpleProduct('Mobile quick add copy', '96385074'));
+    expect(dup.status).toBe(409);
+    expect(dup.body.details?.field).toBe('barcode');
+    const { rows } = await db.query(`SELECT id FROM products WHERE name = 'Mobile quick add copy'`);
+    expect(rows).toHaveLength(0);
   });
 
   it('an unauthenticated request is rejected before reaching any controller', async () => {

@@ -13,9 +13,22 @@ module.exports = {
         error: { DEFAULT: '#DC2626', light: '#FEE2E2' },
         ink: { DEFAULT: '#111827', muted: '#6B7280' },
         border: '#E5E7EB',
+        // Mobile companion (Figma "Mahali-light" phone frames) — scoped
+        // names so the desktop palette above is untouched.
+        m: {
+          bg: '#F6F7FA',
+          line: '#E3E8F0',
+          accent: '#FF7419',
+          field: '#F2F3F5',
+          hint: '#9CA3AF',
+          row: '#FBFCFD',
+          camera: '#1E293B',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
+        'm-work': ['var(--font-m-work)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        'm-inter': ['var(--font-m-inter)', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         card: '0 1px 3px rgba(0,0,0,0.08)',

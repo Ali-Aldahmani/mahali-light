@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import AuthGuard from '@/components/guards/AuthGuard';
+import PhoneGate from '@/components/mobile/PhoneGate';
 import { useSocketStore } from '@/store/socketStore';
 import { useAuthStore } from '@/store/authStore';
 import { useInventoryStore } from '@/store/inventoryStore';
@@ -273,7 +274,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
-      <DashboardShell>{children}</DashboardShell>
+      <PhoneGate>
+        <DashboardShell>{children}</DashboardShell>
+      </PhoneGate>
     </AuthGuard>
   );
 }

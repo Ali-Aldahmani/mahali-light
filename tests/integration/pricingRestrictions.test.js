@@ -99,6 +99,8 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     app.use(express.json());
     app.use('/invoices', require('../../server/routes/invoices'));
     app.use('/pricing-restrictions', require('../../server/routes/pricingRestrictions'));
+    app.use('/products', require('../../server/routes/products'));
+    app.use('/app-settings', require('../../server/routes/appSettings'));
     app.use((err, _req, res, _next) => res.status(err.status || (err.name === 'ZodError' ? 400 : 500)).json({ code: err.code, message: err.message, details: err.details }));
   }, 30000);
 
@@ -482,5 +484,134 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     expect(amountOnly.status).toBe(422);
     expect(amountOnly.body.message).toContain('Maximum allowed discount amount is AED 15.00.');
     expect(amountOnly.body.details.violations.map((x) => x.restrictionType)).toEqual(['MAX_DISCOUNT_AMOUNT']);
+  });
+
+  // ---------------------------------------------------------------------
+  // Invoice-level discount + Cashier Mode trust boundary
+  // ---------------------------------------------------------------------
+
+  it('an invoice-level discount cannot push a restricted product below its minimum (POST /invoices)', async () => {
+    const v = await variant({ price: 100 });
+    await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ minPrice: 90 });
+
+    const bypass = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ invoiceDiscount: 20, items: [{ variantId: v.id, quantity: 1 }] });
+    expect(bypass.status).toBe(422);
+    expect(bypass.body.code).toBe('BIZ_PRICING_RESTRICTION_VIOLATION');
+    expect(bypass.body.message).toContain('Minimum selling price is AED 90.00.');
+
+    const ok = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ invoiceDiscount: 5, items: [{ variantId: v.id, quantity: 1 }] });
+    expect(ok.status).toBe(201);
+  });
+
+  it('the invoice discount is spread by line total across restricted and unrestricted lines', async () => {
+    const restricted = await variant({ price: 100 });
+    const free = await variant({ price: 100 });
+    await request(app)
+      .put(`/pricing-restrictions/product/${restricted.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ minPrice: 90, maxDiscountPercent: 10 });
+
+    // AED 20 over two equal lines → 10 each → restricted line nets 90 (10%): allowed.
+    const ok = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ invoiceDiscount: 20, items: [{ variantId: restricted.id, quantity: 1 }, { variantId: free.id, quantity: 1 }] });
+    expect(ok.status).toBe(201);
+
+    // AED 30 → 15 each → restricted line nets 85: both rules fail.
+    const tooMuch = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ invoiceDiscount: 30, items: [{ variantId: restricted.id, quantity: 1 }, { variantId: free.id, quantity: 1 }] });
+    expect(tooMuch.status).toBe(422);
+    expect(tooMuch.body.details.violations.map((x) => x.restrictionType)).toEqual([
+      'MINIMUM_PRICE',
+      'MAX_DISCOUNT_PERCENT',
+    ]);
+  });
+
+  it('a held draft (PUT /invoices/:id/items) cannot add an invoice discount that breaks a restriction', async () => {
+    const v = await variant({ price: 100 });
+    await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ maxDiscountAmount: 5 });
+    const created = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 2 }] });
+    expect(created.status).toBe(201);
+
+    const resumed = await request(app)
+      .put(`/invoices/${created.body.data.id}/items`)
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ invoiceDiscount: 20, items: [{ variantId: v.id, quantity: 2 }] }); // 10 off per unit
+    expect(resumed.status).toBe(422);
+    expect(resumed.body.message).toContain('Maximum allowed discount amount is AED 5.00.');
+    const inv = (await db.query(`SELECT invoice_discount FROM invoices WHERE id = $1`, [created.body.data.id])).rows[0];
+    expect(Number(inv.invoice_discount)).toBe(0);
+  });
+
+  it('a cashier without override cannot manipulate price or discounts through the API', async () => {
+    const v = await variant({ price: 100 });
+    const priced = await request(app)
+      .post('/invoices')
+      .auth(cashierToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 1, unitPrice: 1 }] });
+    expect(priced.status).toBe(201);
+    const item = (await db.query(`SELECT unit_price FROM invoice_items WHERE invoice_id = $1`, [priced.body.data.id])).rows[0];
+    expect(Number(item.unit_price)).toBe(100);
+    expect(priced.body.data.total).toBeGreaterThanOrEqual(100);
+
+    const lineDiscount = await request(app)
+      .post('/invoices')
+      .auth(cashierToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 30 }] });
+    expect(lineDiscount.status).toBe(403);
+
+    const invoiceDiscount = await request(app)
+      .post('/invoices')
+      .auth(cashierToken, { type: 'bearer' })
+      .send({ invoiceDiscount: 30, items: [{ variantId: v.id, quantity: 1 }] });
+    expect(invoiceDiscount.status).toBe(403);
+  });
+
+  it('actions hidden from cashiers in Cashier Mode are rejected by the API', async () => {
+    const product = await request(app)
+      .post('/products')
+      .auth(cashierToken, { type: 'bearer' })
+      .send({ name: 'Sneaky product', hasVariants: false, simple: { sellingPrice: 1 } });
+    expect(product.status).toBe(403);
+
+    const custom = await request(app)
+      .post('/invoices')
+      .auth(cashierToken, { type: 'bearer' })
+      .send({ items: [{ isCustom: true, customDescription: 'Free stuff', quantity: 1, unitPrice: 0 }] });
+    expect(custom.status).toBe(403);
+
+    const draft = await request(app)
+      .post('/invoices')
+      .auth(cashierToken, { type: 'bearer' })
+      .send({ items: [{ variantId: (await variant()).id, quantity: 1 }] });
+    const cancel = await request(app)
+      .post(`/invoices/${draft.body.data.id}/cancel`)
+      .auth(cashierToken, { type: 'bearer' })
+      .send({ reason: 'test' });
+    expect(cancel.status).toBe(403);
+  });
+
+  it('public settings expose the negative-stock flag used by Cashier Mode', async () => {
+    const res = await request(app).get('/app-settings/public');
+    expect(res.status).toBe(200);
+    expect(typeof res.body.data.pos_allow_negative_stock).toBe('boolean');
   });
 });

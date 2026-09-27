@@ -1,77 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import { Briefcase, Lock, User } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import { useAuthStore } from '@/store/authStore';
-import { login as loginRequest } from '@/services/authService';
-import { toast } from '@/store/toastStore';
+import MobileLogin from '@/components/mobile/screens/MobileLogin';
+import { useLoginForm } from '@/hooks/useLoginForm';
+import { useDeviceClass } from '@/lib/mobile/device';
+import { MOBILE_HOME } from '@/lib/mobile/routePolicy';
 
 export default function LoginPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const token = useAuthStore((s) => s.token);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const device = useDeviceClass();
+  const form = useLoginForm({ defaultDest: device === 'phone' ? MOBILE_HOME : '/dashboard' });
+  const { username, setUsername, password, setPassword, loading, error, fieldErrors, onSubmit } = form;
 
-  useEffect(() => {
-    if (token) {
-      const from = searchParams.get('from') || '/dashboard';
-      router.replace(from);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  function validate() {
-    const errs: Record<string, string> = {};
-    if (!username.trim()) errs.username = 'Username is required.';
-    if (!password) errs.password = 'Password is required.';
-    setFieldErrors(errs);
-    return Object.keys(errs).length === 0;
-  }
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (!validate()) return;
-
-    setLoading(true);
-    try {
-      await loginRequest({ username: username.trim(), password });
-      toast.success('Signed in successfully');
-      let dest = searchParams.get('from') || '/dashboard';
-      try {
-        const saved = sessionStorage.getItem('mahali.returnRoute');
-        if (saved) {
-          dest = saved;
-          sessionStorage.removeItem('mahali.returnRoute');
-        }
-      } catch (_e) {
-        /* ignore */
-      }
-      router.replace(dest);
-    } catch (err: any) {
-      const code = err?.code;
-      if (code === 'AUTH_INVALID_CREDENTIALS') {
-        setError('Invalid username or password. Please try again.');
-      } else if (code === 'AUTH_ACCOUNT_LOCKED') {
-        setError('Too many failed attempts. This account is temporarily locked. Try again in 15 minutes.');
-      } else if (code === 'AUTH_ACCOUNT_INACTIVE') {
-        setError('This account has been deactivated. Contact your administrator.');
-      } else if (code === 'NETWORK_ERROR') {
-        setError('Cannot reach the server. Check your network connection.');
-      } else {
-        setError(err?.message || 'Unable to sign in right now. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
+  if (device === 'unknown') return null;
+  if (device === 'phone') return <MobileLogin form={form} />;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg p-6">

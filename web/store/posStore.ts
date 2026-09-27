@@ -98,8 +98,20 @@ interface PosState {
   pcIdentifier: string;
   isOffline: boolean;
   offlineQueue: OfflineQueueEntry[];
+  /** Server draft invoice backing this sale (held / resumed / failed checkout). */
+  draftInvoiceId: string | null;
+  draftInvoiceNumber: string | null;
 
   setOffline: (flag: boolean) => void;
+  setDraftInvoice: (id: string | null, invoiceNumber?: string | null) => void;
+  loadSale: (sale: {
+    cart: CartItem[];
+    selectedCustomer?: any | null;
+    invoiceDiscount?: number;
+    notes?: string;
+    draftInvoiceId?: string | null;
+    draftInvoiceNumber?: string | null;
+  }) => void;
   setPcIdentifier: (pc: string) => void;
   setCustomer: (customer: any | null) => void;
   addToCart: (variant: any, quantity?: number) => void;
@@ -195,7 +207,7 @@ function computeTotals(state: Pick<PosState, 'cart' | 'invoiceDiscount' | 'taxRa
   const invoiceDiscount = round2(state.invoiceDiscount || 0);
   const discount = round2(itemDiscount + invoiceDiscount);
   const taxable = Math.max(0, round2(subtotal - discount));
-  const taxRate = Number(state.taxRate || DEFAULT_TAX_RATE);
+  const taxRate = Number(state.taxRate ?? DEFAULT_TAX_RATE);
   const tax = round2(taxable * (taxRate / 100));
   const total = round2(taxable + tax);
   const amountPaid = state.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
@@ -227,9 +239,27 @@ export const usePosStore = create<PosState>()((set, get) => ({
   pcIdentifier: loadPcIdentifier(),
   isOffline: false,
   offlineQueue: loadOfflineQueue(),
+  draftInvoiceId: null,
+  draftInvoiceNumber: null,
 
   setOffline(flag) {
     set({ isOffline: !!flag });
+  },
+
+  setDraftInvoice(id, invoiceNumber = null) {
+    set({ draftInvoiceId: id || null, draftInvoiceNumber: id ? invoiceNumber || null : null });
+  },
+
+  loadSale(sale) {
+    set({
+      cart: Array.isArray(sale.cart) ? sale.cart : [],
+      selectedCustomer: sale.selectedCustomer || null,
+      invoiceDiscount: round2(sale.invoiceDiscount || 0),
+      notes: sale.notes || '',
+      payments: [],
+      draftInvoiceId: sale.draftInvoiceId || null,
+      draftInvoiceNumber: sale.draftInvoiceNumber || null,
+    });
   },
 
   setPcIdentifier(pc) {
@@ -456,6 +486,8 @@ export const usePosStore = create<PosState>()((set, get) => ({
       invoiceDiscount: 0,
       selectedCustomer: null,
       notes: '',
+      draftInvoiceId: null,
+      draftInvoiceNumber: null,
     });
   },
 
