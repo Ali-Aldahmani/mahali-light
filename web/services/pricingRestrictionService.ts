@@ -1,12 +1,16 @@
 import { apiDelete, apiGet, apiPost, apiPut } from './http';
 
-export type RestrictionType = 'MINIMUM_PRICE' | 'MAX_DISCOUNT_PERCENT' | 'MAX_DISCOUNT_AMOUNT';
-
+/** Each value is an independent rule; null disables it. All null removes every restriction. */
 export interface PricingRestrictionPayload {
-  restrictionType: RestrictionType;
-  minPrice?: number | null;
-  maxDiscountPercent?: number | null;
-  maxDiscountAmount?: number | null;
+  minPrice: number | null;
+  maxDiscountPercent: number | null;
+  maxDiscountAmount: number | null;
+}
+
+export interface PricingRestriction extends PricingRestrictionPayload {
+  id: string;
+  productId: string;
+  productName?: string;
 }
 
 export function listPricingRestrictions() {

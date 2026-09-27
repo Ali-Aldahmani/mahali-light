@@ -3,7 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { getPool, query } = require('./postgres');
 
-async function runMigrations() {
+// stopBefore: apply only files that sort before this filename prefix. Lets
+// tests seed data in an older schema and then migrate it forward.
+async function runMigrations({ stopBefore } = {}) {
   console.log('[migrate] starting migrations...');
 
   // Ensure the migration tracking table exists before reading it.
@@ -18,6 +20,7 @@ async function runMigrations() {
   const files = fs
     .readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
+    .filter((f) => !stopBefore || f < stopBefore)
     .sort();
 
   const { rows: applied } = await query('SELECT filename FROM _migrations');

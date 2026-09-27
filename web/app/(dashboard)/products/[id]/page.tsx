@@ -41,9 +41,8 @@ import { getCategoryAttributes } from '@/services/categoryService';
 import { getProductWarrantyStats } from '@/services/warrantyService';
 import {
   getPricingRestriction,
-  removePricingRestriction,
   upsertPricingRestriction,
-  type RestrictionType,
+  type PricingRestrictionPayload,
 } from '@/services/pricingRestrictionService';
 import { useProductStore } from '@/store/productStore';
 import { useAuthStore } from '@/store/authStore';
@@ -737,75 +736,72 @@ function StockTab({
   );
 }
 
-const RESTRICTION_OPTIONS: { value: RestrictionType; label: string; hint: string }[] = [
-  { value: 'MINIMUM_PRICE', label: 'Minimum price', hint: 'The final price (after any discount) can never go below this.' },
-  { value: 'MAX_DISCOUNT_PERCENT', label: 'Max discount %', hint: 'No line for this product can be discounted more than this percent off catalog price.' },
-  { value: 'MAX_DISCOUNT_AMOUNT', label: 'Max discount amount', hint: 'No line for this product can be discounted more than this AED amount off catalog price, per unit.' },
+type RestrictionKey = keyof PricingRestrictionPayload;
+
+const RESTRICTION_OPTIONS: { key: RestrictionKey; label: string; unit: string; max?: number; hint: string }[] = [
+  { key: 'minPrice', label: 'Minimum price', unit: 'AED', hint: 'The final price (after any discount) can never go below this.' },
+  { key: 'maxDiscountPercent', label: 'Max discount %', unit: '%', max: 100, hint: 'No line for this product can be discounted more than this percent off catalog price.' },
+  { key: 'maxDiscountAmount', label: 'Max discount amount', unit: 'AED', hint: 'No line for this product can be discounted more than this AED amount off catalog price, per unit.' },
 ];
 
-// Requirement: Admin configures exactly ONE restriction per product, one of
-// MINIMUM_PRICE / MAX_DISCOUNT_PERCENT / MAX_DISCOUNT_AMOUNT. Enforcement
-// itself lives entirely server-side (invoiceService.replaceItems and
-// applyEditRequest) — this UI is convenience/reflection only, per the
-// "frontend validation is NOT security" requirement.
+type RestrictionForm = Record<RestrictionKey, { enabled: boolean; value: string }>;
+
+function toForm(data: any): RestrictionForm {
+  const entry = (v: any) => ({ enabled: v != null, value: v != null ? String(v) : '' });
+  return {
+    minPrice: entry(data?.minPrice),
+    maxDiscountPercent: entry(data?.maxDiscountPercent),
+    maxDiscountAmount: entry(data?.maxDiscountAmount),
+  };
+}
+
+// Any combination of the three rules may be enabled; the server enforces all
+// enabled rules together (invoiceService.replaceItems and applyEditRequest).
+// This UI is convenience/reflection only.
 function PricingTab({ productId, canManage }: { productId: string; canManage: boolean }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [current, setCurrent] = useState<any>(null);
-  const [type, setType] = useState<RestrictionType | 'NONE'>('NONE');
-  const [value, setValue] = useState('');
+  const [form, setForm] = useState<RestrictionForm>(() => toForm(null));
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     getPricingRestriction(productId)
       .then((data: any) => {
-        if (cancelled) return;
-        setCurrent(data);
-        if (data) {
-          setType(data.restrictionType);
-          setValue(String(data.minPrice ?? data.maxDiscountPercent ?? data.maxDiscountAmount ?? ''));
-        } else {
-          setType('NONE');
-          setValue('');
-        }
+        if (!cancelled) setForm(toForm(data));
       })
       .catch((err: any) => toast.error(err?.message || 'Could not load pricing restriction.'))
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [productId]);
 
+  function update(key: RestrictionKey, patch: Partial<RestrictionForm[RestrictionKey]>) {
+    setForm((f) => ({ ...f, [key]: { ...f[key], ...patch } }));
+  }
+
   async function handleSave() {
-    if (type === 'NONE') {
-      if (!current) return;
-      setSaving(true);
-      try {
-        await removePricingRestriction(productId);
-        setCurrent(null);
-        toast.success('Pricing restriction removed.');
-      } catch (err: any) {
-        toast.error(err?.message || 'Could not remove pricing restriction.');
-      } finally {
-        setSaving(false);
+    const payload: PricingRestrictionPayload = { minPrice: null, maxDiscountPercent: null, maxDiscountAmount: null };
+    for (const opt of RESTRICTION_OPTIONS) {
+      const entry = form[opt.key];
+      if (!entry.enabled) continue;
+      const num = Number(entry.value);
+      if (entry.value.trim() === '' || !Number.isFinite(num) || num < 0 || (opt.max != null && num > opt.max)) {
+        toast.error(
+          opt.max != null
+            ? `${opt.label} must be between 0 and ${opt.max}.`
+            : `${opt.label} must be 0 or more.`,
+        );
+        return;
       }
-      return;
-    }
-    const num = Number(value);
-    if (!Number.isFinite(num) || num < 0) {
-      toast.error('Enter a valid, non-negative value.');
-      return;
+      payload[opt.key] = num;
     }
     setSaving(true);
     try {
-      const payload: any = { restrictionType: type };
-      if (type === 'MINIMUM_PRICE') payload.minPrice = num;
-      if (type === 'MAX_DISCOUNT_PERCENT') payload.maxDiscountPercent = num;
-      if (type === 'MAX_DISCOUNT_AMOUNT') payload.maxDiscountAmount = num;
       const saved = await upsertPricingRestriction(productId, payload);
-      setCurrent(saved);
-      toast.success('Pricing restriction saved.');
+      setForm(toForm(saved));
+      toast.success(saved ? 'Pricing restrictions saved.' : 'Pricing restrictions removed.');
     } catch (err: any) {
-      toast.error(err?.message || 'Could not save pricing restriction.');
+      toast.error(err?.message || 'Could not save pricing restrictions.');
     } finally {
       setSaving(false);
     }
@@ -822,53 +818,48 @@ function PricingTab({ productId, canManage }: { productId: string; canManage: bo
   return (
     <div className="card p-5 max-w-xl space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-ink">Pricing restriction</h3>
+        <h3 className="text-sm font-semibold text-ink">Pricing restrictions</h3>
         <p className="text-xs text-ink-muted mt-0.5">
-          Enforced server-side on every sale, draft edit and edit-request approval for this
-          product — the POS only reflects it for cashiers, it can&apos;t be bypassed from there.
+          Enable any combination — every enabled rule must pass. Enforced server-side on every
+          sale, draft edit and edit-request approval for this product; the POS only reflects it
+          for cashiers, it can&apos;t be bypassed from there. Untick all to remove restrictions.
         </p>
       </div>
 
       <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="restriction-type"
-            checked={type === 'NONE'}
-            onChange={() => setType('NONE')}
-            disabled={!canManage}
-          />
-          No restriction
-        </label>
-        {RESTRICTION_OPTIONS.map((opt) => (
-          <div key={opt.value} className="space-y-1">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="restriction-type"
-                checked={type === opt.value}
-                onChange={() => setType(opt.value)}
-                disabled={!canManage}
-              />
-              {opt.label}
-            </label>
-            {type === opt.value && (
-              <div className="pl-6 flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={value}
-                  onChange={(e: any) => setValue(e.target.value)}
+        {RESTRICTION_OPTIONS.map((opt) => {
+          const entry = form[opt.key];
+          return (
+            <div key={opt.key} className="space-y-1">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={entry.enabled}
+                  onChange={(e) => update(opt.key, { enabled: e.target.checked })}
                   disabled={!canManage}
-                  className="w-32"
-                  placeholder={opt.value === 'MAX_DISCOUNT_PERCENT' ? '%' : 'AED'}
                 />
-                <span className="text-xs text-ink-muted">{opt.hint}</span>
-              </div>
-            )}
-          </div>
-        ))}
+                {opt.label}
+              </label>
+              {entry.enabled && (
+                <div className="pl-6 flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={opt.max}
+                    step="0.01"
+                    value={entry.value}
+                    onChange={(e: any) => update(opt.key, { value: e.target.value })}
+                    disabled={!canManage}
+                    className="w-32"
+                    placeholder={opt.unit}
+                  />
+                  <span className="text-xs text-ink-muted">{opt.unit}</span>
+                  <span className="text-xs text-ink-muted">{opt.hint}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {canManage ? (

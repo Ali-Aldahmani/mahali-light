@@ -13,7 +13,7 @@ import { create } from 'zustand';
 //     quantity,         // numeric (decimals allowed for meter/kg)
 //     discountAmount,   // AED off the line (always derived from percent)
 //     discountPercent,  // % off the line (preferred input)
-//     pricingRestriction, // { restrictionType, minPrice?, maxDiscountPercent?, maxDiscountAmount? } | null — UX hint only, server-enforced
+//     pricingRestriction, // { minPrice?, maxDiscountPercent?, maxDiscountAmount? } | null (any combination) — UX hint only, server-enforced
 //   }
 
 const DEFAULT_TAX_RATE = 5;
@@ -42,7 +42,6 @@ interface CartItem {
   discountAmount: number;
   discountPercent: number;
   pricingRestriction?: {
-    restrictionType: 'MINIMUM_PRICE' | 'MAX_DISCOUNT_PERCENT' | 'MAX_DISCOUNT_AMOUNT';
     minPrice?: number | null;
     maxDiscountPercent?: number | null;
     maxDiscountAmount?: number | null;

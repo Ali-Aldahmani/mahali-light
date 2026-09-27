@@ -210,7 +210,7 @@ These rules supplement each endpoint's schema, errors, and side-effect list.
 
 - **Users/roles:** Password hashes are never part of the ordinary shaped user response. Username creation validates `[A-Za-z0-9_.-]`; username update only validates length. The no-op user update branch returns its selected raw row rather than the usual shaped user. Soft-deactivation and force-logout differ; permissions/hierarchy still apply. `PUT .../permissions` replaces effective desired keys/role membership, not an additive patch.
 - **Catalogue:** Product create requires `simple` for a simple product or at least one `variants` entry when `hasVariants=true`. Price and quantity maxima are 999999. Product/variant deletion deactivates records. Opening stock creates stock history; editing a product/variant does not expose a general stock-quantity setter. SKU/internal barcode uniqueness is checked. Supplier barcodes are a separate lookup field. Category moves reject self/descendant cycles; deletion rejects active products/subcategories. Attributes in use by variants cannot be removed. Image reads are public, writes are permission-gated.
-- **Pricing:** Restrictions are product-wide and mutually exclusive: `MINIMUM_PRICE` needs `minPrice`, `MAX_DISCOUNT_PERCENT` needs `maxDiscountPercent`, `MAX_DISCOUNT_AMOUNT` needs `maxDiscountAmount`. Bulk supports only the two discount types and up to 500 products. Invoice catalogue prices use the stored selling price unless `invoice.override_price` permits override. Discounts require that permission. Custom lines require `invoice.custom_item`, a description and price; positive custom cost additionally requires `product.view_cost`. Custom lines skip catalogue stock and normal stock-return processing.
+- **Pricing:** Restrictions are product-wide and independent: any combination of `minPrice`, `maxDiscountPercent` and `maxDiscountAmount` may be set at once (null = disabled; all null removes the restriction row). Every enabled rule is enforced; a violation returns 422 `BIZ_PRICING_RESTRICTION_VIOLATION` with `details.violations[]` listing each failed rule. Bulk sets one discount rule on up to 500 products and keeps their other enabled rules. Invoice catalogue prices use the stored selling price unless `invoice.override_price` permits override. Discounts require that permission. Custom lines require `invoice.custom_item`, a description and price; positive custom cost additionally requires `product.view_cost`. Custom lines skip catalogue stock and normal stock-return processing.
 - **Customers/suppliers:** Their PUT schemas extend create schemas rather than making them partial; `name` is still required. Omitted fields can be cleared/reset by replacement-style SQL. Customer phone is unique when supplied; TRN is exactly 15 digits when nonempty. A zero customer credit limit is treated as unlimited by the service. Customers with positive debt cannot be deactivated. Suppliers with any purchase orders cannot be deleted/deactivated through DELETE.
 - **Invoice drafts:** Updating items clears `customer_id` when `customerId` is omitted. Null notes are passed through `COALESCE` and may not clear existing notes. Full payment allocations can prevent reducing a draft total below allocated payments. `next-number` is a preview and does not reserve a number. Invoice number uses year/normalized PC scope; it is not a client-assigned ID.
 - **Stock:** Movement filters accept only the allowlisted types in the endpoint's projection, which are not identical to every internal movement name. Unknown comma-separated types are dropped. Stock summary/low-stock/dead-stock reports differ in scope and cost exposure. Count summary `netValueImpact` is not universally removed by the item-level cost filter.
@@ -3340,9 +3340,7 @@ JSON request example:
 | 400 | `VALIDATION_FAILED` | Bulk apply only supports MAX_DISCOUNT_PERCENT or MAX_DISCOUNT_AMOUNT. |
 | 400 | `VALIDATION_FAILED` | Select at least one product. |
 | 404 | `RESOURCE_NOT_FOUND` | Product not found. |
-| 400 | `VALIDATION_FAILED` | Invalid restriction type. |
 | 400 | `VALIDATION_FAILED` | `${restrictionType} requires a value.` |
-| 400 | `VALIDATION_FAILED` | MINIMUM_PRICE, MAX_DISCOUNT_PERCENT and MAX_DISCOUNT_AMOUNT are mutually exclusive — only one may be set. |
 
 **Side effects:** Conditional database operations: `INSERT INTO pricing_restrictions`. 
 
@@ -3410,17 +3408,19 @@ Upsert for product for pricing restrictions.
 
 | Field | Type / accepted values | Presence | Validation / default |
 | --- | --- | --- | --- |
-| restrictionType | "MINIMUM_PRICE" / "MAX_DISCOUNT_PERCENT" / "MAX_DISCOUNT_AMOUNT" | required | No additional schema rule. |
-| minPrice | number or null | optional | min 0 |
-| maxDiscountPercent | number or null | optional | min 0; max 100 |
-| maxDiscountAmount | number or null | optional | min 0 |
+| minPrice | number or null | optional | min 0; null/omitted = disabled |
+| maxDiscountPercent | number or null | optional | min 0; max 100; null/omitted = disabled |
+| maxDiscountAmount | number or null | optional | min 0; null/omitted = disabled |
+
+All three null removes the product's restrictions and returns 200 with `data: null`.
 
 JSON request example:
 
 ```json
 {
-  "restrictionType": "MINIMUM_PRICE",
-  "minPrice": 20
+  "minPrice": 100,
+  "maxDiscountPercent": 5,
+  "maxDiscountAmount": null
 }
 ```
 
@@ -3448,9 +3448,6 @@ JSON request example:
 | --- | --- | --- |
 | 400 | `VALIDATION_FAILED` | Request does not satisfy the field schema above. |
 | 404 | `RESOURCE_NOT_FOUND` | Product not found. |
-| 400 | `VALIDATION_FAILED` | Invalid restriction type. |
-| 400 | `VALIDATION_FAILED` | `${restrictionType} requires a value.` |
-| 400 | `VALIDATION_FAILED` | MINIMUM_PRICE, MAX_DISCOUNT_PERCENT and MAX_DISCOUNT_AMOUNT are mutually exclusive — only one may be set. |
 
 **Side effects:** Conditional database operations: `INSERT INTO pricing_restrictions`. 
 
@@ -29861,7 +29858,7 @@ function shapeSupplier(row) {
     notes: row.notes,
     isActive: row.is_active,
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    updatedAt: row.updated_at,
     totalSpent: row.total_spent != null ? Number(row.total_spent) : 0,
     outstandingBalance:
       row.outstanding_balance != null ? Number(row.outstanding_balance) : 0,
@@ -30201,7 +30198,7 @@ function shapePO(row, includeCost) {
     out.totalCost = Number(row.total_cost);
     out.amountPaid = Number(row.amount_paid);
     out.balanceDue = Number(row.balance_due);
-  } else {
+  } else {
     out.amountPaid = null;
     out.balanceDue = null;
   }
@@ -31949,7 +31946,7 @@ function shapeCustomer(row, opts = {}) {
     notes: row.notes,
     isActive: row.is_active,
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    updatedAt: row.updated_at,
     totalSpent: row.total_spent != null ? Number(row.total_spent) : 0,
     invoiceCount: row.invoice_count != null ? Number(row.invoice_count) : 0,
     avgOrderValue:

@@ -127,19 +127,23 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
   // DB constraints
   // ---------------------------------------------------------------------
 
-  it('DB rejects a row with more than one restriction value set', async () => {
+  it('DB accepts several rules on the same row', async () => {
     const v = await variant();
-    await expect(db.query(
-      `INSERT INTO pricing_restrictions (product_id, restriction_type, min_price, max_discount_percent)
-       VALUES ($1,'MINIMUM_PRICE',50,10)`,
+    await db.query(
+      `INSERT INTO pricing_restrictions (product_id, min_price, max_discount_percent, max_discount_amount)
+       VALUES ($1, 50, 10, 5)`,
       [v.productId],
-    )).rejects.toThrow();
+    );
+    const row = (await db.query(`SELECT * FROM pricing_restrictions WHERE product_id = $1`, [v.productId])).rows[0];
+    expect(Number(row.min_price)).toBe(50);
+    expect(Number(row.max_discount_percent)).toBe(10);
+    expect(Number(row.max_discount_amount)).toBe(5);
   });
 
-  it('DB rejects a restriction_type with no matching value set', async () => {
+  it('DB rejects a row with every rule disabled', async () => {
     const v = await variant();
     await expect(db.query(
-      `INSERT INTO pricing_restrictions (product_id, restriction_type) VALUES ($1,'MINIMUM_PRICE')`,
+      `INSERT INTO pricing_restrictions (product_id) VALUES ($1)`,
       [v.productId],
     )).rejects.toThrow();
   });
@@ -147,20 +151,28 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
   it('DB rejects an out-of-range discount percent', async () => {
     const v = await variant();
     await expect(db.query(
-      `INSERT INTO pricing_restrictions (product_id, restriction_type, max_discount_percent)
-       VALUES ($1,'MAX_DISCOUNT_PERCENT',150)`,
+      `INSERT INTO pricing_restrictions (product_id, max_discount_percent) VALUES ($1, 150)`,
       [v.productId],
     )).rejects.toThrow();
   });
 
-  it('DB rejects a second row for the same product (exactly one per product)', async () => {
+  it('DB rejects a negative minimum price or discount amount', async () => {
     const v = await variant();
-    await db.query(
-      `INSERT INTO pricing_restrictions (product_id, restriction_type, min_price) VALUES ($1,'MINIMUM_PRICE',10)`,
-      [v.productId],
-    );
     await expect(db.query(
-      `INSERT INTO pricing_restrictions (product_id, restriction_type, min_price) VALUES ($1,'MINIMUM_PRICE',20)`,
+      `INSERT INTO pricing_restrictions (product_id, min_price) VALUES ($1, -1)`,
+      [v.productId],
+    )).rejects.toThrow();
+    await expect(db.query(
+      `INSERT INTO pricing_restrictions (product_id, max_discount_amount) VALUES ($1, -1)`,
+      [v.productId],
+    )).rejects.toThrow();
+  });
+
+  it('DB rejects a second row for the same product (one row per product)', async () => {
+    const v = await variant();
+    await db.query(`INSERT INTO pricing_restrictions (product_id, min_price) VALUES ($1, 10)`, [v.productId]);
+    await expect(db.query(
+      `INSERT INTO pricing_restrictions (product_id, min_price) VALUES ($1, 20)`,
       [v.productId],
     )).rejects.toThrow();
   });
@@ -169,34 +181,34 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
   // Admin CRUD + audit trail
   // ---------------------------------------------------------------------
 
-  it('upsert replaces the one restriction per product and audits old/new value', async () => {
+  it('upsert stores several rules together, disables one, and audits old/new value', async () => {
     const v = await variant();
     const create = await request(app)
       .put(`/pricing-restrictions/product/${v.productId}`)
       .auth(adminToken, { type: 'bearer' })
-      .send({ restrictionType: 'MINIMUM_PRICE', minPrice: 50 });
+      .send({ minPrice: 50, maxDiscountPercent: 15 });
     expect(create.status).toBe(201);
-    expect(create.body.data.restrictionType).toBe('MINIMUM_PRICE');
-    expect(create.body.data.minPrice).toBe(50);
+    expect(create.body.data).toMatchObject({ minPrice: 50, maxDiscountPercent: 15, maxDiscountAmount: null });
 
+    // Disable the percent cap, enable the amount cap; the floor stays.
     const update = await request(app)
       .put(`/pricing-restrictions/product/${v.productId}`)
       .auth(adminToken, { type: 'bearer' })
-      .send({ restrictionType: 'MAX_DISCOUNT_PERCENT', maxDiscountPercent: 15 });
+      .send({ minPrice: 50, maxDiscountPercent: null, maxDiscountAmount: 5 });
     expect(update.status).toBe(201);
-    expect(update.body.data.restrictionType).toBe('MAX_DISCOUNT_PERCENT');
+    expect(update.body.data).toMatchObject({ minPrice: 50, maxDiscountPercent: null, maxDiscountAmount: 5 });
 
-    // Still exactly one row for the product.
     const rows = (await db.query(`SELECT * FROM pricing_restrictions WHERE product_id = $1`, [v.productId])).rows;
     expect(rows).toHaveLength(1);
-    expect(rows[0].restriction_type).toBe('MAX_DISCOUNT_PERCENT');
+    expect(rows[0].max_discount_percent).toBeNull();
 
     const activity = await activityFor(update.body.data.id);
     expect(activity.map((a) => a.action)).toEqual(['pricing_restriction.created', 'pricing_restriction.updated']);
     expect(activity[0].performed_by).toBe(adminId);
     expect(activity[0].old_value).toBeNull();
-    expect(activity[1].old_value.restrictionType).toBe('MINIMUM_PRICE');
-    expect(activity[1].new_value.restrictionType).toBe('MAX_DISCOUNT_PERCENT');
+    expect(activity[1].old_value.maxDiscountPercent).toBe(15);
+    expect(activity[1].new_value.maxDiscountPercent).toBeNull();
+    expect(activity[1].new_value.maxDiscountAmount).toBe(5);
 
     const remove = await request(app)
       .delete(`/pricing-restrictions/product/${v.productId}`)
@@ -206,6 +218,62 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     expect(afterRemove).toHaveLength(0);
     const removedActivity = await activityFor(update.body.data.id);
     expect(removedActivity.at(-1).action).toBe('pricing_restriction.removed');
+  });
+
+  it('saving with every rule disabled removes the restriction and stops enforcing it', async () => {
+    const v = await variant({ price: 100 });
+    const created = await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ minPrice: 90 });
+    const cleared = await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ minPrice: null, maxDiscountPercent: null, maxDiscountAmount: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.data).toBeNull();
+    const rows = (await db.query(`SELECT * FROM pricing_restrictions WHERE product_id = $1`, [v.productId])).rows;
+    expect(rows).toHaveLength(0);
+    expect((await activityFor(created.body.data.id)).at(-1).action).toBe('pricing_restriction.removed');
+
+    const sale = await request(app)
+      .post('/invoices')
+      .auth(adminToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 1, unitPrice: 10 }] });
+    expect(sale.status).toBe(201);
+  });
+
+  it('rejects the legacy restrictionType field and out-of-range values', async () => {
+    const v = await variant();
+    const legacy = await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ restrictionType: 'MINIMUM_PRICE', minPrice: 10 });
+    expect(legacy.status).toBe(400);
+    const pct = await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ maxDiscountPercent: 101 });
+    expect(pct.status).toBe(400);
+    const neg = await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ minPrice: -1 });
+    expect(neg.status).toBe(400);
+  });
+
+  it('bulk-apply keeps other rules already enabled on a product', async () => {
+    const v = await variant();
+    await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ minPrice: 40 });
+    const res = await request(app)
+      .post('/pricing-restrictions/bulk')
+      .auth(adminToken, { type: 'bearer' })
+      .send({ productIds: [v.productId], restrictionType: 'MAX_DISCOUNT_PERCENT', maxDiscountPercent: 10 });
+    expect(res.status).toBe(201);
+    expect(res.body.data[0]).toMatchObject({ minPrice: 40, maxDiscountPercent: 10, maxDiscountAmount: null });
   });
 
   it('bulk-apply sets the same MAX_DISCOUNT_PERCENT on multiple products in one call', async () => {
@@ -231,7 +299,7 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
       const put = await request(app)
         .put(`/pricing-restrictions/product/${v.productId}`)
         .auth(token, { type: 'bearer' })
-        .send({ restrictionType: 'MINIMUM_PRICE', minPrice: 10 });
+        .send({ minPrice: 10 });
       expect(put.status).toBe(403);
 
       const bulk = await request(app)
@@ -258,7 +326,7 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     await request(app)
       .put(`/pricing-restrictions/product/${v.productId}`)
       .auth(adminToken, { type: 'bearer' })
-      .send({ restrictionType: 'MINIMUM_PRICE', minPrice: 50 });
+      .send({ minPrice: 50 });
 
     // adminToken's role carries invoice.override_price — proving the
     // restriction isn't just "no permission", it's an unconditional floor.
@@ -282,7 +350,7 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     await request(app)
       .put(`/pricing-restrictions/product/${v.productId}`)
       .auth(adminToken, { type: 'bearer' })
-      .send({ restrictionType: 'MAX_DISCOUNT_PERCENT', maxDiscountPercent: 10 });
+      .send({ maxDiscountPercent: 10 });
 
     const tooMuch = await request(app)
       .post('/invoices')
@@ -303,7 +371,7 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     await request(app)
       .put(`/pricing-restrictions/product/${v.productId}`)
       .auth(adminToken, { type: 'bearer' })
-      .send({ restrictionType: 'MAX_DISCOUNT_AMOUNT', maxDiscountAmount: 5 });
+      .send({ maxDiscountAmount: 5 });
 
     const created = await request(app)
       .post('/invoices')
@@ -325,7 +393,7 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     await request(app)
       .put(`/pricing-restrictions/product/${v.productId}`)
       .auth(adminToken, { type: 'bearer' })
-      .send({ restrictionType: 'MINIMUM_PRICE', minPrice: 50 });
+      .send({ minPrice: 50 });
 
     const created = await request(app)
       .post('/invoices')
@@ -354,5 +422,65 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
     // not have partially applied inside its own transaction.
     const item = (await db.query(`SELECT unit_price FROM invoice_items WHERE invoice_id = $1`, [invoiceId])).rows[0];
     expect(Number(item.unit_price)).toBe(100);
+  });
+
+  it('minimum price + max discount % are enforced together on POST /invoices', async () => {
+    const v = await variant({ price: 120 });
+    await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ minPrice: 100, maxDiscountPercent: 5 });
+
+    // 5% off 120 = 114: within both rules.
+    const ok = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 6 }] });
+    expect(ok.status).toBe(201);
+
+    // 110 is above the floor but ~8.3% off: only the percent rule fails.
+    const pctOnly = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 10 }] });
+    expect(pctOnly.status).toBe(422);
+    expect(pctOnly.body.code).toBe('BIZ_PRICING_RESTRICTION_VIOLATION');
+    expect(pctOnly.body.message).toContain('Maximum allowed discount is 5%.');
+    expect(pctOnly.body.details.violations.map((x) => x.restrictionType)).toEqual(['MAX_DISCOUNT_PERCENT']);
+
+    // 90 breaks both rules; both are reported.
+    const both = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 30 }] });
+    expect(both.status).toBe(422);
+    expect(both.body.message).toContain('Minimum selling price is AED 100.00.');
+    expect(both.body.details.violations.map((x) => x.restrictionType)).toEqual([
+      'MINIMUM_PRICE',
+      'MAX_DISCOUNT_PERCENT',
+    ]);
+  });
+
+  it('all three rules enforced together; one failing rule rejects the sale', async () => {
+    const v = await variant({ price: 120 });
+    await request(app)
+      .put(`/pricing-restrictions/product/${v.productId}`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ minPrice: 100, maxDiscountPercent: 20, maxDiscountAmount: 15 });
+
+    const ok = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 10 }] });
+    expect(ok.status).toBe(201);
+
+    // AED 20 off: floor (100) and 16.7% pass, amount cap (15) fails.
+    const amountOnly = await request(app)
+      .post('/invoices')
+      .auth(discounterToken, { type: 'bearer' })
+      .send({ items: [{ variantId: v.id, quantity: 1, discountAmount: 20 }] });
+    expect(amountOnly.status).toBe(422);
+    expect(amountOnly.body.message).toContain('Maximum allowed discount amount is AED 15.00.');
+    expect(amountOnly.body.details.violations.map((x) => x.restrictionType)).toEqual(['MAX_DISCOUNT_AMOUNT']);
   });
 });

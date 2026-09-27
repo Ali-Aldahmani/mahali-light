@@ -14,16 +14,21 @@ function money(n) {
   return n < 0 ? -Math.round(-n * 100 + 1e-9) / 100 : Math.round(n * 100 + 1e-9) / 100;
 }
 
+function numOrNull(v) {
+  return v != null ? Number(v) : null;
+}
+
+// A NULL value column means that restriction is disabled; any combination of
+// the three may be enabled at once (034_pricing_restrictions_multi.sql).
 function shape(row) {
   if (!row) return null;
   return {
     id: row.id,
     productId: row.product_id,
     productName: row.product_name,
-    restrictionType: row.restriction_type,
-    minPrice: row.min_price != null ? Number(row.min_price) : null,
-    maxDiscountPercent: row.max_discount_percent != null ? Number(row.max_discount_percent) : null,
-    maxDiscountAmount: row.max_discount_amount != null ? Number(row.max_discount_amount) : null,
+    minPrice: numOrNull(row.min_price),
+    maxDiscountPercent: numOrNull(row.max_discount_percent),
+    maxDiscountAmount: numOrNull(row.max_discount_amount),
     createdBy: row.created_by,
     updatedBy: row.updated_by,
     createdAt: row.created_at,
@@ -31,32 +36,19 @@ function shape(row) {
   };
 }
 
-// Validate that exactly the one value column matching restriction_type is
-// set — the DB CHECK constraint (031_pricing_restrictions.sql) enforces the
-// same rule as a last-resort integrity guard; this is the app-level check
-// that gives callers a clean 400 instead of a raw constraint-violation error.
-function assertValidRestrictionShape({ restrictionType, minPrice, maxDiscountPercent, maxDiscountAmount }) {
-  if (!RESTRICTION_TYPES.includes(restrictionType)) {
-    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid restriction type.', { status: 400 });
+function assertValidValues({ minPrice, maxDiscountPercent, maxDiscountAmount }) {
+  const bad = (v) => v != null && (!Number.isFinite(Number(v)) || Number(v) < 0);
+  if (bad(minPrice)) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Minimum price must be 0 or more.', { status: 400 });
   }
-  const values = { MINIMUM_PRICE: minPrice, MAX_DISCOUNT_PERCENT: maxDiscountPercent, MAX_DISCOUNT_AMOUNT: maxDiscountAmount };
-  for (const [type, val] of Object.entries(values)) {
-    const shouldBeSet = type === restrictionType;
-    const isSet = val != null;
-    if (shouldBeSet && !isSet) {
-      throw new AppError(ERROR_CODES.VALIDATION_FAILED,
-        `${restrictionType} requires a value.`, { status: 400 });
-    }
-    if (!shouldBeSet && isSet) {
-      throw new AppError(ERROR_CODES.VALIDATION_FAILED,
-        'MINIMUM_PRICE, MAX_DISCOUNT_PERCENT and MAX_DISCOUNT_AMOUNT are mutually exclusive — only one may be set.',
-        { status: 400 });
-    }
+  if (bad(maxDiscountPercent) || (maxDiscountPercent != null && Number(maxDiscountPercent) > 100)) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Max discount % must be between 0 and 100.', { status: 400 });
+  }
+  if (bad(maxDiscountAmount)) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Max discount amount must be 0 or more.', { status: 400 });
   }
 }
 
-// One row per product; keyed by product_id so "exactly one restriction per
-// product" is a UNIQUE constraint, not an app-level race.
 async function getRestriction(client, productId) {
   const q = client ? client.query.bind(client) : query;
   const { rows } = await q(
@@ -89,12 +81,17 @@ async function listRestrictions() {
   return rows.map(shape);
 }
 
-// Create or replace the one restriction for a product. Used directly by the
-// single-product endpoint and looped (one call per product, same
-// transaction) by bulkApplyMaxDiscount — the actual persistence/audit logic
-// lives in exactly one place either way.
-async function upsertRestriction(client, { productId, restrictionType, minPrice, maxDiscountPercent, maxDiscountAmount, actorId }) {
-  assertValidRestrictionShape({ restrictionType, minPrice, maxDiscountPercent, maxDiscountAmount });
+// Set the product's full restriction set. Each value is independent: NULL
+// disables that rule. When every rule is disabled the row is deleted, so
+// "no restrictions" never leaves an empty row behind. Returns null in that
+// case.
+async function upsertRestriction(client, { productId, minPrice, maxDiscountPercent, maxDiscountAmount, actorId }) {
+  const values = {
+    minPrice: minPrice != null ? money(minPrice) : null,
+    maxDiscountPercent: maxDiscountPercent != null ? Number(maxDiscountPercent) : null,
+    maxDiscountAmount: maxDiscountAmount != null ? money(maxDiscountAmount) : null,
+  };
+  assertValidValues(values);
 
   const q = client ? client.query.bind(client) : query;
   const { rows: productRows } = await q(`SELECT id, name FROM products WHERE id = $1`, [productId]);
@@ -103,27 +100,26 @@ async function upsertRestriction(client, { productId, restrictionType, minPrice,
   }
 
   const before = await getRestriction(client, productId);
+  const allDisabled =
+    values.minPrice == null && values.maxDiscountPercent == null && values.maxDiscountAmount == null;
+
+  if (allDisabled) {
+    if (before) await removeRestriction(client, { productId, actorId });
+    return null;
+  }
 
   const { rows } = await q(
     `INSERT INTO pricing_restrictions
-       (product_id, restriction_type, min_price, max_discount_percent, max_discount_amount, created_by, updated_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$6)
+       (product_id, min_price, max_discount_percent, max_discount_amount, created_by, updated_by)
+     VALUES ($1,$2,$3,$4,$5,$5)
      ON CONFLICT (product_id) DO UPDATE
-        SET restriction_type = EXCLUDED.restriction_type,
-            min_price = EXCLUDED.min_price,
+        SET min_price = EXCLUDED.min_price,
             max_discount_percent = EXCLUDED.max_discount_percent,
             max_discount_amount = EXCLUDED.max_discount_amount,
             updated_by = EXCLUDED.updated_by,
             updated_at = NOW()
      RETURNING *`,
-    [
-      productId,
-      restrictionType,
-      restrictionType === 'MINIMUM_PRICE' ? money(minPrice) : null,
-      restrictionType === 'MAX_DISCOUNT_PERCENT' ? Number(maxDiscountPercent) : null,
-      restrictionType === 'MAX_DISCOUNT_AMOUNT' ? money(maxDiscountAmount) : null,
-      actorId,
-    ],
+    [productId, values.minPrice, values.maxDiscountPercent, values.maxDiscountAmount, actorId],
   );
   const after = rows[0];
 
@@ -158,14 +154,17 @@ async function removeRestriction(client, { productId, actorId }) {
   });
 }
 
-// Requirement #2 — apply the same MAX_DISCOUNT_* rule to many products in
-// one admin action. Reuses upsertRestriction per product inside one
-// transaction (all-or-nothing) rather than a separate bulk code path, so
-// the mutual-exclusivity/validation/audit logic is never duplicated.
+// Apply one MAX_DISCOUNT_* value to many products in one admin action.
+// Only that rule is set; any other rules already enabled on each product are
+// kept. All-or-nothing via the caller's transaction.
 async function bulkApplyMaxDiscount(client, { productIds, restrictionType, maxDiscountPercent, maxDiscountAmount, actorId }) {
   if (!['MAX_DISCOUNT_PERCENT', 'MAX_DISCOUNT_AMOUNT'].includes(restrictionType)) {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED,
       'Bulk apply only supports MAX_DISCOUNT_PERCENT or MAX_DISCOUNT_AMOUNT.', { status: 400 });
+  }
+  const value = restrictionType === 'MAX_DISCOUNT_PERCENT' ? maxDiscountPercent : maxDiscountAmount;
+  if (value == null) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, `${restrictionType} requires a value.`, { status: 400 });
   }
   const ids = [...new Set((productIds || []).filter(Boolean))];
   if (!ids.length) {
@@ -173,56 +172,80 @@ async function bulkApplyMaxDiscount(client, { productIds, restrictionType, maxDi
   }
   const results = [];
   for (const productId of ids) {
+    const current = shape(await getRestriction(client, productId));
     results.push(await upsertRestriction(client, {
-      productId, restrictionType, maxDiscountPercent, maxDiscountAmount, actorId,
+      productId,
+      minPrice: current?.minPrice ?? null,
+      maxDiscountPercent: restrictionType === 'MAX_DISCOUNT_PERCENT' ? value : current?.maxDiscountPercent ?? null,
+      maxDiscountAmount: restrictionType === 'MAX_DISCOUNT_AMOUNT' ? value : current?.maxDiscountAmount ?? null,
+      actorId,
     }));
   }
   return results;
 }
 
-// The single source of truth for "is this final price allowed" — called
-// from every place an invoice line's price/discount is set (invoiceService
-// replaceItems + applyEditRequest's existing-item branch). catalogPrice and
-// netUnitPrice must both already be server-resolved values, never client
-// input. Silently does nothing when no restriction exists for the product.
-function assertPriceAllowed({ restriction, catalogPrice, netUnitPrice, productName }) {
-  if (!restriction) return;
+// Evaluate every enabled rule independently and return all violations (empty
+// array = allowed). catalogPrice and netUnitPrice must be server-resolved.
+function evaluatePriceRestrictions({ restriction, catalogPrice, netUnitPrice }) {
+  if (!restriction) return [];
   const catalog = money(catalogPrice);
   const net = money(netUnitPrice);
   const discountPerUnit = money(catalog - net);
+  const violations = [];
 
-  if (restriction.restriction_type === 'MINIMUM_PRICE') {
+  if (restriction.min_price != null) {
     const min = Number(restriction.min_price);
     if (net < min - 0.005) {
-      throw new AppError(ERROR_CODES.BIZ_PRICING_RESTRICTION_VIOLATION, {
-        product: productName || 'this product',
-        reason: `minimum price is AED ${min.toFixed(2)}, got AED ${net.toFixed(2)}`,
-      }, { status: 422, details: { restrictionType: restriction.restriction_type, minPrice: min, attemptedPrice: net } });
+      violations.push({
+        restrictionType: 'MINIMUM_PRICE',
+        limit: min,
+        attempted: net,
+        message: `Minimum selling price is AED ${min.toFixed(2)}.`,
+      });
     }
-    return;
   }
 
-  if (restriction.restriction_type === 'MAX_DISCOUNT_PERCENT') {
+  if (restriction.max_discount_percent != null) {
     const max = Number(restriction.max_discount_percent);
     const pct = catalog > 0 ? (discountPerUnit / catalog) * 100 : 0;
     if (discountPerUnit > 0.005 && pct > max + 0.01) {
-      throw new AppError(ERROR_CODES.BIZ_PRICING_RESTRICTION_VIOLATION, {
-        product: productName || 'this product',
-        reason: `maximum discount is ${max}%, got ${pct.toFixed(2)}%`,
-      }, { status: 422, details: { restrictionType: restriction.restriction_type, maxDiscountPercent: max, attemptedPercent: money(pct) } });
+      violations.push({
+        restrictionType: 'MAX_DISCOUNT_PERCENT',
+        limit: max,
+        attempted: money(pct),
+        message: `Maximum allowed discount is ${max}%.`,
+      });
     }
-    return;
   }
 
-  if (restriction.restriction_type === 'MAX_DISCOUNT_AMOUNT') {
+  if (restriction.max_discount_amount != null) {
     const max = Number(restriction.max_discount_amount);
     if (discountPerUnit > max + 0.005) {
-      throw new AppError(ERROR_CODES.BIZ_PRICING_RESTRICTION_VIOLATION, {
-        product: productName || 'this product',
-        reason: `maximum discount is AED ${max.toFixed(2)} per unit, got AED ${discountPerUnit.toFixed(2)}`,
-      }, { status: 422, details: { restrictionType: restriction.restriction_type, maxDiscountAmount: max, attemptedDiscount: discountPerUnit } });
+      violations.push({
+        restrictionType: 'MAX_DISCOUNT_AMOUNT',
+        limit: max,
+        attempted: discountPerUnit,
+        message: `Maximum allowed discount amount is AED ${max.toFixed(2)}.`,
+      });
     }
   }
+
+  return violations;
+}
+
+// The single enforcement point for "is this final price allowed" — called
+// from every place an invoice line's price/discount is set (invoiceService
+// replaceItems + applyEditRequest's existing-item branch). Throws one 422
+// listing every violated rule.
+function assertPriceAllowed({ restriction, catalogPrice, netUnitPrice, productName }) {
+  const violations = evaluatePriceRestrictions({ restriction, catalogPrice, netUnitPrice });
+  if (!violations.length) return;
+  const product = productName || 'this product';
+  throw new AppError(
+    ERROR_CODES.BIZ_PRICING_RESTRICTION_VIOLATION,
+    `Price not allowed for ${product}. ${violations.map((v) => v.message).join(' ')}`,
+    { status: 422, details: { product, violations } },
+  );
 }
 
 module.exports = {
@@ -234,5 +257,6 @@ module.exports = {
   upsertRestriction,
   removeRestriction,
   bulkApplyMaxDiscount,
+  evaluatePriceRestrictions,
   assertPriceAllowed,
 };

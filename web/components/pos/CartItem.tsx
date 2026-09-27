@@ -40,17 +40,17 @@ export default function CartItem({
   // actually enforces it (invoiceService), this just avoids a round trip
   // for the common case of a cashier typing an obviously-too-big discount.
   const restriction = item.pricingRestriction;
-  const restrictionHint = restriction
-    ? restriction.restrictionType === 'MINIMUM_PRICE'
-      ? `Min price AED ${Number(restriction.minPrice).toFixed(2)}`
-      : restriction.restrictionType === 'MAX_DISCOUNT_PERCENT'
-        ? `Max discount ${restriction.maxDiscountPercent}%`
-        : `Max discount AED ${Number(restriction.maxDiscountAmount).toFixed(2)}/unit`
-    : null;
-  const maxDiscountPercentHint =
-    restriction?.restrictionType === 'MAX_DISCOUNT_PERCENT' ? restriction.maxDiscountPercent : undefined;
-  const maxDiscountAmountHint =
-    restriction?.restrictionType === 'MAX_DISCOUNT_AMOUNT' ? restriction.maxDiscountAmount : undefined;
+  const restrictionParts = restriction
+    ? [
+        restriction.minPrice != null && `Min price AED ${Number(restriction.minPrice).toFixed(2)}`,
+        restriction.maxDiscountPercent != null && `Max discount ${restriction.maxDiscountPercent}%`,
+        restriction.maxDiscountAmount != null &&
+          `Max discount AED ${Number(restriction.maxDiscountAmount).toFixed(2)}/unit`,
+      ].filter(Boolean)
+    : [];
+  const restrictionHint = restrictionParts.length ? restrictionParts.join(' · ') : null;
+  const maxDiscountPercentHint = restriction?.maxDiscountPercent ?? undefined;
+  const maxDiscountAmountHint = restriction?.maxDiscountAmount ?? undefined;
 
   // Compact 2-line layout — POS cart is space-constrained.
   return (

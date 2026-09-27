@@ -646,7 +646,7 @@ async function search(req, res, next) {
               p.is_active AS product_active,
               p.default_warranty_months,
               c.requires_serial AS category_requires_serial,
-              pr.restriction_type, pr.min_price, pr.max_discount_percent, pr.max_discount_amount
+              pr.id AS restriction_id, pr.min_price, pr.max_discount_percent, pr.max_discount_amount
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
          LEFT JOIN product_categories c ON c.id = p.category_id
@@ -707,9 +707,8 @@ async function search(req, res, next) {
         attributes: attrMap.get(r.id) || [],
         requiresSerial: !!r.category_requires_serial,
         defaultWarrantyMonths: Number(r.default_warranty_months || 0),
-        pricingRestriction: r.restriction_type
+        pricingRestriction: r.restriction_id
           ? {
-              restrictionType: r.restriction_type,
               minPrice: r.min_price != null ? Number(r.min_price) : null,
               maxDiscountPercent: r.max_discount_percent != null ? Number(r.max_discount_percent) : null,
               maxDiscountAmount: r.max_discount_amount != null ? Number(r.max_discount_amount) : null,

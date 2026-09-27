@@ -523,7 +523,7 @@ function ProductsPageContent() {
             placeholder={bulkType === 'MAX_DISCOUNT_PERCENT' ? '%' : 'AED'}
           />
           <p className="text-xs text-ink-muted">
-            Replaces any existing pricing restriction on the selected products.
+            Sets this rule on the selected products. Other restrictions already enabled on them are kept.
           </p>
         </div>
       </Modal>
