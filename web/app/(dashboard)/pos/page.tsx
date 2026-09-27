@@ -1,14 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Banknote,
   CheckCircle2,
   Loader2,
   Package,
+  Plus,
   Search,
   ShoppingCart,
   Tag,
+  UserPlus,
   X,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -22,6 +25,7 @@ import POSProductCard from '@/components/pos/POSProductCard';
 import POSVariantSelector from '@/components/pos/POSVariantSelector';
 import CartItem from '@/components/pos/CartItem';
 import AddCustomItemModal from '@/components/pos/AddCustomItemModal';
+import CustomerFormSlideOver from '@/components/customers/CustomerFormSlideOver';
 import SerialNumberInput from '@/components/ui/SerialNumberInput';
 import PermissionGate from '@/components/ui/PermissionGate';
 import RequirePermission from '@/components/guards/RequirePermission';
@@ -51,6 +55,7 @@ export default function POSPage() {
 }
 
 function POSPageContent() {
+  const router = useRouter();
   const cart = usePosStore((s) => s.cart);
   const selectedCustomer = usePosStore((s) => s.selectedCustomer);
   const payments = usePosStore((s) => s.payments);
@@ -112,6 +117,7 @@ function POSPageContent() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<any>(null);
+  const [customerFormOpen, setCustomerFormOpen] = useState(false);
 
   // Fetch categories once.
   useEffect(() => {
@@ -333,6 +339,7 @@ function POSPageContent() {
         onCategoryChange={setActiveCategoryId}
         onProductClick={handleProductClick}
         isOffline={isOffline}
+        onNewProduct={() => router.push('/products/new')}
       />
 
       <CartPanel
@@ -351,6 +358,14 @@ function POSPageContent() {
         onClearCart={clearCart}
         onConfirmPay={() => setConfirmOpen(true)}
         onAddCustomItem={addCustomItem}
+        onNewCustomer={() => setCustomerFormOpen(true)}
+      />
+
+      <CustomerFormSlideOver
+        open={customerFormOpen}
+        onClose={() => setCustomerFormOpen(false)}
+        customer={null}
+        onSaved={(saved) => setCustomer(saved)}
       />
 
       <POSVariantSelector
@@ -397,6 +412,7 @@ function ProductBrowser({
   onCategoryChange,
   onProductClick,
   isOffline,
+  onNewProduct,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
@@ -407,6 +423,7 @@ function ProductBrowser({
   onCategoryChange: (id: string | number | null) => void;
   onProductClick: (variant: any) => void;
   isOffline: boolean;
+  onNewProduct: () => void;
 }) {
   const visibleCats = useMemo(
     () => categories.filter((c) => !c.parentId || c.parentId === null),
@@ -417,7 +434,7 @@ function ProductBrowser({
     <div className="flex-1 min-w-0 flex flex-col border-r border-border bg-bg">
       <div className="px-6 pt-5 pb-3 space-y-3 border-b border-border bg-surface">
         <div className="flex items-center gap-3">
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <Input
               autoFocus
               placeholder="Search by name, SKU, barcode, or attribute…"
@@ -426,6 +443,18 @@ function ProductBrowser({
               onChange={(e: any) => onSearchChange(e.target.value)}
             />
           </div>
+          <PermissionGate permission="product.create">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="shrink-0 whitespace-nowrap"
+              leftIcon={<Plus className="h-4 w-4" />}
+              onClick={onNewProduct}
+            >
+              New product
+            </Button>
+          </PermissionGate>
           {isOffline && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warning-light text-warning text-xs font-medium">
               <span className="h-2 w-2 rounded-full bg-warning" />
@@ -521,6 +550,7 @@ function CartPanel({
   onClearCart,
   onConfirmPay,
   onAddCustomItem,
+  onNewCustomer,
 }: {
   cart: any[];
   totals: any;
@@ -535,6 +565,7 @@ function CartPanel({
   onClearCart: () => void;
   onConfirmPay: () => void;
   onAddCustomItem: (item: any) => void;
+  onNewCustomer: () => void;
 }) {
   const [customItemOpen, setCustomItemOpen] = useState(false);
 
@@ -574,6 +605,18 @@ function CartPanel({
           placeholder="Search customer by name or phone"
           showBalance
         />
+        <PermissionGate permission="customer.create">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            leftIcon={<UserPlus className="h-4 w-4" />}
+            onClick={onNewCustomer}
+          >
+            New customer
+          </Button>
+        </PermissionGate>
       </div>
 
       <AddCustomItemModal
