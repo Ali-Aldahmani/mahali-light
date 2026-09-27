@@ -478,6 +478,7 @@ built-in `pg_isready` check.
 | Postgres unhealthy | `docker compose logs postgres` |
 | API restarting in a loop | `docker compose logs express-api` — usually `JWT_SECRET`, DB password, or a failed migration |
 | UI loads but API calls fail with CORS errors | `SERVER_IP` in `.env` must match the host used in the browser's address bar |
+| Code/UI updated but POS looks unchanged | Rebuild the web image: `docker compose build nextjs && docker compose up -d nextjs` (restart alone keeps the old UI). Use `http://SERVER_IP` (`WEB_PORT`), not `:3000`. Hard-refresh (**Ctrl+Shift+R**) |
 | Socket.io shows disconnected | Firewall must allow `API_PORT` (3000); confirm `NEXT_PUBLIC_EXPRESS_PORT` matches `API_PORT` |
 | Login fails | Confirm the setup wizard was completed; check caps lock; look for a "session expired" modal |
 | Printing doesn't work | Browser PDF print vs. Hardware Agent — check agent logs and `lpstat -p` on that till |

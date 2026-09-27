@@ -136,15 +136,27 @@ From another till, use the LAN IP, not `localhost`.
 ## Day-to-day commands
 
 ```powershell
-docker compose build              # rebuild API image
+docker compose build              # rebuild express-api + nextjs (required after code changes)
+docker compose build nextjs       # rebuild POS website only (faster after UI edits)
 docker compose up -d              # start
 docker compose ps                 # status
 docker compose logs -f express-api        # API logs
+docker compose logs -f nextjs     # web UI logs
 docker compose logs -f postgres   # database logs
-docker compose restart            # restart both
+docker compose restart            # restart containers — does NOT pick up new source code
 docker compose restart express-api        # API only
 docker compose down               # stop; KEEPS volumes (database + uploads + backups + tls)
 ```
+
+**UI changes (POS buttons, pages, styles)** live in the **`nextjs`** image.  
+`docker compose restart` or `up -d` alone reuses the **old** image. After `git pull` or editing `web/`:
+
+```powershell
+docker compose build nextjs
+docker compose up -d nextjs
+```
+
+Open the till in a browser at **`http://SERVER_IP`** (or your `WEB_PORT`), not `:3000` — port **3000** is the API only. Hard-refresh once (**Ctrl+Shift+R**) to bypass cached JS.
 
 **Never** use `docker compose down -v` in normal operations. `-v` deletes `postgres_data` and the API volumes.
 
@@ -255,12 +267,12 @@ A backup is not production-ready until you have **run this restore once on a tes
 ```text
 1. Backup (app Backup UI and/or pg_dump to docker/postgres/backups)
 2. git pull  (or copy new files) — do not delete Docker volumes
-3. docker compose build
+3. docker compose build          # both express-api and nextjs
 4. docker compose run --rm express-api npm run migrate
 5. docker compose up -d
-6. docker compose ps   (both healthy)
-7. Hit /api/health from a till
-8. Login + one sale on two PCs
+6. docker compose ps   (postgres, express-api, nextjs healthy)
+7. Hit /api/health on :API_PORT and open http://SERVER_IP for the POS
+8. Login + one sale on two PCs (Ctrl+Shift+R on each till if the UI looks stale)
 ```
 
 ---

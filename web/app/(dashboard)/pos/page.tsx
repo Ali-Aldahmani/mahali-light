@@ -1,13 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   Banknote,
   CheckCircle2,
   Loader2,
   Package,
-  Plus,
+  PackagePlus,
   Search,
   ShoppingCart,
   Tag,
@@ -26,6 +25,7 @@ import POSVariantSelector from '@/components/pos/POSVariantSelector';
 import CartItem from '@/components/pos/CartItem';
 import AddCustomItemModal from '@/components/pos/AddCustomItemModal';
 import CustomerFormSlideOver from '@/components/customers/CustomerFormSlideOver';
+import QuickAddProductModal from '@/components/pos/QuickAddProductModal';
 import SerialNumberInput from '@/components/ui/SerialNumberInput';
 import PermissionGate from '@/components/ui/PermissionGate';
 import RequirePermission from '@/components/guards/RequirePermission';
@@ -45,6 +45,7 @@ import {
 } from '@/services/invoiceService';
 import { formatCurrency } from '@/lib/utils/format';
 import { useAppSettingsStore } from '@/store/appSettingsStore';
+import { useAuthStore } from '@/store/authStore';
 
 export default function POSPage() {
   return (
@@ -55,7 +56,6 @@ export default function POSPage() {
 }
 
 function POSPageContent() {
-  const router = useRouter();
   const cart = usePosStore((s) => s.cart);
   const selectedCustomer = usePosStore((s) => s.selectedCustomer);
   const payments = usePosStore((s) => s.payments);
@@ -118,6 +118,7 @@ function POSPageContent() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [customerFormOpen, setCustomerFormOpen] = useState(false);
+  const [productFormOpen, setProductFormOpen] = useState(false);
 
   // Fetch categories once.
   useEffect(() => {
@@ -206,7 +207,9 @@ function POSPageContent() {
     }
   }, [addToCart]);
 
-  useBarcodeListener(onScan, { enabled: !confirmOpen && !success });
+  useBarcodeListener(onScan, {
+    enabled: !confirmOpen && !success && !customerFormOpen && !productFormOpen,
+  });
 
   function handleProductClick(variant: any) {
     const siblings = products.filter(
@@ -339,7 +342,6 @@ function POSPageContent() {
         onCategoryChange={setActiveCategoryId}
         onProductClick={handleProductClick}
         isOffline={isOffline}
-        onNewProduct={() => router.push('/products/new')}
       />
 
       <CartPanel
@@ -359,6 +361,14 @@ function POSPageContent() {
         onConfirmPay={() => setConfirmOpen(true)}
         onAddCustomItem={addCustomItem}
         onNewCustomer={() => setCustomerFormOpen(true)}
+        onNewProduct={() => setProductFormOpen(true)}
+      />
+
+      <QuickAddProductModal
+        open={productFormOpen}
+        onClose={() => setProductFormOpen(false)}
+        onRefreshProducts={fetchProducts}
+        onAddToCart={(v) => addToCart(v, 1)}
       />
 
       <CustomerFormSlideOver
@@ -412,7 +422,6 @@ function ProductBrowser({
   onCategoryChange,
   onProductClick,
   isOffline,
-  onNewProduct,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
@@ -423,7 +432,6 @@ function ProductBrowser({
   onCategoryChange: (id: string | number | null) => void;
   onProductClick: (variant: any) => void;
   isOffline: boolean;
-  onNewProduct: () => void;
 }) {
   const visibleCats = useMemo(
     () => categories.filter((c) => !c.parentId || c.parentId === null),
@@ -443,18 +451,6 @@ function ProductBrowser({
               onChange={(e: any) => onSearchChange(e.target.value)}
             />
           </div>
-          <PermissionGate permission="product.create">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="shrink-0 whitespace-nowrap"
-              leftIcon={<Plus className="h-4 w-4" />}
-              onClick={onNewProduct}
-            >
-              New product
-            </Button>
-          </PermissionGate>
           {isOffline && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warning-light text-warning text-xs font-medium">
               <span className="h-2 w-2 rounded-full bg-warning" />
@@ -551,6 +547,7 @@ function CartPanel({
   onConfirmPay,
   onAddCustomItem,
   onNewCustomer,
+  onNewProduct,
 }: {
   cart: any[];
   totals: any;
@@ -566,12 +563,53 @@ function CartPanel({
   onConfirmPay: () => void;
   onAddCustomItem: (item: any) => void;
   onNewCustomer: () => void;
+  onNewProduct: () => void;
 }) {
   const [customItemOpen, setCustomItemOpen] = useState(false);
+  const showCustomerQuick = useAuthStore((s) => s.permissions.includes('customer.create'));
+  const showProductQuick = useAuthStore((s) => s.permissions.includes('product.create'));
+  const showQuickActions = showCustomerQuick || showProductQuick;
 
   return (
     <div className="w-[400px] shrink-0 bg-surface flex flex-col">
       <div className="px-4 pt-4 pb-3 border-b border-border space-y-3">
+        {showQuickActions && (
+          <div className="rounded-card border border-accent/30 bg-accent-light/40 p-2.5 space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-accent px-0.5">
+              Quick add
+            </div>
+            <div
+              className={`grid gap-2 ${
+                showCustomerQuick && showProductQuick ? 'grid-cols-2' : 'grid-cols-1'
+              }`}
+            >
+              {showCustomerQuick && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  className="w-full shadow-sm"
+                  leftIcon={<UserPlus className="h-4 w-4" />}
+                  onClick={onNewCustomer}
+                >
+                  Customer
+                </Button>
+              )}
+              {showProductQuick && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  className="w-full shadow-sm"
+                  leftIcon={<PackagePlus className="h-4 w-4" />}
+                  onClick={onNewProduct}
+                >
+                  Product
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-ink font-semibold">
             <ShoppingCart className="h-4 w-4" />
@@ -605,18 +643,6 @@ function CartPanel({
           placeholder="Search customer by name or phone"
           showBalance
         />
-        <PermissionGate permission="customer.create">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="w-full"
-            leftIcon={<UserPlus className="h-4 w-4" />}
-            onClick={onNewCustomer}
-          >
-            New customer
-          </Button>
-        </PermissionGate>
       </div>
 
       <AddCustomItemModal
