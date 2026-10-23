@@ -9,7 +9,6 @@ import {
   Wallet,
   TrendingUp,
   Calendar,
-  Eye,
   ShoppingCart,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
@@ -28,6 +27,8 @@ import { useInvoiceStore } from '@/store/invoiceStore';
 import { onInvoiceEvent } from '@/store/socketStore';
 import { listInvoices } from '@/services/invoiceService';
 import { formatCurrency, formatDateTime } from '@/lib/utils/format';
+import RowActions from '@/components/ui/RowActions';
+import { useInvoiceActions } from '@/components/invoices/useInvoiceActions';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -70,6 +71,14 @@ function InvoicesPageContent() {
   const fetchSeq = useRef(0);
 
   const refreshSummary = useInvoiceStore((s) => s.refreshSummary);
+
+  // Row actions (preview, print, PDF, request edit, cancel) and their dialogs.
+  const invoiceActions = useInvoiceActions({
+    onChanged: () => {
+      fetchData();
+      refreshSummary?.();
+    },
+  });
 
   async function fetchData() {
     const seq = ++fetchSeq.current;
@@ -213,21 +222,15 @@ function InvoicesPageContent() {
         align: 'right' as const,
         sortable: false,
         render: (r: any) => (
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<Eye className="h-4 w-4" />}
-            onClick={(e: any) => {
-              e.stopPropagation();
-              router.push(`/invoices/${r.id}`);
-            }}
-          >
-            View
-          </Button>
+          <RowActions
+            label={`Actions for ${r.invoiceNumber}`}
+            primary="open"
+            actions={invoiceActions.actionsFor(r, { withOpen: true, onOpen: () => router.push(`/invoices/${r.id}`) })}
+          />
         ),
       },
     ],
-    [router],
+    [router, permissions],
   );
 
   return (
@@ -356,6 +359,8 @@ function InvoicesPageContent() {
             : null
         }
       />
+
+      {invoiceActions.dialogs}
     </div>
   );
 }

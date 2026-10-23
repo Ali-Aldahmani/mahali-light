@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Printer } from 'lucide-react';
 import Button, { type ButtonProps } from './Button';
 import PermissionGate from './PermissionGate';
-import { toast } from '@/store/toastStore';
-import { printInvoice, printReceipt } from '@/services/printService';
+import { printInvoiceDocument } from '@/lib/invoices/invoiceDocuments';
 
 // Two flavours: `kind="invoice"` prints the full A4 invoice, `kind="receipt"`
 // prints the 80mm thermal receipt.
@@ -34,23 +33,7 @@ export default function PrintButton({
     if (!invoiceId) return;
     setLoading(true);
     try {
-      const fn = kind === 'receipt' ? printReceipt : printInvoice;
-      const result = await fn(invoiceId, { silent, printer });
-      if (result?.success === false && !result?.cancelled) {
-        toast.error(
-          `Print failed${result.error ? `: ${result.error}` : '.'}`,
-        );
-      } else if (result?.fallback) {
-        toast.info('PDF opened — use your browser to print.');
-      } else if (result?.success !== false) {
-        toast.success(
-          `Sent ${invoiceNumber || 'document'} to ${
-            kind === 'receipt' ? 'receipt' : 'invoice'
-          } printer.`,
-        );
-      }
-    } catch (err) {
-      toast.error(err?.message || 'Could not print.');
+      await printInvoiceDocument({ invoiceId, invoiceNumber, kind, silent, printer });
     } finally {
       setLoading(false);
     }
