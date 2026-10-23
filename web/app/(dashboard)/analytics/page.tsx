@@ -26,6 +26,7 @@ import KPICard from '@/components/analytics/KPICard';
 import NetProfitTrendChart from '@/components/analytics/NetProfitTrendChart';
 import TopProductsTable from '@/components/analytics/TopProductsTable';
 import SupplierReliabilityChart from '@/components/analytics/SupplierReliabilityChart';
+import SupplierRankings from '@/components/analytics/SupplierRankings';
 import CustomerLeaderboard from '@/components/analytics/CustomerLeaderboard';
 import EmployeePerformanceTable from '@/components/analytics/EmployeePerformanceTable';
 import PeakHoursHeatmap from '@/components/analytics/PeakHoursHeatmap';
@@ -316,6 +317,8 @@ function SuppliersTab({ range }: { range: { start_date: string; end_date: string
 
   return (
     <div className="space-y-6">
+      <SupplierRankings range={range} />
+
       <h3 className="text-sm font-semibold text-ink">Most reliable suppliers</h3>
       <div className="rounded-card border border-border bg-surface overflow-hidden">
         <table className="w-full text-sm">

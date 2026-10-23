@@ -19,6 +19,7 @@ router.get('/top-products', requirePermission('analytics.view'), ctrl.topProduct
 router.get('/worst-products', requirePermission('analytics.view'), ctrl.worstProducts);
 router.get('/top-suppliers', requirePermission('analytics.view'), ctrl.topSuppliers);
 router.get('/worst-suppliers', requirePermission('analytics.view'), ctrl.worstSuppliers);
+router.get('/supplier-rankings', requirePermission('analytics.view'), ctrl.supplierRankings);
 router.get('/top-customers', requirePermission('analytics.view'), ctrl.topCustomers);
 router.get('/at-risk-customers', requirePermission('analytics.view'), ctrl.atRiskCustomers);
 

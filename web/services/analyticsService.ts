@@ -44,6 +44,9 @@ export function getTopSuppliers(params) {
 export function getWorstSuppliers(params) {
   return apiGet(`/analytics/worst-suppliers${qs(params)}`);
 }
+export function getSupplierRankings(params) {
+  return apiGet(`/analytics/supplier-rankings${qs(params)}`);
+}
 export function getTopCustomers(params) {
   return apiGet(`/analytics/top-customers${qs(params)}`);
 }

@@ -3,6 +3,7 @@ const { ok } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const analyticsService = require('../services/analyticsService');
 const forecastService = require('../services/forecastService');
+const supplierRankingService = require('../services/supplierRankingService');
 const { logActivity } = require('../utils/activityLog');
 
 function zodFail(err) {
@@ -94,6 +95,24 @@ async function worstSuppliers(req, res, next) {
       .extend({ limit: z.coerce.number().min(1).max(100).optional() })
       .parse(req.query);
     const data = await analyticsService.getWorstSuppliers(parsed);
+    ok(res, data);
+  } catch (err) {
+    next(err.errors ? zodFail(err) : err);
+  }
+}
+
+// Delivery / price / volume rankings for Analytics -> Suppliers. Price is
+// built from cost prices, so it is only returned with product.view_cost.
+async function supplierRankings(req, res, next) {
+  try {
+    const parsed = rangeSchema.parse(req.query);
+    analyticsService.assertSlice01DateRange(parsed);
+    const { startDate, endDate } = analyticsService.parseDateRange(parsed);
+    const data = await supplierRankingService.getSupplierRankings({
+      startDate,
+      endDate,
+      includeCost: (req.user?.permissions || []).includes('product.view_cost'),
+    });
     ok(res, data);
   } catch (err) {
     next(err.errors ? zodFail(err) : err);
@@ -467,6 +486,7 @@ async function dismissReorder(req, res, next) {
 }
 
 module.exports = {
+  supplierRankings,
   netProfitTrends,
   topProducts,
   worstProducts,
