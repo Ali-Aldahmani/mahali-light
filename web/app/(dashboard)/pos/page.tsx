@@ -1,12 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import {
   Banknote,
   CheckCircle2,
   Loader2,
-  Monitor,
   Package,
   PackagePlus,
   Search,
@@ -22,6 +20,7 @@ import InvoiceTotalsBlock from '@/components/ui/InvoiceTotalsBlock';
 import SplitPaymentBuilder from '@/components/ui/SplitPaymentBuilder';
 import PrintButton from '@/components/ui/PrintButton';
 import DownloadPDFButton from '@/components/ui/DownloadPDFButton';
+import CashierModeEntry from '@/components/pos/CashierModeEntry';
 import POSProductCard from '@/components/pos/POSProductCard';
 import POSVariantSelector from '@/components/pos/POSVariantSelector';
 import CartItem from '@/components/pos/CartItem';
@@ -390,13 +389,7 @@ function ProductBrowser({
               Offline mode
             </span>
           )}
-          <Link
-            href="/cashier"
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-accent/40 bg-accent-light/50 px-3 text-sm font-medium text-accent hover:bg-accent-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <Monitor className="h-4 w-4" />
-            Cashier Mode
-          </Link>
+          <CashierModeEntry />
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-1">

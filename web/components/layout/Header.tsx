@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Bug, ChevronDown, LogOut, Monitor, Wifi, WifiOff } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Bug, ChevronDown, LogOut, Wifi, WifiOff } from 'lucide-react';
+import CashierModeEntry from '@/components/pos/CashierModeEntry';
 import { useUiErrorStore } from '@/store/uiErrorStore';
 import Avatar from '../ui/Avatar';
 import { RoleBadge } from '../ui/Badge';
@@ -22,9 +22,11 @@ export default function Header({ title }: { title?: string }) {
   const isConnected = useSocketStore((s) => s.isConnected);
   const disconnect = useSocketStore((s) => s.disconnect);
   const router = useRouter();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const openBugReport = useUiErrorStore((s) => s.openBugReport);
   const canSell = useAuthStore((s) => s.hasPermission('invoice.create'));
+  const onPos = pathname === '/pos' || pathname.startsWith('/pos/');
 
   async function handleLogout() {
     try {
@@ -43,15 +45,7 @@ export default function Header({ title }: { title?: string }) {
 
       <div className="flex items-center gap-3">
         <GlobalSearchBar />
-        {canSell && (
-          <Link
-            href="/cashier"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-accent px-3 text-sm font-medium text-white hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-          >
-            <Monitor size={15} />
-            Cashier Mode
-          </Link>
-        )}
+        {canSell && !onPos && <CashierModeEntry compact />}
         <PCIdentifierBadge />
         <div
           title={isConnected ? 'Live connection' : 'Disconnected'}
