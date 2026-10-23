@@ -29,6 +29,7 @@ const NAV: { id: string; label: string; link?: string }[] = [
   { id: 'network', label: 'Network' },
   { id: 'attendance', label: 'Attendance' },
   { id: 'notifications', label: 'Notifications', link: '/settings/notifications' },
+  { id: 'telegram', label: 'Telegram alerts', link: '/settings/telegram' },
   { id: 'backup', label: 'Backup', link: '/settings/backup' },
   { id: 'account', label: 'My account' },
   { id: 'about', label: 'About' },

@@ -331,7 +331,7 @@ async function emitLowStockNotification(payload) {
       : `Low stock: ${payload.productName || 'product'}`,
     message: isOut
       ? `Stock has dropped to zero.`
-      : `Stock at ${payload.currentStock} ${payload.unitLabel || ''} (threshold ${payload.threshold || ''}).`.trim(),
+      : `Stock at ${payload.currentStock} ${payload.unitLabel || ''} (threshold ${payload.reorderPoint ?? ''}).`.trim(),
     referenceType: 'product',
     referenceId: payload.productId || null,
     actionUrl: payload.productId ? `/products/${payload.productId}` : `/inventory`,

@@ -66,6 +66,7 @@ const backupRouter = require('./routes/backup');
 const errorLogsRouter = require('./routes/errorLogs');
 const bugReportsRouter = require('./routes/bugReports');
 const appSettingsRouter = require('./routes/appSettings');
+const telegramRouter = require('./routes/telegram');
 const setupRouter = require('./routes/setup');
 const searchRouter = require('./routes/search');
 const updatesRouter = require('./routes/updates');
@@ -91,6 +92,7 @@ const { startScheduledReportJob } = require('./services/scheduledReportService')
 const { startForecastJob } = require('./services/forecastService');
 const notificationService = require('./services/notificationService');
 const { startNotificationCronJobs } = require('./jobs/notificationCron');
+const { startTelegramStockAlertJob } = require('./jobs/telegramStockAlerts');
 const { startBackupScheduler } = require('./backup/scheduler');
 const maintenanceMode = require('./backup/maintenanceMode');
 
@@ -363,6 +365,7 @@ async function bootstrap() {
   app.use('/api/error-logs', errorLogsRouter);
   app.use('/api/bug-reports', bugReportsRouter);
   app.use('/api/app-settings', appSettingsRouter);
+  app.use('/api/integrations/telegram', telegramRouter);
   app.use('/api/setup', setupRouter);
   app.use('/api/search', searchRouter);
   app.use('/api/app-updates', updatesRouter);
@@ -385,6 +388,7 @@ async function bootstrap() {
     notificationService.setIoInstance(io);
     startNotificationCronJobs(io);
     startBackupScheduler(io);
+    startTelegramStockAlertJob();
   } else {
     console.log('[server] client mode — background schedulers disabled');
   }
