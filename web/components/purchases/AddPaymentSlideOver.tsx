@@ -16,6 +16,10 @@ const METHODS = [
   { value: 'cheque', label: 'Cheque', Icon: FileSpreadsheet },
 ];
 
+function money2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 function todayISO() {
   return storeDate();
 }
@@ -35,6 +39,7 @@ export default function AddPaymentSlideOver({
 }: AddPaymentSlideOverProps) {
   const balance = Number(po?.balanceDue || 0);
   const [amount, setAmount] = useState<number | string>(balance);
+  const [payKind, setPayKind] = useState<'full' | 'half' | 'custom'>('full');
   const [method, setMethod] = useState('cash');
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
@@ -45,6 +50,7 @@ export default function AddPaymentSlideOver({
   useEffect(() => {
     if (open) {
       setAmount(balance);
+      setPayKind('full');
       setMethod('cash');
       setDate(todayISO());
       setNotes('');
@@ -112,6 +118,41 @@ export default function AddPaymentSlideOver({
       }
     >
       <div className="space-y-4">
+        <div>
+          <label className="text-sm font-medium text-ink mb-1.5 block">How much to pay</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                { id: 'full', label: 'Paid in full', amount: money2(balance) },
+                { id: 'half', label: 'Half', amount: money2(balance / 2) },
+                { id: 'custom', label: 'Specific amount', amount: null },
+              ] as const
+            ).map((opt) => {
+              const active = payKind === opt.id;
+              return (
+                <button
+                  type="button"
+                  key={opt.id}
+                  onClick={() => {
+                    setPayKind(opt.id);
+                    if (opt.amount != null) setAmount(opt.amount);
+                  }}
+                  className={[
+                    'rounded-input border px-2 py-2 text-sm text-center transition',
+                    active
+                      ? 'border-accent bg-accent-light text-accent'
+                      : 'border-border bg-surface text-ink hover:bg-surface-2',
+                  ].join(' ')}
+                >
+                  <div className="font-medium">{opt.label}</div>
+                  {opt.amount != null && (
+                    <div className="text-xs mt-0.5 opacity-80">{formatCurrency(opt.amount)}</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <Input
           label="Amount"
           type="number"
@@ -119,7 +160,10 @@ export default function AddPaymentSlideOver({
           min={0}
           max={balance}
           value={amount}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+            setPayKind('custom');
+            setAmount(e.target.value);
+          }}
           error={errors.amount}
           required
         />

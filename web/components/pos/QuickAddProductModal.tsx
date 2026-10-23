@@ -11,16 +11,37 @@ import { buildSimpleProductPayload } from '@/lib/products/quickCreate';
 import { toast } from '@/store/toastStore';
 import { useAuthStore } from '@/store/authStore';
 
+function variantFromCreated(created: any) {
+  const v = created?.variants?.[0];
+  if (!created?.id || !v?.id) return null;
+  return {
+    productId: created.id,
+    variantId: v.id,
+    productName: created.name,
+    imagePath: created.imagePath || v.imagePath,
+    sku: v.sku,
+    barcode: v.barcode,
+    internalBarcode: v.internalBarcode,
+    unitLabel: created.unitLabel,
+    costPrice: v.costPrice,
+    stockQty: v.stockQty,
+  };
+}
+
 export interface QuickAddProductModalProps {
   open: boolean;
   onClose: () => void;
   /** Refresh POS product grid after create */
   onRefreshProducts?: () => void;
-  /** Add the new variant to the cart (POS search shape) */
+  /** Add the new variant to the cart / PO (search-result shape) */
   onAddToCart?: (variant: any) => void;
   /** Prefill the barcode (e.g. an unknown code that was just scanned) */
   initialBarcode?: string;
   categoryRequired?: boolean;
+  /** POS waits for stock; purchase orders add the line even at zero. */
+  addToOrderEvenIfZeroStock?: boolean;
+  addToOrderLabel?: string;
+  submitAddLabel?: string;
 }
 
 export default function QuickAddProductModal({
@@ -30,6 +51,9 @@ export default function QuickAddProductModal({
   onAddToCart,
   initialBarcode = '',
   categoryRequired = true,
+  addToOrderEvenIfZeroStock = false,
+  addToOrderLabel = 'Add to current order when in stock',
+  submitAddLabel = 'Save & add to cart',
 }: QuickAddProductModalProps) {
   const permissions = useAuthStore((s) => s.permissions);
   const canSeeCost = permissions.includes('product.view_cost');
@@ -110,10 +134,17 @@ export default function QuickAddProductModal({
       if (addToCart && onAddToCart) {
         const code = barcode.trim();
         const matches = await searchProducts(code || created.name, 10);
-        const variant = (matches || []).find((v: any) => v.productId === created.id);
-        if (variant && Number(variant.stockQty || 0) > 0) {
+        const variant =
+          (matches || []).find((v: any) => v.productId === created.id) ||
+          variantFromCreated(created);
+        const canAdd =
+          !!variant &&
+          (addToOrderEvenIfZeroStock || Number(variant.stockQty || 0) > 0);
+        if (canAdd) {
           onAddToCart(variant);
-          toast.success('Added to this order.');
+          toast.success(
+            addToOrderEvenIfZeroStock ? 'Added to this purchase order.' : 'Added to this order.',
+          );
         } else if (Number(openingStock || 0) <= 0) {
           toast.info('Product created with zero stock — set stock in Products to sell it.');
         }
@@ -141,7 +172,7 @@ export default function QuickAddProductModal({
             Cancel
           </Button>
           <Button onClick={submit} loading={saving} disabled={loadingTree && categoryRequired}>
-            {addToCart && onAddToCart ? 'Save & add to cart' : 'Create product'}
+            {addToCart && onAddToCart ? submitAddLabel : 'Create product'}
           </Button>
         </>
       }
@@ -207,15 +238,17 @@ export default function QuickAddProductModal({
             placeholder="0.00 if unknown"
           />
         )}
-        <label className="flex items-center gap-2 text-sm text-ink cursor-pointer select-none">
-          <input
-            type="checkbox"
-            className="rounded border-border text-accent focus:ring-accent"
-            checked={addToCart}
-            onChange={(e) => setAddToCart(e.target.checked)}
-          />
-          Add to current order when in stock
-        </label>
+        {onAddToCart && (
+          <label className="flex items-center gap-2 text-sm text-ink cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="rounded border-border text-accent focus:ring-accent"
+              checked={addToCart}
+              onChange={(e) => setAddToCart(e.target.checked)}
+            />
+            {addToOrderLabel}
+          </label>
+        )}
       </div>
     </Modal>
   );
