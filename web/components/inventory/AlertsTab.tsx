@@ -19,6 +19,7 @@ import { formatQty, formatRelativeTime } from '@/lib/utils/format';
 import { toast } from '@/store/toastStore';
 import { fileUrl } from '@/lib/config';
 import { onReorderAlert, onStockUpdate } from '@/store/socketStore';
+import RowActions from '@/components/ui/RowActions';
 
 export default function AlertsTab() {
   const router = useRouter();
@@ -165,27 +166,14 @@ export default function AlertsTab() {
       header: '',
       align: 'right',
       render: (r: any) => (
-        <div className="flex justify-end gap-1.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<ShoppingCart className="h-4 w-4" />}
-            disabled
-            title="Available once Purchase Orders are enabled (Phase 4)"
-          >
-            Create PO
-          </Button>
-          {canDismiss && (
-            <Button
-              size="sm"
-              variant="secondary"
-              leftIcon={<X className="h-4 w-4" />}
-              onClick={() => setConfirmDismissId(r.id)}
-            >
-              Dismiss
-            </Button>
-          )}
-        </div>
+        <RowActions
+          label="Alert actions"
+          actions={[
+            // Placeholder until reorder alerts can draft a PO directly.
+            { id: 'po', label: 'Create PO', icon: <ShoppingCart />, disabled: true, onClick: () => {} },
+            { id: 'dismiss', label: 'Dismiss', icon: <X />, hidden: !canDismiss, onClick: () => setConfirmDismissId(r.id) },
+          ]}
+        />
       ),
     },
   ];

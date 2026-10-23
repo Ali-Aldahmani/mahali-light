@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/authStore';
 import { formatRelativeTime, formatCurrency } from '@/lib/utils/format';
 import { onCountEvent, onStockUpdate } from '@/store/socketStore';
 import StartStockCountModal from './StartStockCountModal';
+import RowActions from '@/components/ui/RowActions';
 
 const STATUS_TONES: Record<string, string> = {
   draft: 'muted',
@@ -143,14 +144,10 @@ export default function StockCountsTab() {
       header: '',
       align: 'right',
       render: (r: any) => (
-        <Button
-          size="sm"
-          variant="ghost"
-          rightIcon={<ArrowRight className="h-4 w-4" />}
-          onClick={() => router.push(`/inventory/counts/${r.id}`)}
-        >
-          Open
-        </Button>
+        <RowActions
+          label="Stock count actions"
+          actions={[{ id: 'open', label: 'Open', icon: <ArrowRight />, onClick: () => router.push(`/inventory/counts/${r.id}`) }]}
+        />
       ),
     },
   ].filter(Boolean) as any[];

@@ -18,8 +18,13 @@ import {
 } from '@/services/employeeService';
 import { toast } from '@/store/toastStore';
 import { formatTime } from '@/lib/utils/format';
+import RowActions from '@/components/ui/RowActions';
+import { useAuthStore } from '@/store/authStore';
 
 export default function EmployeesPage() {
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const canEdit = hasPermission('employee.edit');
+  const canDelete = hasPermission('employee.delete');
   const [rows, setRows] = useState<any[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0 });
   const [search, setSearch] = useState('');
@@ -108,38 +113,33 @@ export default function EmployeesPage() {
         sortable: false,
         align: 'right',
         render: (row: any) => (
-          <div className="flex items-center justify-end gap-1">
-            <PermissionGate permission="employee.edit">
-              <Button
-                variant="ghost"
-                size="sm"
-                leftIcon={<Pencil size={14} />}
-                onClick={() => {
+          <RowActions
+            label={`Actions for ${row.name}`}
+            actions={[
+              {
+                id: 'edit',
+                label: 'Edit',
+                icon: <Pencil />,
+                hidden: !canEdit,
+                onClick: () => {
                   setEditing(row);
                   setFormOpen(true);
-                }}
-              >
-                Edit
-              </Button>
-            </PermissionGate>
-            <PermissionGate permission="employee.delete">
-              {row.isActive && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<UserMinus size={14} />}
-                  className="text-error hover:bg-error-light"
-                  onClick={() => setConfirmEmp(row)}
-                >
-                  Deactivate
-                </Button>
-              )}
-            </PermissionGate>
-          </div>
+                },
+              },
+              {
+                id: 'deactivate',
+                label: 'Deactivate',
+                icon: <UserMinus />,
+                tone: 'danger',
+                hidden: !canDelete || !row.isActive,
+                onClick: () => setConfirmEmp(row),
+              },
+            ]}
+          />
         ),
       },
     ],
-    [],
+    [canEdit, canDelete],
   );
 
   async function confirmDeactivate() {

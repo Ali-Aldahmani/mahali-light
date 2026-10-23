@@ -14,6 +14,7 @@ import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import PrivateFileLink from '@/components/ui/PrivateFileLink';
 import { storeDate } from '@/lib/utils/format';
+import RowActions from '@/components/ui/RowActions';
 
 function aed(n: any) {
   return `AED ${Number(n || 0).toFixed(2)}`;
@@ -195,21 +196,16 @@ export default function OneTimeExpensesTab({
       align: 'right',
       render: (r: any) => {
         // Same-day rule mirrors the server: compare the created_at calendar day.
-        const created = r.createdAt
-          ? storeDate(r.createdAt)
-          : null;
-        const canDelete =
-          hasPermission('bills.pay') && created && created === todayIso();
-        return canDelete ? (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(r)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-error hover:bg-error-light"
-            title="Delete (same day only)"
-          >
-            <Trash2 size={16} />
-          </button>
-        ) : null;
+        const created = r.createdAt ? storeDate(r.createdAt) : null;
+        const canDelete = hasPermission('bills.pay') && created && created === todayIso();
+        return (
+          <RowActions
+            label="Expense actions"
+            actions={[
+              { id: 'delete', label: 'Delete', icon: <Trash2 />, tone: 'danger', hidden: !canDelete, onClick: () => setConfirmDelete(r) },
+            ]}
+          />
+        );
       },
     },
   ];

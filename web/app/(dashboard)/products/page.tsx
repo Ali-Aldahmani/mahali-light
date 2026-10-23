@@ -23,6 +23,7 @@ import { useAuthStore } from '@/store/authStore';
 import { onProductUpdate } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
 import { fileUrl } from '@/lib/config';
+import RowActions from '@/components/ui/RowActions';
 
 const SOLD_BY_OPTIONS = [
   { value: '', label: 'All units' },
@@ -50,6 +51,8 @@ function ProductsPageContent() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const canViewCost = hasPermission('product.view_cost');
   const canManagePricingRestrictions = hasPermission('product.manage_pricing_restrictions');
+  const canEditProduct = hasPermission('product.edit');
+  const canDeleteProduct = hasPermission('product.delete');
   const refreshStore = useProductStore((s) => s.refreshAll);
 
   // Requirement #2: bulk-apply a max-discount restriction to many products
@@ -282,46 +285,31 @@ function ProductsPageContent() {
         sortable: false,
         align: 'right' as const,
         render: (row: any) => (
-          <div
-            className="flex items-center justify-end gap-1"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              leftIcon={<Eye size={13} />}
-              onClick={() => router.push(`/products/${row.id}`)}
-            >
-              View
-            </Button>
-            <PermissionGate permission="product.edit">
-              <Button
-                variant="ghost"
-                size="sm"
-                leftIcon={<Pencil size={13} />}
-                onClick={() => router.push(`/products/${row.id}?edit=1`)}
-              >
-                Edit
-              </Button>
-            </PermissionGate>
-            <PermissionGate permission="product.delete">
-              {row.isActive && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<Trash2 size={13} />}
-                  className="text-error hover:bg-error-light"
-                  onClick={() => setConfirmDel(row)}
-                >
-                  Deactivate
-                </Button>
-              )}
-            </PermissionGate>
-          </div>
+          <RowActions
+            label={`Actions for ${row.name}`}
+            actions={[
+              { id: 'view', label: 'View', icon: <Eye />, onClick: () => router.push(`/products/${row.id}`) },
+              {
+                id: 'edit',
+                label: 'Edit',
+                icon: <Pencil />,
+                hidden: !canEditProduct,
+                onClick: () => router.push(`/products/${row.id}?edit=1`),
+              },
+              {
+                id: 'deactivate',
+                label: 'Deactivate',
+                icon: <Trash2 />,
+                tone: 'danger',
+                hidden: !canDeleteProduct || !row.isActive,
+                onClick: () => setConfirmDel(row),
+              },
+            ]}
+          />
         ),
       },
     ],
-    [router, canViewCost, canManagePricingRestrictions, selectedIds],
+    [router, canViewCost, canManagePricingRestrictions, canEditProduct, canDeleteProduct, selectedIds],
   );
 
   async function confirmDelete() {

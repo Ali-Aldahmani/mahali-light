@@ -37,6 +37,7 @@ import { toast } from '@/store/toastStore';
 import { listCustomers, deactivateCustomer } from '@/services/customerService';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { onCustomerBalanceUpdate } from '@/store/socketStore';
+import RowActions from '@/components/ui/RowActions';
 
 interface CustomerRow extends CustomerRecord {
   totalSpent?: number;
@@ -201,59 +202,37 @@ function CustomersPageContent() {
         sortable: false,
         align: 'right' as const,
         render: (r: CustomerRow) => (
-          <div className="inline-flex items-center justify-end gap-1">
-            <Button
-              size="sm"
-              variant="ghost"
-              leftIcon={<Eye className="h-4 w-4" />}
-              onClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
-                router.push(`/customers/${r.id}`);
-              }}
-            >
-              View
-            </Button>
-            {canCollect && (r.creditBalance || 0) > 0 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                leftIcon={<CreditCard className="h-4 w-4" />}
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  setPayingCustomer(r);
-                }}
-              >
-                Collect
-              </Button>
-            )}
-            {canEdit && (
-              <Button
-                size="sm"
-                variant="ghost"
-                leftIcon={<Edit3 className="h-4 w-4" />}
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
+          <RowActions
+            label={`Actions for ${r.name}`}
+            actions={[
+              { id: 'view', label: 'View', icon: <Eye />, onClick: () => router.push(`/customers/${r.id}`) },
+              {
+                id: 'collect',
+                label: 'Collect',
+                icon: <CreditCard />,
+                hidden: !canCollect || !((r.creditBalance || 0) > 0),
+                onClick: () => setPayingCustomer(r),
+              },
+              {
+                id: 'edit',
+                label: 'Edit',
+                icon: <Edit3 />,
+                hidden: !canEdit,
+                onClick: () => {
                   setEditing(r);
                   setFormOpen(true);
-                }}
-              >
-                Edit
-              </Button>
-            )}
-            {canDelete && r.isActive && (
-              <Button
-                size="sm"
-                variant="ghost"
-                leftIcon={<Power className="h-4 w-4" />}
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  setConfirm(r);
-                }}
-              >
-                Deactivate
-              </Button>
-            )}
-          </div>
+                },
+              },
+              {
+                id: 'deactivate',
+                label: 'Deactivate',
+                icon: <Power />,
+                tone: 'danger',
+                hidden: !canDelete || !r.isActive,
+                onClick: () => setConfirm(r),
+              },
+            ]}
+          />
         ),
       },
     ],

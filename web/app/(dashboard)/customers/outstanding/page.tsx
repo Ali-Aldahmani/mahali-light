@@ -25,6 +25,7 @@ import { toast } from '@/store/toastStore';
 import { getOutstandingReceivables } from '@/services/customerService';
 import { formatCurrency, formatDate, storeDate } from '@/lib/utils/format';
 import { onCustomerBalanceUpdate } from '@/store/socketStore';
+import RowActions from '@/components/ui/RowActions';
 
 interface ReceivableRow extends CustomerRecord {
   creditBalance?: number;
@@ -189,20 +190,12 @@ function OutstandingReceivablesPageContent() {
       header: '',
       align: 'right' as const,
       sortable: false,
-      render: (r: ReceivableRow) =>
-        canCollect && (
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<CreditCard className="h-4 w-4" />}
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
-              setPaying(r);
-            }}
-          >
-            Collect
-          </Button>
-        ),
+      render: (r: ReceivableRow) => (
+        <RowActions
+          label="Receivable actions"
+          actions={[{ id: 'collect', label: 'Collect', icon: <CreditCard />, hidden: !canCollect, onClick: () => setPaying(r) }]}
+        />
+      ),
     },
   ];
 

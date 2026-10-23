@@ -23,6 +23,7 @@ import {
 } from '@/services/reportService';
 import { listEmployees } from '@/services/employeeService';
 import { toast } from '@/store/toastStore';
+import RowActions from '@/components/ui/RowActions';
 
 const FREQUENCIES = [
   { value: 'daily', label: 'Daily' },
@@ -97,24 +98,29 @@ function ScheduledReportsPageInner() {
     }
   }
 
-  async function runNow(item: any) {
+  // Returns whether the report ran (drives the row action's confirmation).
+  async function runNow(item: any): Promise<boolean> {
     try {
       await runScheduleNow(item.id);
       toast.success('Report generated.');
       refresh();
+      return true;
     } catch (err: any) {
       toast.error(err.message || 'Run failed.');
+      return false;
     }
   }
 
-  async function remove(item: any) {
-    if (!window.confirm(`Delete schedule for "${item.report_type}"?`)) return;
+  async function remove(item: any): Promise<boolean> {
+    if (!window.confirm(`Delete schedule for "${item.report_type}"?`)) return false;
     try {
       await deleteSchedule(item.id);
       toast.success('Schedule removed.');
       refresh();
+      return true;
     } catch (err: any) {
       toast.error(err.message || 'Delete failed.');
+      return false;
     }
   }
 
@@ -206,18 +212,16 @@ function ScheduledReportsPageInner() {
               key: 'actions',
               header: '',
               sortable: false,
+              align: 'right' as const,
               render: (r: any) => (
-                <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" leftIcon={<Play size={14} />} onClick={() => runNow(r)}>
-                    Run
-                  </Button>
-                  <Button size="sm" variant="ghost" leftIcon={<Pencil size={14} />} onClick={() => setEditing(r)}>
-                    Edit
-                  </Button>
-                  <Button size="sm" variant="ghost" leftIcon={<Trash2 size={14} />} onClick={() => remove(r)}>
-                    Delete
-                  </Button>
-                </div>
+                <RowActions
+                  label="Schedule actions"
+                  actions={[
+                    { id: 'run', label: 'Run now', icon: <Play />, doneLabel: 'Generated', onClick: () => runNow(r) },
+                    { id: 'edit', label: 'Edit', icon: <Pencil />, onClick: () => setEditing(r) },
+                    { id: 'delete', label: 'Delete', icon: <Trash2 />, tone: 'danger', onClick: () => remove(r) },
+                  ]}
+                />
               ),
             },
           ]}

@@ -23,6 +23,7 @@ import {
   CalendarDays,
   Edit,
   Shield,
+  Undo2,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Tabs from '@/components/ui/Tabs';
@@ -53,6 +54,7 @@ import {
 import { voidPayment } from '@/services/customerPaymentService';
 import { formatCurrency, formatDate, formatDateTime, storeDate } from '@/lib/utils/format';
 import { onCustomerBalanceUpdate } from '@/store/socketStore';
+import RowActions from '@/components/ui/RowActions';
 
 interface CustomerProfile extends CustomerRecord {
   totalSpent?: number;
@@ -558,7 +560,6 @@ function PaymentsTab({
     total: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [voidingId, setVoidingId] = useState<number | string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -578,18 +579,18 @@ function PaymentsTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
 
-  async function handleVoid(p: PaymentRow) {
-    if (!confirm('Reverse this payment? Same-day payments only.')) return;
-    setVoidingId(p.id);
+  // Returns whether the payment was voided (drives the row action's confirmation).
+  async function handleVoid(p: PaymentRow): Promise<boolean> {
+    if (!confirm('Reverse this payment? Same-day payments only.')) return false;
     try {
       await voidPayment(p.id);
       toast.success('Payment voided.');
       await load();
       onChanged?.();
+      return true;
     } catch (err: any) {
       toast.error(err?.message || 'Could not void payment.');
-    } finally {
-      setVoidingId(null);
+      return false;
     }
   }
 
@@ -653,21 +654,23 @@ function PaymentsTab({
             header: '',
             align: 'right' as const,
             sortable: false,
-            render: (r: PaymentRow) => {
-              const isToday =
-                storeDate(r.createdAt) === today;
-              if (!canCollect || !isToday) return null;
-              return (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => handleVoid(r)}
-                  loading={voidingId === r.id}
-                >
-                  Void
-                </Button>
-              );
-            },
+            render: (r: PaymentRow) => (
+              <RowActions
+                label="Payment actions"
+                actions={[
+                  {
+                    id: 'void',
+                    label: 'Void',
+                    icon: <Undo2 />,
+                    tone: 'danger',
+                    doneLabel: 'Voided',
+                    // Same-day payments only.
+                    hidden: !canCollect || storeDate(r.createdAt) !== today,
+                    onClick: () => handleVoid(r),
+                  },
+                ]}
+              />
+            ),
           },
         ]}
         rows={data.rows}

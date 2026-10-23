@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Eye, Mail, ShieldAlert } from 'lucide-react';
+import { Check, Eye, Mail, ShieldAlert, X } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Table, { type TableColumn } from '@/components/ui/Table';
 import Button from '@/components/ui/Button';
@@ -19,6 +19,7 @@ import {
   rejectEditRequest,
 } from '@/services/invoiceEditRequestService';
 import { formatDateTime } from '@/lib/utils/format';
+import RowActions from '@/components/ui/RowActions';
 
 const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
@@ -71,15 +72,18 @@ function InvoiceEditRequestsPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function approve(row: any) {
+  // Returns whether the request was approved (drives the row action's confirmation).
+  async function approve(row: any): Promise<boolean> {
     setBusyId(row.id);
     try {
       await approveEditRequest(row.invoiceId, row.id);
       toast.success('Edit applied.');
       load();
       refreshEditCount?.();
+      return true;
     } catch (err: any) {
       toast.error(err?.message || 'Could not approve.');
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -164,38 +168,37 @@ function InvoiceEditRequestsPageContent() {
       header: '',
       align: 'right' as const,
       sortable: false,
-      render: (r: any) =>
-        r.status === 'pending' ? (
-          <div className="flex items-center gap-1 justify-end">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setRejectingId(r.id);
-                setReason('');
-              }}
-            >
-              Reject
-            </Button>
-            <Button
-              size="sm"
-              leftIcon={<Check className="h-3.5 w-3.5" />}
-              onClick={() => approve(r)}
-              loading={busyId === r.id}
-            >
-              Approve
-            </Button>
-          </div>
-        ) : (
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<Eye className="h-3.5 w-3.5" />}
-            onClick={() => router.push(`/invoices/${r.invoiceId}`)}
-          >
-            View
-          </Button>
-        ),
+      render: (r: any) => {
+        const pending = r.status === 'pending';
+        return (
+          <RowActions
+            label="Edit request actions"
+            primary={pending ? 'approve' : 'view'}
+            actions={[
+              { id: 'view', label: 'View', icon: <Eye />, onClick: () => router.push(`/invoices/${r.invoiceId}`) },
+              {
+                id: 'reject',
+                label: 'Reject',
+                icon: <X />,
+                tone: 'danger',
+                hidden: !pending,
+                onClick: () => {
+                  setRejectingId(r.id);
+                  setReason('');
+                },
+              },
+              {
+                id: 'approve',
+                label: 'Approve',
+                icon: <Check />,
+                doneLabel: 'Approved',
+                hidden: !pending,
+                onClick: () => approve(r),
+              },
+            ]}
+          />
+        );
+      },
     },
   ];
 

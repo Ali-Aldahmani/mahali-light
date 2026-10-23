@@ -18,6 +18,7 @@ import { listRoles } from '@/services/roleService';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import { timeAgo } from '@/lib/utils/format';
+import RowActions from '@/components/ui/RowActions';
 
 export default function UsersPage() {
   const router = useRouter();
@@ -126,60 +127,53 @@ export default function UsersPage() {
         header: '',
         sortable: false,
         align: 'right',
-        render: (row: any) => (
-          <div className="flex items-center justify-end gap-1">
-            <PermissionGate permission="user.change_role">
-              <Button
-                variant="ghost"
-                size="sm"
-                leftIcon={<Shield size={14} />}
-                onClick={() => router.push(`/team/users/${row.id}/permissions`)}
-              >
-                Permissions
-              </Button>
-            </PermissionGate>
-            <PermissionGate permission="user.edit">
-              <Button
-                variant="ghost"
-                size="sm"
-                leftIcon={<Pencil size={14} />}
-                onClick={() => {
-                  setEditing(row);
-                  setFormOpen(true);
-                }}
-              >
-                Edit
-              </Button>
-            </PermissionGate>
-            <PermissionGate permission="user.force_logout">
-              <Button
-                variant="ghost"
-                size="sm"
-                leftIcon={<LogOut size={14} />}
-                disabled={!row.isOnline || row.id === currentUserId}
-                onClick={() => setConfirm({ type: 'force_logout', user: row })}
-              >
-                Force logout
-              </Button>
-            </PermissionGate>
-            <PermissionGate permission="user.edit">
-              {row.isActive && row.id !== currentUserId && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<UserX size={14} />}
-                  onClick={() => setConfirm({ type: 'deactivate', user: row })}
-                  className="text-error hover:bg-error-light"
-                >
-                  Deactivate
-                </Button>
-              )}
-            </PermissionGate>
-          </div>
-        ),
+        render: (row: any) => {
+          const isMe = row.id === currentUserId;
+          return (
+            <RowActions
+              label={`Actions for ${row.username}`}
+              primary={hasPermission('user.edit') ? 'edit' : undefined}
+              actions={[
+                {
+                  id: 'permissions',
+                  label: 'Permissions',
+                  icon: <Shield />,
+                  hidden: !hasPermission('user.change_role'),
+                  onClick: () => router.push(`/team/users/${row.id}/permissions`),
+                },
+                {
+                  id: 'edit',
+                  label: 'Edit',
+                  icon: <Pencil />,
+                  hidden: !hasPermission('user.edit'),
+                  onClick: () => {
+                    setEditing(row);
+                    setFormOpen(true);
+                  },
+                },
+                {
+                  id: 'logout',
+                  label: 'Force logout',
+                  icon: <LogOut />,
+                  hidden: !hasPermission('user.force_logout'),
+                  disabled: !row.isOnline || isMe,
+                  onClick: () => setConfirm({ type: 'force_logout', user: row }),
+                },
+                {
+                  id: 'deactivate',
+                  label: 'Deactivate',
+                  icon: <UserX />,
+                  tone: 'danger',
+                  hidden: !hasPermission('user.edit') || !row.isActive || isMe,
+                  onClick: () => setConfirm({ type: 'deactivate', user: row }),
+                },
+              ]}
+            />
+          );
+        },
       },
     ],
-    [currentUserId, router],
+    [currentUserId, router, hasPermission],
   );
 
   async function runConfirm() {

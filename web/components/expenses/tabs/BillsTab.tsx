@@ -33,6 +33,7 @@ import {
 import { useBillStore } from '@/store/billStore';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
+import RowActions from '@/components/ui/RowActions';
 
 function aed(n: any) {
   return `AED ${Number(n || 0).toFixed(2)}`;
@@ -181,90 +182,64 @@ export default function BillsTab({
       key: 'actions',
       header: '',
       align: 'right',
-      render: (b: any) => (
-        <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={() => router.push(`/expenses/bills/${b.id}`)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-surface-2"
-            title="View"
-          >
-            <Eye size={16} />
-          </button>
-          {hasPermission('bills.pay') &&
-            b.upcomingPaymentId &&
-            b.status === 'active' && (
-              <button
-                type="button"
-                onClick={() => {
+      render: (b: any) => {
+        const canManage = hasPermission('bills.manage') && b.status !== 'cancelled';
+        return (
+          <RowActions
+            label={`Actions for ${b.name}`}
+            actions={[
+              { id: 'view', label: 'View', icon: <Eye />, onClick: () => router.push(`/expenses/bills/${b.id}`) },
+              {
+                id: 'pay',
+                label: 'Pay',
+                icon: <CreditCard />,
+                hidden: !(hasPermission('bills.pay') && b.upcomingPaymentId && b.status === 'active'),
+                onClick: () => {
                   // Use the matching payment row from the list query above so
                   // the slide-over has all the meta it needs.
                   const p = payments.find((p) => p.id === b.upcomingPaymentId);
                   if (p) onPayClick(p);
-                }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-accent hover:bg-accent-light"
-                title="Pay"
-              >
-                <CreditCard size={16} />
-              </button>
-            )}
-          {hasPermission('bills.manage') && b.status !== 'cancelled' && (
-            <>
-              <button
-                type="button"
-                onClick={() => setEditing(b)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-surface-2"
-                title="Edit"
-              >
-                <Pencil size={16} />
-              </button>
-              {b.status === 'active' ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setConfirm({
-                      action: 'pause',
-                      bill: b,
-                      title: 'Pause this bill?',
-                      message:
-                        'No reminders or new payment cycles will be generated until it is resumed.',
-                    })
-                  }
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-warning hover:bg-warning-light"
-                  title="Pause"
-                >
-                  <Pause size={16} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onSetStatus(b, 'resume')}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-success hover:bg-success-light"
-                  title="Resume"
-                >
-                  <Play size={16} />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() =>
+                },
+              },
+              { id: 'edit', label: 'Edit', icon: <Pencil />, hidden: !canManage, onClick: () => setEditing(b) },
+              {
+                id: 'pause',
+                label: 'Pause',
+                icon: <Pause />,
+                hidden: !canManage || b.status !== 'active',
+                onClick: () =>
+                  setConfirm({
+                    action: 'pause',
+                    bill: b,
+                    title: 'Pause this bill?',
+                    message: 'No reminders or new payment cycles will be generated until it is resumed.',
+                  }),
+              },
+              {
+                id: 'resume',
+                label: 'Resume',
+                icon: <Play />,
+                hidden: !canManage || b.status === 'active',
+                onClick: () => onSetStatus(b, 'resume'),
+              },
+              {
+                id: 'cancel',
+                label: 'Cancel bill',
+                icon: <XCircle />,
+                tone: 'danger',
+                hidden: !canManage,
+                onClick: () =>
                   setConfirm({
                     action: 'cancel',
                     bill: b,
                     title: 'Cancel this bill?',
-                    message:
-                      'The bill will be marked cancelled and no further payments will be tracked.',
-                  })
-                }
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-error hover:bg-error-light"
-                title="Cancel"
-              >
-                <XCircle size={16} />
-              </button>
-            </>
-          )}
-        </div>
-      ),
+                    message: 'The bill will be marked cancelled and no further payments will be tracked.',
+                  }),
+              },
+            ]}
+          />
+        );
+      },
     },
   ];
 

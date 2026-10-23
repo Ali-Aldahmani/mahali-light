@@ -10,6 +10,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import CategoryFormSlideOver from '@/components/bills/CategoryFormSlideOver';
 import { listCategories, deleteCategory } from '@/services/expenseCategoryService';
 import { toast } from '@/store/toastStore';
+import RowActions from '@/components/ui/RowActions';
 
 export default function CategoriesTab({
   refreshTick,
@@ -94,29 +95,21 @@ export default function CategoriesTab({
       render: (r: any) => {
         const hasUsage = (r.billsCount || 0) + (r.expensesCount || 0) > 0;
         return (
-          <div className="flex items-center justify-end gap-1">
-            <button
-              type="button"
-              onClick={() => setEditing(r)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-surface-2"
-              title="Edit"
-            >
-              <Pencil size={16} />
-            </button>
-            <button
-              type="button"
-              disabled={hasUsage}
-              onClick={() => setConfirmDelete(r)}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-md ${
-                hasUsage
-                  ? 'text-ink-muted/50 cursor-not-allowed'
-                  : 'text-error hover:bg-error-light'
-              }`}
-              title={hasUsage ? 'Cannot delete — in use' : 'Delete'}
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
+          <RowActions
+            label={`Actions for ${r.name}`}
+            actions={[
+              { id: 'edit', label: 'Edit', icon: <Pencil />, onClick: () => setEditing(r) },
+              {
+                id: 'delete',
+                // Categories in use by bills or expenses can't be deleted.
+                label: hasUsage ? 'In use' : 'Delete',
+                icon: <Trash2 />,
+                tone: 'danger',
+                disabled: hasUsage,
+                onClick: () => setConfirmDelete(r),
+              },
+            ]}
+          />
         );
       },
     },

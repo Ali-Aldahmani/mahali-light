@@ -1,0 +1,132 @@
+/* Styles for ExpandingButtonGroup. Geometry comes from CSS variables the
+   component sets per size (--ebg-h, --ebg-icon, --ebg-start, --ebg-gap,
+   --ebg-end); colors come from the Tailwind theme. */
+
+.group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9999px;
+  background: theme('colors.surface-2');
+  box-shadow: inset 0 0 0 1px theme('colors.border');
+  isolation: isolate;
+  vertical-align: middle;
+}
+
+.sm { font-size: 12px; }
+.md { font-size: 13px; }
+
+.item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: var(--ebg-h);
+  padding: 0 var(--ebg-end) 0 var(--ebg-start);
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: theme('colors.ink.muted');
+  font: inherit;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.item:hover { color: theme('colors.ink.DEFAULT'); }
+
+.item[data-expanded] {
+  background: theme('colors.surface');
+  color: theme('colors.ink.DEFAULT');
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px theme('colors.border');
+}
+
+.item[data-expanded][data-tone='danger'] {
+  background: theme('colors.error.light');
+  color: theme('colors.error.DEFAULT');
+  box-shadow: 0 0 0 1px rgb(220 38 38 / 0.18);
+}
+
+/* Confirmation wins over tone: a finished Delete reads as success, not danger. */
+.item[data-state='done'],
+.item[data-state='done'][data-expanded][data-tone] {
+  background: theme('colors.success.light');
+  color: theme('colors.success.DEFAULT');
+  box-shadow: 0 0 0 1px rgb(22 163 74 / 0.2);
+}
+
+.item:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: 1px;
+  border-radius: 9999px;
+}
+
+.item[aria-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.item[aria-busy] { cursor: progress; }
+.item[aria-busy] .icon { animation: ebg-pulse 900ms ease-in-out infinite alternate; }
+
+@keyframes ebg-pulse {
+  from { opacity: 1; }
+  to { opacity: 0.35; }
+}
+
+.icon {
+  display: grid;
+  flex: 0 0 var(--ebg-icon);
+  width: var(--ebg-icon);
+  height: var(--ebg-icon);
+}
+
+.glyph {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+}
+
+.glyph svg {
+  width: 100%;
+  height: 100%;
+}
+
+.label {
+  display: grid;
+  margin-left: var(--ebg-gap);
+}
+
+.label > * { grid-area: 1 / 1; }
+
+.word { display: block; }
+
+.sizer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.item[data-unmeasured] .label { visibility: hidden; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item { transition: none; }
+  .item[aria-busy] .icon { animation: none; }
+}

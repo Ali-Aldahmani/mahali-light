@@ -31,6 +31,7 @@ import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { onPurchaseOrderEvent } from '@/store/socketStore';
 import SupplierFormSlideOver from '@/components/suppliers/SupplierFormSlideOver';
 import type { Supplier, SupplierListMeta } from '@/components/suppliers/types';
+import RowActions from '@/components/ui/RowActions';
 
 const ACTIVE_OPTIONS = [
   { value: '', label: 'All suppliers' },
@@ -171,46 +172,30 @@ function SuppliersPageContent() {
         sortable: false,
         align: 'right' as const,
         render: (r: Supplier) => (
-          <div className="inline-flex items-center justify-end gap-1">
-            <Button
-              size="sm"
-              variant="ghost"
-              leftIcon={<Eye className="h-4 w-4" />}
-              onClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
-                router.push(`/suppliers/${r.id}`);
-              }}
-            >
-              View
-            </Button>
-            {canEdit && (
-              <Button
-                size="sm"
-                variant="ghost"
-                leftIcon={<Edit3 className="h-4 w-4" />}
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
+          <RowActions
+            label={`Actions for ${r.name}`}
+            actions={[
+              { id: 'view', label: 'View', icon: <Eye />, onClick: () => router.push(`/suppliers/${r.id}`) },
+              {
+                id: 'edit',
+                label: 'Edit',
+                icon: <Edit3 />,
+                hidden: !canEdit,
+                onClick: () => {
                   setEditingSupplier(r);
                   setFormOpen(true);
-                }}
-              >
-                Edit
-              </Button>
-            )}
-            {canDelete && r.isActive && (
-              <Button
-                size="sm"
-                variant="ghost"
-                leftIcon={<Power className="h-4 w-4" />}
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  setConfirm(r);
-                }}
-              >
-                Deactivate
-              </Button>
-            )}
-          </div>
+                },
+              },
+              {
+                id: 'deactivate',
+                label: 'Deactivate',
+                icon: <Power />,
+                tone: 'danger',
+                hidden: !canDelete || !r.isActive,
+                onClick: () => setConfirm(r),
+              },
+            ]}
+          />
         ),
       },
     ],

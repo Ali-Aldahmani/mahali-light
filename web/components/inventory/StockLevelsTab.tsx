@@ -30,6 +30,7 @@ import { formatQty, formatCurrency, storeDate } from '@/lib/utils/format';
 import RequestAdjustmentSlideOver from './RequestAdjustmentSlideOver';
 import StockMovementsDrawer from './StockMovementsDrawer';
 import { onStockUpdate } from '@/store/socketStore';
+import RowActions from '@/components/ui/RowActions';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
@@ -255,34 +256,30 @@ export default function StockLevelsTab() {
       header: '',
       align: 'right',
       render: (r: any) => (
-        <div className="flex items-center justify-end gap-1.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<History className="h-4 w-4" />}
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
-              setMovementsVariant(r);
-              setMovementsOpen(true);
-            }}
-          >
-            Movements
-          </Button>
-          {canRequestAdj && (
-            <Button
-              size="sm"
-              variant="secondary"
-              leftIcon={<Plus className="h-4 w-4" />}
-              onClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
+        <RowActions
+          label="Stock actions"
+          actions={[
+            {
+              id: 'movements',
+              label: 'Movements',
+              icon: <History />,
+              onClick: () => {
+                setMovementsVariant(r);
+                setMovementsOpen(true);
+              },
+            },
+            {
+              id: 'adjust',
+              label: 'Adjust',
+              icon: <Plus />,
+              hidden: !canRequestAdj,
+              onClick: () => {
                 setAdjustVariant(r);
                 setAdjustOpen(true);
-              }}
-            >
-              Adjust
-            </Button>
-          )}
-        </div>
+              },
+            },
+          ]}
+        />
       ),
     });
     return cols;

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Check, X, Search } from 'lucide-react';
+import { Plus, Check, X, Search, Eye } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
@@ -24,6 +24,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { formatQty, formatRelativeTime } from '@/lib/utils/format';
 import { onAdjustmentEvent } from '@/store/socketStore';
 import RequestAdjustmentSlideOver from './RequestAdjustmentSlideOver';
+import RowActions from '@/components/ui/RowActions';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
@@ -211,34 +212,20 @@ export default function AdjustmentsTab() {
       key: 'actions',
       header: '',
       align: 'right',
-      render: (r: any) =>
-        canApprove && r.status === 'pending' ? (
-          <div className="flex gap-1.5 justify-end">
-            <Button
-              size="sm"
-              variant="secondary"
-              leftIcon={<X className="h-4 w-4" />}
-              onClick={() => openReview(r, 'reject')}
-            >
-              Reject
-            </Button>
-            <Button
-              size="sm"
-              leftIcon={<Check className="h-4 w-4" />}
-              onClick={() => openReview(r, 'approve')}
-            >
-              Approve
-            </Button>
-          </div>
-        ) : (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => openReview(r, 'view')}
-          >
-            View
-          </Button>
-        ),
+      render: (r: any) => {
+        const reviewable = canApprove && r.status === 'pending';
+        return (
+          <RowActions
+            label="Adjustment actions"
+            primary={reviewable ? 'approve' : 'view'}
+            actions={[
+              { id: 'view', label: 'View', icon: <Eye />, onClick: () => openReview(r, 'view') },
+              { id: 'reject', label: 'Reject', icon: <X />, tone: 'danger', hidden: !reviewable, onClick: () => openReview(r, 'reject') },
+              { id: 'approve', label: 'Approve', icon: <Check />, hidden: !reviewable, onClick: () => openReview(r, 'approve') },
+            ]}
+          />
+        );
+      },
     },
   ];
 
