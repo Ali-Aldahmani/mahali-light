@@ -6,7 +6,7 @@ import { useUiErrorStore } from '@/store/uiErrorStore';
 import { toast } from '@/store/toastStore';
 import { addBreadcrumb } from './breadcrumbService';
 
-const APP_VERSION = '1.9.1';
+const APP_VERSION = '1.10.0';
 
 /** Progress and cancellation for multipart uploads (used by FileDropzone rows). */
 export type UploadOptions = { onProgress?: (percent: number) => void; signal?: AbortSignal };
