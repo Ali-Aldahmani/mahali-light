@@ -69,6 +69,22 @@ async function markRead(req, res, next) {
   }
 }
 
+async function markUnread(req, res, next) {
+  try {
+    const count = await notificationService.markAsUnread({
+      notificationId: req.params.id,
+      userId: req.user.id,
+      role: req.user.role,
+    });
+    ok(res, { unread_count: count });
+  } catch (err) {
+    if (err.code === 'NOTIFICATION_NOT_FOUND') {
+      return next(new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, err.message, { status: 404 }));
+    }
+    next(err);
+  }
+}
+
 async function markAllRead(req, res, next) {
   try {
     const updated = await notificationService.markAllAsRead({
@@ -191,6 +207,7 @@ async function approvalQueue(req, res, next) {
 }
 
 module.exports = {
+  markUnread,
   list,
   unreadCount,
   markRead,

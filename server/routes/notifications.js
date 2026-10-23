@@ -32,6 +32,7 @@ router.get('/unread-count', ctrl.unreadCount);
 router.get('/', ctrl.list);
 router.put('/read-all', ctrl.markAllRead);
 router.put('/:id/read', ctrl.markRead);
+router.put('/:id/unread', ctrl.markUnread);
 router.put('/:id/dismiss', ctrl.dismissOne);
 
 module.exports = router;

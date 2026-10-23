@@ -21,6 +21,10 @@ export function markRead(id) {
   return apiPut(`/notifications/${id}/read`, {});
 }
 
+export function markUnread(id) {
+  return apiPut(`/notifications/${id}/unread`, {});
+}
+
 export function markAllRead() {
   return apiPut(`/notifications/read-all`, {});
 }

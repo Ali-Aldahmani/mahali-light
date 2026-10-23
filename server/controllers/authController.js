@@ -60,6 +60,7 @@ function sanitizeUser(user) {
   return {
     id: user.id,
     username: user.username,
+    full_name: user.full_name || null,
     role: user.role_name,
     roleId: user.role_id,
     employeeId: user.employee_id,

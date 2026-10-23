@@ -323,10 +323,11 @@ async function getUnreadCount(userId, role = null) {
 
 async function assertNotificationVisible({ notificationId, userId, role }) {
   const { rows } = await query(
+    // userScopeSql binds $1 = user and $2 = role, so the id goes third.
     `SELECT n.id
        FROM notifications n
-      WHERE n.id = $1 AND ${userScopeSql(userId, role)}`,
-    [notificationId, userId, role || null],
+      WHERE n.id = $3 AND ${userScopeSql(userId, role)}`,
+    [userId, role || null, notificationId],
   );
   if (!rows.length) {
     const e = new Error('Notification not found.');
@@ -341,6 +342,23 @@ async function markAsRead({ notificationId, userId, role }) {
     `INSERT INTO notification_reads (notification_id, user_id)
      VALUES ($1, $2)
      ON CONFLICT (notification_id, user_id) DO UPDATE SET read_at = EXCLUDED.read_at`,
+    [notificationId, userId],
+  );
+  const count = await getUnreadCount(userId);
+  if (ioInstance) {
+    ioInstance.to(`user:${userId}`).emit('notification_read_ack', {
+      notification_id: notificationId,
+      unread_count: count,
+    });
+  }
+  return count;
+}
+
+// Undo a read: the notification counts as unread for this user again.
+async function markAsUnread({ notificationId, userId, role }) {
+  await assertNotificationVisible({ notificationId, userId, role });
+  await query(
+    `DELETE FROM notification_reads WHERE notification_id = $1 AND user_id = $2`,
     [notificationId, userId],
   );
   const count = await getUnreadCount(userId);
@@ -476,6 +494,7 @@ async function updatePreferences(userId, patch) {
 }
 
 module.exports = {
+  markAsUnread,
   setIoInstance,
   getIoInstance,
   createNotification,

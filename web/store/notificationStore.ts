@@ -103,6 +103,7 @@ interface NotificationState {
   }) => Promise<void>;
   setFilter: (filter: NotificationFilter) => void;
   markRead: (id: number | string) => Promise<void>;
+  markUnread: (id: number | string) => Promise<void>;
   markAllRead: () => Promise<void>;
   dismiss: (id: number | string) => Promise<void>;
   fetchPreferences: () => Promise<void>;
@@ -221,6 +222,19 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
     try {
       await api.markRead(id);
     } catch (_e) { /* silent */ }
+  },
+
+  markUnread: async (id) => {
+    set((s) => ({
+      notifications: s.notifications.map((n) =>
+        n.id === id ? { ...n, is_read: false } : n,
+      ),
+      unreadCount:
+        s.unreadCount + (s.notifications.find((n) => n.id === id)?.is_read ? 1 : 0),
+    }));
+    try {
+      await api.markUnread(id);
+    } catch (_e) { /* silent, like markRead */ }
   },
 
   markAllRead: async () => {
