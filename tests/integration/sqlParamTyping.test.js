@@ -154,9 +154,12 @@ describe.skipIf(!enabled)('SQL statements Postgres used to reject, on real Postg
     expect(leave.status).toBe(status);
   });
 
+  // Corrections are only allowed within the last 30 days, so the record date
+  // must move with the calendar (fixed dates made this fail from mid-October).
+  const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
   it.each([
-    ['approve', '2026-09-14'],
-    ['reject', '2026-09-15'],
+    ['approve', daysAgo(3)],
+    ['reject', daysAgo(4)],
   ])('can %s an attendance correction', async (action, date) => {
     const { rows: [att] } = await db.query(
       `INSERT INTO attendance (employee_id, date, check_in, status)
