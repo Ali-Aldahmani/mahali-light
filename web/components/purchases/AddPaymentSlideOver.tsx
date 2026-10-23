@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Banknote, Building2, FileSpreadsheet, Upload } from 'lucide-react';
+import { Banknote, Building2, FileSpreadsheet } from 'lucide-react';
+import ReceiptUpload from '@/components/ui/ReceiptUpload';
 import SlideOver from '@/components/ui/SlideOver';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -202,18 +203,11 @@ export default function AddPaymentSlideOver({
           <label className="text-sm font-medium text-ink mb-1.5 block">
             Receipt (optional)
           </label>
-          <label className="flex items-center gap-3 rounded-input border border-dashed border-border bg-surface-2 px-3 py-3 cursor-pointer hover:bg-surface">
-            <Upload size={16} className="text-ink-muted" />
-            <span className="text-sm text-ink-muted truncate">
-              {file ? file.name : 'Upload PDF or image'}
-            </span>
-            <input
-              type="file"
-              className="hidden"
-              accept="application/pdf,image/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
-          </label>
+          <ReceiptUpload
+            hint="PDF, JPG, PNG or WebP · max 5 MB"
+            onSelect={setFile}
+            onClear={() => setFile(null)}
+          />
         </div>
 
         <div>

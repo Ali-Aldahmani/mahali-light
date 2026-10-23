@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import NetProfitChart from '@/components/reports/NetProfitChart';
 import ReportTable, { formatCell } from '@/components/reports/ReportTable';
 import ComparisonBadge from '@/components/reports/ComparisonBadge';
@@ -145,8 +145,8 @@ export default function NetProfitPage() {
       </div>
 
       {loading ? (
-        <div className="card border border-border p-12 flex items-center justify-center">
-          <Spinner size="md" className="text-accent" />
+        <div className="card border border-border p-5">
+          <Skeleton lines={4} />
         </div>
       ) : (
         <>

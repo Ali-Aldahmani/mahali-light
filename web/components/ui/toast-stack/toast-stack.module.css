@@ -1,0 +1,199 @@
+/* Styles for ToastStack: a pile of toasts that fans out into a list on hover. */
+
+.viewport {
+  position: fixed;
+  z-index: 100;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.contained { position: absolute; }
+
+.top-right { top: 16px; right: 16px; }
+.top-left { top: 16px; left: 16px; }
+.top-center { top: 16px; left: 50%; transform: translateX(-50%); }
+.bottom-right { bottom: 16px; right: 16px; }
+.bottom-left { bottom: 16px; left: 16px; }
+.bottom-center { bottom: 16px; left: 50%; transform: translateX(-50%); }
+
+.list {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: auto;
+}
+
+/* An empty list takes no pointer, so the page under an empty corner stays clickable. */
+.list[style*='height: 0'] { pointer-events: none; }
+
+/* Every toast sits on the stack's edge; motion values move it into place. */
+.item {
+  position: absolute;
+  right: 0;
+  left: 0;
+  will-change: transform, height, opacity;
+}
+
+.viewport[data-edge='bottom'] .item {
+  bottom: 0;
+  transform-origin: 50% 100%;
+}
+
+.viewport[data-edge='top'] .item {
+  top: 0;
+  transform-origin: 50% 0%;
+}
+
+.card {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid theme('colors.border');
+  border-radius: 14px;
+  background: theme('colors.surface');
+  box-shadow: 0 12px 32px rgb(17 24 39 / 0.12), 0 2px 6px rgb(17 24 39 / 0.06);
+  touch-action: pan-y;
+  user-select: none;
+  cursor: default;
+}
+
+.card[data-dragging] { cursor: grabbing; }
+
+.content {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 10px 12px 14px;
+}
+
+/* ---- Icon ------------------------------------------------------------- */
+
+.icon {
+  position: relative;
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.glyph {
+  grid-area: 1 / 1;
+  display: inline-grid;
+  place-items: center;
+}
+
+.icon[data-type='success'] { color: theme('colors.success.DEFAULT'); }
+.icon[data-type='error'] { color: theme('colors.error.DEFAULT'); }
+.icon[data-type='warning'] { color: theme('colors.warning.DEFAULT'); }
+.icon[data-type='info'] { color: theme('colors.ink.muted'); }
+.icon[data-type='loading'] { color: theme('colors.accent.DEFAULT'); }
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: toast-spin 0.7s linear infinite;
+}
+
+@keyframes toast-spin { to { transform: rotate(360deg); } }
+
+/* ---- Copy ------------------------------------------------------------- */
+
+.copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.title {
+  display: grid;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: theme('colors.ink.DEFAULT');
+}
+
+.line {
+  grid-area: 1 / 1;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.description {
+  font-size: 13px;
+  line-height: 18px;
+  color: theme('colors.ink.muted');
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Action and close ------------------------------------------------- */
+
+.actionSlot {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.actionSlot[data-moving='true'] { white-space: nowrap; }
+
+.action {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid theme('colors.border');
+  border-radius: 8px;
+  background: theme('colors.surface');
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: theme('colors.accent.DEFAULT');
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.action:hover { background: theme('colors.accent.light'); }
+
+.close {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -2px 0 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: theme('colors.ink.muted');
+  cursor: pointer;
+}
+
+.close:hover {
+  background: theme('colors.surface-2');
+  color: theme('colors.ink.DEFAULT');
+}
+
+.action:focus-visible,
+.close:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1.6s; }
+}

@@ -15,6 +15,7 @@ import { getReturnOrder } from '@/services/returnOrderService';
 import { toast } from '@/store/toastStore';
 import { formatCurrency, formatDateTime } from '@/lib/utils/format';
 import type { ReturnOrder } from '../../types';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 const METHOD_ICON: Record<string, any> = {
   cash: Banknote,
@@ -93,9 +94,12 @@ function ReturnOrderDetailPageContent() {
                 <Field
                   label="Customer"
                   value={
-                    <Link href={`/customers/${order.customerId}`} className="text-accent hover:underline">
-                      {order.customerName}
-                    </Link>
+                    <CustomerHoverName
+                      id={order.customerId}
+                      name={order.customerName}
+                      href={`/customers/${order.customerId}`}
+                      className="text-accent hover:underline"
+                    />
                   }
                 />
               )}

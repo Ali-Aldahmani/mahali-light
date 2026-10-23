@@ -6,7 +6,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Badge from '@/components/ui/Badge';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import RequirePermission from '@/components/guards/RequirePermission';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
@@ -88,8 +88,8 @@ function TelegramSettingsInner() {
 
   if (!s) {
     return (
-      <div className="flex justify-center py-20">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={6} />
       </div>
     );
   }

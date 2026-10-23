@@ -31,6 +31,7 @@ import RowActions from '@/components/ui/RowActions';
 import { useInvoiceActions } from '@/components/invoices/useInvoiceActions';
 import AvatarGroup from '@/components/ui/avatar-group/AvatarGroup';
 import DateRangeField from '@/components/ui/DateRangeField';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -143,7 +144,7 @@ function InvoicesPageContent() {
         render: (r: any) => (
           <div className="min-w-0">
             <div className="text-sm text-ink truncate max-w-[220px]">
-              {r.customerName || 'Guest'}
+              <CustomerHoverName id={r.customerId} name={r.customerName} />
             </div>
             {r.customerCompany && (
               <div className="text-xs text-ink-muted truncate max-w-[220px]">
@@ -333,7 +334,6 @@ function InvoicesPageContent() {
         rows={rows}
         rowKey={(r: any) => r.id}
         loading={loading}
-        onRowClick={(r: any) => router.push(`/invoices/${r.id}`)}
         empty={
           <EmptyState
             title="No invoices"

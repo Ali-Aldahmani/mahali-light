@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Lock, Unlock, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import Modal from '@/components/ui/Modal';
 import RequirePermission from '@/components/guards/RequirePermission';
@@ -60,8 +60,8 @@ function PeriodsPageInner() {
       />
 
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
+        <div className="py-4">
+          <Skeleton lines={4} />
         </div>
       )}
       {error && !loading && (

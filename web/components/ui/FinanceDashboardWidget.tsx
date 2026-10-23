@@ -10,7 +10,7 @@ import {
 import { useFinanceStore } from '@/store/financeStore';
 import { formatCurrency } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
-import Spinner from './Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import Button from './Button';
 
 function deltaClass(delta, invert = false) {
@@ -41,8 +41,8 @@ export default function FinanceDashboardWidget({ className = '' }) {
 
   if (loading && !snapshot) {
     return (
-      <div className={cn('rounded-card border border-border bg-surface p-4 flex items-center justify-center', className)}>
-        <Spinner size="sm" />
+      <div className={cn('rounded-card border border-border bg-surface p-4', className)}>
+        <Skeleton lines={2} />
       </div>
     );
   }

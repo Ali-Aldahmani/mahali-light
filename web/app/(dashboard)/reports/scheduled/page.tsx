@@ -10,7 +10,7 @@ import Badge from '@/components/ui/Badge';
 import SlideOver from '@/components/ui/SlideOver';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import RequirePermission from '@/components/guards/RequirePermission';
 import {
@@ -144,8 +144,8 @@ function ScheduledReportsPageInner() {
       />
 
       {loading ? (
-        <div className="card border border-border p-12 flex items-center justify-center">
-          <Spinner size="md" className="text-accent" />
+        <div className="card border border-border p-5">
+          <Skeleton lines={4} />
         </div>
       ) : items.length === 0 ? (
         <EmptyState

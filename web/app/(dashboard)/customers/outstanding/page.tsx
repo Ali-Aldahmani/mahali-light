@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Users,
   CreditCard,
+  Eye,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
@@ -26,6 +27,7 @@ import { getOutstandingReceivables } from '@/services/customerService';
 import { formatCurrency, formatDate, storeDate } from '@/lib/utils/format';
 import { onCustomerBalanceUpdate } from '@/store/socketStore';
 import RowActions from '@/components/ui/RowActions';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 interface ReceivableRow extends CustomerRecord {
   creditBalance?: number;
@@ -143,13 +145,9 @@ function OutstandingReceivablesPageContent() {
         <div className="flex items-center gap-2 min-w-0">
           <CustomerAvatar customer={r} size="sm" />
           <div className="min-w-0">
-            <button
-              type="button"
-              onClick={() => router.push(`/customers/${r.id}`)}
-              className="text-sm font-medium text-ink hover:text-accent text-left truncate block max-w-[240px]"
-            >
-              {r.name}
-            </button>
+            <div className="text-sm font-medium text-ink truncate max-w-[240px]">
+              <CustomerHoverName id={r.id} name={r.name} />
+            </div>
             <div className="text-xs text-ink-muted truncate">
               {r.companyName || r.phone || '—'}
             </div>
@@ -193,7 +191,10 @@ function OutstandingReceivablesPageContent() {
       render: (r: ReceivableRow) => (
         <RowActions
           label="Receivable actions"
-          actions={[{ id: 'collect', label: 'Collect', icon: <CreditCard />, hidden: !canCollect, onClick: () => setPaying(r) }]}
+          actions={[
+            { id: 'view', label: 'View', icon: <Eye />, onClick: () => router.push(`/customers/${r.id}`) },
+            { id: 'collect', label: 'Collect', icon: <CreditCard />, hidden: !canCollect, onClick: () => setPaying(r) },
+          ]}
         />
       ),
     },
@@ -268,7 +269,6 @@ function OutstandingReceivablesPageContent() {
         rows={sortedRows}
         rowKey={(r: ReceivableRow) => r.id}
         loading={loading}
-        onRowClick={(r: ReceivableRow) => router.push(`/customers/${r.id}`)}
         empty={
           <EmptyState
             title="No outstanding balances"

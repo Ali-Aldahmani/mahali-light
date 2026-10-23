@@ -16,6 +16,7 @@ import {
 import { listEmployees } from '@/services/employeeService';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
+import Skeleton from '@/components/ui/skeleton';
 
 interface Leave {
   id: string;
@@ -312,8 +313,8 @@ function Section({
         {title}
       </h3>
       {loading ? (
-        <div className="rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted">
-          Loading…
+        <div className="rounded-card border border-border bg-surface p-5">
+          <Skeleton lines={4} label="Loading leave requests" />
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted">

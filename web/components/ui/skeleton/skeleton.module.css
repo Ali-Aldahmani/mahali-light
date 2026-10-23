@@ -1,0 +1,58 @@
+/* Styles for Skeleton: grey placeholder blocks that pulse in a slow wave. */
+
+.root {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+
+.avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  background: theme('colors.border');
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+.lines {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.line {
+  display: block;
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  background: theme('colors.border');
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+  /* Each line pulses a beat after the one above it. */
+  animation-delay: calc(var(--index, 0) * 120ms);
+}
+
+/* A ragged right edge reads as text rather than bars. */
+.line:nth-child(1) { width: 62%; height: 14px; }
+.line:nth-child(3n + 2) { width: 94%; }
+.line:nth-child(3n + 3) { width: 86%; }
+.line:nth-child(3n + 4) { width: 78%; }
+.line:last-child:not(:first-child) { width: 48%; }
+
+.avatar { animation-delay: 0ms; }
+
+.frame { display: flow-root; }
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar,
+  .line { animation: none; }
+}

@@ -17,6 +17,8 @@ import { formatDate } from '@/lib/utils/format';
 import { onWarrantyClaimEvent } from '@/store/socketStore';
 import type { SelectOption, WarrantyClaim } from '@/components/warranties/types';
 import DateRangeField from '@/components/ui/DateRangeField';
+import { viewColumn } from '@/components/ui/viewColumn';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 const STATUS_OPTIONS: SelectOption[] = [
   { value: '', label: 'All statuses' },
@@ -113,7 +115,7 @@ function WarrantyClaimsPageContent() {
       header: 'Customer',
       render: (row: WarrantyClaim) => (
         <div className="text-sm">
-          {row.customerName || 'Guest'}
+          <CustomerHoverName id={row.customerId} name={row.customerName} />
           {row.customerPhone && (
             <div className="text-xs text-ink-muted">{row.customerPhone}</div>
           )}
@@ -195,7 +197,7 @@ function WarrantyClaimsPageContent() {
       </div>
 
       <Table
-        columns={columns}
+        columns={[...columns, viewColumn<WarrantyClaim>({ label: 'Claim actions', onView: (r) => router.push(`/warranty-claims/${r.id}`) })]}
         rows={rows}
         loading={loading}
         empty={
@@ -205,7 +207,6 @@ function WarrantyClaimsPageContent() {
             description="Raise a claim from the warranty lookup screen or warranty detail page."
           />
         }
-        onRowClick={(row: WarrantyClaim) => router.push(`/warranty-claims/${row.id}`)}
         pagination={
           meta
             ? {

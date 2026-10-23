@@ -33,6 +33,11 @@ export function getCustomer(id) {
   return apiGet(`/customers/${id}`);
 }
 
+/** Name, phone, total spent, balance and last payment, for the customer hover card. */
+export function getCustomerSummary(id: string) {
+  return apiGet(`/customers/${id}/summary`);
+}
+
 export function createCustomer(body) {
   return apiPost('/customers', body);
 }

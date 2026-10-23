@@ -6,7 +6,7 @@ import { Lock, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PermissionGate from '@/components/ui/PermissionGate';
@@ -82,8 +82,8 @@ export default function RolesPage() {
       />
 
       {loading ? (
-        <div className="card p-16 flex items-center justify-center">
-          <Spinner size="lg" className="text-accent" />
+        <div className="card p-5">
+          <Skeleton lines={6} />
         </div>
       ) : roles.length === 0 ? (
         <EmptyState

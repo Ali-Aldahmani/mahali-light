@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import PeriodSelector, { getQuickRange } from '@/components/ui/PeriodSelector';
 import PLStatementTable from '@/components/ui/PLStatementTable';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import { getProfitAndLoss } from '@/services/financeService';
 
@@ -58,8 +58,8 @@ export default function PLTab() {
         </label>
       </div>
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
+        <div className="py-4">
+          <Skeleton lines={4} />
         </div>
       )}
       {error && !loading && (

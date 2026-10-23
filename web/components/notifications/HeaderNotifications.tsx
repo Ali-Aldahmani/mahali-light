@@ -31,6 +31,7 @@ export default function HeaderNotifications() {
   const markRead = useNotificationStore((s) => s.markRead);
   const markUnread = useNotificationStore((s) => s.markUnread);
   const dismiss = useNotificationStore((s) => s.dismiss);
+  const setPinned = useNotificationStore((s) => s.setPinned);
 
   // Refresh the list each time the panel opens.
   useEffect(() => {
@@ -51,6 +52,8 @@ export default function HeaderNotifications() {
           : undefined,
         // Only an Admin may dismiss critical notifications (the server enforces it too).
         dismissible: !(n.severity === 'critical' && role !== 'Admin'),
+        pinned: !!n.pinned_at,
+        pinnedAt: n.pinned_at || null,
       })),
     [notifications, role, router],
   );
@@ -64,6 +67,7 @@ export default function HeaderNotifications() {
       onOpenChange={setPanelOpen}
       onReadChange={(item, read) => (read ? markRead(byId(item.id)) : markUnread(byId(item.id)))}
       onDismiss={(item) => dismiss(byId(item.id))}
+      onPinChange={(item, pinned) => setPinned(byId(item.id), pinned)}
       onSettings={() => router.push('/settings/notifications')}
       hasMore={hasMore}
       loading={loading}

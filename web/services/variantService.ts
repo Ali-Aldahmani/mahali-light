@@ -1,4 +1,4 @@
-import http, { apiDelete, apiGet, apiPost, apiPut } from './http';
+import http, { apiDelete, apiGet, apiPost, apiPut, uploadConfig, type UploadOptions } from './http';
 
 export function listVariants(productId) {
   return apiGet(`/products/${productId}/variants`);
@@ -16,12 +16,10 @@ export function deleteVariant(productId, variantId) {
   return apiDelete(`/products/${productId}/variants/${variantId}`);
 }
 
-export async function uploadVariantImage(productId, variantId, file) {
+export async function uploadVariantImage(productId, variantId, file, opts?: UploadOptions) {
   const fd = new FormData();
   fd.append('image', file);
-  const res = await http.post(`/products/${productId}/variants/${variantId}/image`, fd, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const res = await http.post(`/products/${productId}/variants/${variantId}/image`, fd, uploadConfig(opts));
   return res.data?.data;
 }
 

@@ -21,10 +21,7 @@ export function useKeyboardShortcuts({ onToggleHelp }: { onToggleHelp?: () => vo
         e.preventDefault();
         router.push('/pos');
       }
-      if (e.ctrlKey && e.key.toLowerCase() === 'i') {
-        e.preventDefault();
-        router.push('/pos');
-      }
+      // Ctrl+I (new POS) is now a rebindable shortcut in the shortcut engine.
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         openBug();

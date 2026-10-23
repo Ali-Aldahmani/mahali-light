@@ -30,6 +30,7 @@ import { onTreasuryEvent } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
 import { formatCurrency, formatDateTime, storeDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
+import Skeleton from '@/components/ui/skeleton';
 
 export interface BankAccount {
   id: string;
@@ -110,7 +111,9 @@ export default function BankAccountsTab() {
       </div>
 
       {loading ? (
-        <div className="card p-12 text-center text-ink-muted">Loading…</div>
+        <div className="card p-5">
+          <Skeleton lines={5} label="Loading bank accounts" />
+        </div>
       ) : accounts.length === 0 ? (
         <EmptyState
           icon={<Building2 />}
@@ -596,7 +599,9 @@ function HistorySlideOver({
       width="lg"
     >
       {loading ? (
-        <div className="text-sm text-ink-muted py-8 text-center">Loading…</div>
+        <div className="py-4">
+          <Skeleton lines={5} label="Loading transactions" />
+        </div>
       ) : transactions.length === 0 ? (
         <EmptyState
           title="No transactions"

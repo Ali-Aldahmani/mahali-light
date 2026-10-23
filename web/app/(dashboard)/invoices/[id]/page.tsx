@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import Table, { type TableColumn } from '@/components/ui/Table';
 import EmptyState from '@/components/ui/EmptyState';
 import Input from '@/components/ui/Input';
@@ -47,6 +47,7 @@ import WarrantyStatusBadge from '@/components/ui/WarrantyStatusBadge';
 import DaysRemainingBadge from '@/components/ui/DaysRemainingBadge';
 import ActionButtons from '@/components/ui/ActionButtons';
 import { useInvoiceActions } from '@/components/invoices/useInvoiceActions';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 export default function InvoiceDetailPage() {
   return (
@@ -120,8 +121,8 @@ function InvoiceDetailPageContent() {
 
   if (loading || !data) {
     return (
-      <div className="flex justify-center py-20">
-        <Spinner size="lg" />
+      <div className="py-4">
+        <Skeleton lines={6} />
       </div>
     );
   }
@@ -245,7 +246,9 @@ function CustomerCard({ invoice }: { invoice: any }) {
   return (
     <div className="rounded-card border border-border bg-surface p-4 shadow-card space-y-1">
       <div className="text-xs text-ink-muted">Customer</div>
-      <div className="text-base font-semibold text-ink">{invoice.customerName}</div>
+      <div className="text-base font-semibold text-ink">
+        <CustomerHoverName id={invoice.customerId} name={invoice.customerName} />
+      </div>
       {invoice.customerCompany && (
         <div className="text-sm text-ink-muted">{invoice.customerCompany}</div>
       )}

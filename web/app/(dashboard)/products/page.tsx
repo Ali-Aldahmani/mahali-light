@@ -450,7 +450,6 @@ function ProductsPageContent() {
           rows={rows}
           loading={loading}
           empty="No products match your filters."
-          onRowClick={(row: any) => router.push(`/products/${row.id}`)}
           pagination={{
             page: meta.page,
             pageSize: meta.limit,

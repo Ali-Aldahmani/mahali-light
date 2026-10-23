@@ -1,0 +1,168 @@
+/* Styles for SwipeActions: rows that slide sideways to reveal actions. */
+
+.surface { min-width: 0; }
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  outline: none;
+}
+
+.row {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  touch-action: pan-y;
+}
+
+.row[data-dragging] { cursor: grabbing; user-select: none; }
+
+/* ---- Revealed actions ------------------------------------------------- */
+
+/* Each layer spans the whole row and waits just outside its edge; the row's travel slides it in. */
+.layer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--swipe-fill);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.layer[data-side='leading'] { right: 100%; }
+.layer[data-side='trailing'] { left: 100%; }
+
+.layer[data-tone='neutral'] { --swipe-fill: theme('colors.ink.muted'); }
+.layer[data-tone='accent'] { --swipe-fill: theme('colors.accent.DEFAULT'); }
+.layer[data-tone='danger'] { --swipe-fill: theme('colors.error.DEFAULT'); }
+
+/* A zero-width point on the layer's inner edge; the glyph centres on it. */
+.anchor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+}
+
+.layer[data-side='leading'] .anchor { right: 0; }
+.layer[data-side='trailing'] .anchor { left: 0; }
+
+.glyph {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: var(--swipe-action-width, 76px);
+}
+
+.icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+.icon svg { width: 18px; height: 18px; }
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---- Row content ------------------------------------------------------ */
+
+.content {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  background: theme('colors.surface');
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.more {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 10px 8px 0 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: theme('colors.ink.muted');
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 150ms ease, background-color 150ms ease;
+}
+
+.row:hover .more,
+.more:focus-visible,
+.more[data-state='open'] { opacity: 1; }
+
+.more:hover { background: theme('colors.surface-2'); color: theme('colors.ink.DEFAULT'); }
+
+.more:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: 1px;
+}
+
+/* ---- More actions menu ------------------------------------------------ */
+
+.menu {
+  z-index: 95;
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid theme('colors.border');
+  border-radius: 10px;
+  background: theme('colors.surface');
+  box-shadow: 0 12px 32px rgb(17 24 39 / 0.14), 0 2px 6px rgb(17 24 39 / 0.06);
+  animation: swipe-menu-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes swipe-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: theme('colors.ink.DEFAULT');
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+.item[data-highlighted] { background: theme('colors.surface-2'); }
+.item[data-tone='danger'] { color: theme('colors.error.DEFAULT'); }
+.item[data-tone='danger'][data-highlighted] { background: theme('colors.error.light'); }
+
+.itemIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+}
+
+.itemIcon svg { width: 15px; height: 15px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .menu { animation: none; }
+}

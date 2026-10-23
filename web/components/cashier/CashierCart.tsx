@@ -272,6 +272,8 @@ const CartLine = memo(function CartLine({
           size="lg"
           hideLabel
           label={`Quantity of ${line.productName}`}
+          incrementLabel={`Increase quantity of ${line.productName}`}
+          decrementLabel={`Decrease quantity of ${line.productName}`}
           // Typed metres/kg keep cent precision; each press moves a whole step.
           min={decimal ? 0.01 : 1}
           step={decimal ? 0.01 : 1}

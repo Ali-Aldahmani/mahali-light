@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { CalendarCheck, Tag, PackageCheck } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import { getSupplierRankings } from '@/services/analyticsService';
 import { formatCurrency } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
@@ -146,8 +146,8 @@ export default function SupplierRankings({
       </div>
 
       {loading && !data ? (
-        <div className="rounded-card border border-border bg-surface p-10 flex justify-center">
-          <Spinner />
+        <div className="rounded-card border border-border bg-surface p-5">
+          <Skeleton lines={4} />
         </div>
       ) : failed ? (
         <div className="rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted">

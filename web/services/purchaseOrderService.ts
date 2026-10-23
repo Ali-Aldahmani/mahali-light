@@ -1,4 +1,4 @@
-import http, { apiGet, apiGetWithMeta, apiPost, apiPut, apiDelete } from './http';
+import http, { apiGet, apiGetWithMeta, apiPost, apiPut, apiDelete, uploadConfig, type UploadOptions } from './http';
 
 function toParams(o: Record<string, any>): string {
   const p = new URLSearchParams();
@@ -69,12 +69,10 @@ export function receivePurchaseOrderItems(id, items) {
   return apiPost(`/purchase-orders/${id}/receive`, { items });
 }
 
-export async function uploadPurchaseOrderAttachment(id, file) {
+export async function uploadPurchaseOrderAttachment(id, file, opts?: UploadOptions) {
   const fd = new FormData();
   fd.append('file', file);
-  const res = await http.post(`/purchase-orders/${id}/attachment`, fd, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const res = await http.post(`/purchase-orders/${id}/attachment`, fd, uploadConfig(opts));
   return res.data?.data;
 }
 

@@ -33,6 +33,7 @@ import {
 import { onReturnEvent } from '@/store/socketStore';
 import { formatCurrency, formatDateTime, timeAgo } from '@/lib/utils/format';
 import type { ReturnRequest } from '../../types';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 function ReturnRequestDetailPageContent() {
   const { id } = useParams<{ id: string }>();
@@ -205,12 +206,12 @@ function ReturnRequestDetailPageContent() {
                 <Field
                   label="Customer"
                   value={
-                    <Link
+                    <CustomerHoverName
+                      id={request.customerId}
+                      name={request.customerName}
                       href={`/customers/${request.customerId}`}
                       className="text-accent hover:underline"
-                    >
-                      {request.customerName}
-                    </Link>
+                    />
                   }
                   hint={request.customerPhone}
                 />

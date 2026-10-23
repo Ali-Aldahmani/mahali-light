@@ -54,6 +54,7 @@ export interface WarrantyClaim {
   warrantyNumber?: string;
   productId?: string | null;
   productName?: string | null;
+  customerId?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   claimDate?: string | null;

@@ -1,10 +1,11 @@
 'use client';
 
 import { memo } from 'react';
-import { Loader2, Package, ScanLine } from 'lucide-react';
+import { Package, ScanLine } from 'lucide-react';
 import { fileUrl } from '@/lib/config';
 import { formatCurrency } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import Skeleton from '@/components/ui/skeleton';
 
 export interface CashierCategory {
   id: string | number;
@@ -54,8 +55,8 @@ export default function CashierProductGrid({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {loading && products.length === 0 ? (
-          <div className="flex justify-center py-20" role="status" aria-label="Loading products">
-            <Loader2 className="h-7 w-7 animate-spin text-ink-muted" />
+          <div className="rounded-card border border-border bg-surface p-5">
+            <Skeleton lines={6} label="Loading products" />
           </div>
         ) : products.length === 0 ? (
           <div className="mx-auto mt-10 max-w-sm rounded-card border border-dashed border-border bg-surface p-8 text-center">

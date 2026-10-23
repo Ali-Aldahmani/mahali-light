@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import BillStatusBadge from '@/components/ui/BillStatusBadge';
 import BillPaymentStatusBadge from '@/components/ui/BillPaymentStatusBadge';
 import DaysUntilDueBadge from '@/components/ui/DaysUntilDueBadge';
@@ -79,8 +79,8 @@ function BillDetailPageInner() {
 
   if (loading && !bill) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={6} />
       </div>
     );
   }

@@ -7,6 +7,7 @@ import Input from '@/components/ui/Input';
 import { createSupplier } from '@/services/supplierService';
 import { toast } from '@/store/toastStore';
 import type { Supplier } from '@/components/suppliers/types';
+import PhoneField from '@/components/ui/PhoneField';
 
 export interface QuickAddSupplierModalProps {
   open: boolean;
@@ -135,12 +136,11 @@ export default function QuickAddSupplierModal({
             error={errors.contactPerson}
             placeholder="Sales rep name"
           />
-          <Input
+          <PhoneField
             label="Phone"
             value={form.phone}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setField('phone', e.target.value)}
+            onChange={(next) => setField('phone', next)}
             error={errors.phone}
-            placeholder="+971…"
           />
         </div>
         <Input

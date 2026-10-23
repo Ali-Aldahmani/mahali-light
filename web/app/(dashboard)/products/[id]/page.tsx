@@ -22,11 +22,12 @@ import Tabs from '@/components/ui/Tabs';
 import Badge, { StatusBadge } from '@/components/ui/Badge';
 import BarcodeDisplay from '@/components/ui/BarcodeDisplay';
 import StockBadge from '@/components/ui/StockBadge';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PermissionGate from '@/components/ui/PermissionGate';
 import VariantMatrix from '@/components/ui/VariantMatrix';
 import ImageUpload from '@/components/ui/ImageUpload';
+import type { UploadOptions } from '@/services/http';
 import RequirePermission from '@/components/guards/RequirePermission';
 import ProductEditSlideOver from '@/components/products/ProductEditSlideOver';
 import VariantFormSlideOver from '@/components/products/VariantFormSlideOver';
@@ -169,16 +170,11 @@ function ProductDetailPageContent() {
     return items;
   }, [product]);
 
-  async function uploadImage(file: File) {
-    try {
-      const updated = await uploadProductImage(id, file);
-      setProduct(updated);
-      toast.success('Image updated.');
-      refreshStore();
-    } catch (err: any) {
-      toast.error(err?.message || 'Could not upload image.');
-      throw err;
-    }
+  // The dropzone row shows progress, success and failure, so no toast here.
+  async function uploadImage(file: File, opts?: UploadOptions) {
+    const updated = await uploadProductImage(id, file, opts);
+    setProduct(updated);
+    refreshStore();
   }
 
   async function removeImage() {
@@ -205,8 +201,8 @@ function ProductDetailPageContent() {
 
   if (loading || !product) {
     return (
-      <div className="card p-16 flex items-center justify-center">
-        <Spinner size="lg" className="text-accent" />
+      <div className="card p-5">
+        <Skeleton lines={6} />
       </div>
     );
   }
@@ -404,7 +400,7 @@ function OverviewTab({
   variant: any;
   canEdit: boolean;
   canViewCost: boolean;
-  onUploadImage: (file: File) => Promise<void>;
+  onUploadImage: (file: File, opts?: UploadOptions) => Promise<void>;
   onRemoveImage: () => Promise<void>;
 }) {
   return (
@@ -809,8 +805,8 @@ function PricingTab({ productId, canManage }: { productId: string; canManage: bo
 
   if (loading) {
     return (
-      <div className="card p-10 flex items-center justify-center">
-        <Spinner />
+      <div className="card p-5">
+        <Skeleton lines={4} />
       </div>
     );
   }
@@ -887,8 +883,8 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 function HistoryTab({ loading, entries }: { loading: boolean; entries: any[] }) {
   if (loading) {
     return (
-      <div className="card p-10 flex items-center justify-center">
-        <Spinner size="md" className="text-accent" />
+      <div className="card p-5">
+        <Skeleton lines={4} />
       </div>
     );
   }

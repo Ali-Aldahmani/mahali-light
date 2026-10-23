@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Printer,
   Building2,
-  Upload,
   RefreshCw,
   Trash2,
   Image as ImageIcon,
@@ -13,7 +12,7 @@ import {
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import PermissionGate from '@/components/ui/PermissionGate';
 import RequirePermission from '@/components/guards/RequirePermission';
 import { toast } from '@/store/toastStore';
@@ -34,6 +33,8 @@ import {
 } from '@/services/printService';
 import { fileUrl } from '@/lib/config';
 import Select from '@/components/ui/Select';
+import PhoneField from '@/components/ui/PhoneField';
+import { FileDropzone, uploadWith } from '@/components/ui/file-dropzone';
 
 function PrintSettingsPageInner() {
   const permissions = useAuthStore((s) => s.permissions);
@@ -43,6 +44,8 @@ function PrintSettingsPageInner() {
   const [storeForm, setStoreForm] = useState<Record<string, any> | null>(null);
   const [savingStore, setSavingStore] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  // Bumped when the logo is removed, so the dropzone clears its "Uploaded" row.
+  const [logoDropKey, setLogoDropKey] = useState(0);
 
   const [printers, setPrinters] = useState<any[]>([]);
   const [printerSettings, setPrinterSettings] = useState<Record<string, any> | null>(null);
@@ -101,27 +104,12 @@ function PrintSettingsPageInner() {
     }
   };
 
-  const onLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingLogo(true);
-    try {
-      const next = await uploadStoreLogo(file);
-      setStoreForm(next);
-      toast.success('Logo uploaded.');
-    } catch (err: any) {
-      toast.error(err?.message || 'Could not upload logo.');
-    } finally {
-      setUploadingLogo(false);
-      e.target.value = '';
-    }
-  };
-
   const onLogoRemove = async () => {
     setUploadingLogo(true);
     try {
       const next = await removeStoreLogo();
       setStoreForm(next);
+      setLogoDropKey((k) => k + 1);
       toast.success('Logo removed.');
     } catch (err: any) {
       toast.error(err?.message || 'Could not remove logo.');
@@ -152,8 +140,8 @@ function PrintSettingsPageInner() {
 
   if (storeLoading || !storeForm) {
     return (
-      <div className="flex justify-center py-20">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={6} />
       </div>
     );
   }
@@ -191,10 +179,10 @@ function PrintSettingsPageInner() {
             disabled={!canEdit}
             containerClassName="md:col-span-2"
           />
-          <Input
+          <PhoneField
             label="Phone"
             value={storeForm.storePhone || ''}
-            onChange={(e: any) => handleStoreChange('storePhone', e.target.value)}
+            onChange={(next) => handleStoreChange('storePhone', next)}
             disabled={!canEdit}
           />
           <Input
@@ -282,27 +270,32 @@ function PrintSettingsPageInner() {
               <span className="text-xs text-ink-muted">No logo uploaded</span>
             )}
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-3">
             <p className="text-xs text-ink-muted max-w-md">
               PNG with a transparent background is recommended. Maximum 2 MB.
               Appears on invoices and purchase order PDFs.
             </p>
             <PermissionGate permission="settings.edit">
+              <FileDropzone
+                key={logoDropKey}
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                multiple={false}
+                maxFiles={1}
+                maxSize={2 * 1024 * 1024}
+                label={storeForm.logoPath ? 'Replace logo' : 'Upload logo'}
+                description="Drop your logo here, paste it, or choose it"
+                note="PNG, JPG, WebP or SVG · max 2 MB"
+                dropLabel="Drop to upload"
+                compactAt={1}
+                onUpload={uploadWith(
+                  (file, opts) => uploadStoreLogo(file, opts),
+                  (next: any) => setStoreForm(next),
+                )}
+                onRemove={(item) => {
+                  if (item.status === 'uploaded') onLogoRemove();
+                }}
+              />
               <div className="flex flex-wrap gap-2">
-                <label className="inline-flex">
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                    className="hidden"
-                    onChange={onLogoFile}
-                  />
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-input border border-border bg-surface px-4 h-10 text-sm cursor-pointer hover:bg-surface-2 ${uploadingLogo ? 'opacity-60 pointer-events-none' : ''}`}
-                  >
-                    <Upload className="h-4 w-4" />
-                    Upload new logo
-                  </span>
-                </label>
                 {storeForm.logoPath && (
                   <Button
                     variant="ghost"
@@ -331,8 +324,8 @@ function PrintSettingsPageInner() {
             Open Mahali Light on each cashier PC to configure printers.
           </div>
         ) : printersLoading ? (
-          <div className="py-6 text-center">
-            <Spinner />
+          <div className="py-4">
+            <Skeleton lines={4} />
           </div>
         ) : (
           <div className="space-y-4">

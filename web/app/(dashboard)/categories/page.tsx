@@ -14,7 +14,7 @@ import Button from '@/components/ui/Button';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PermissionGate from '@/components/ui/PermissionGate';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import Badge from '@/components/ui/Badge';
 import RequirePermission from '@/components/guards/RequirePermission';
 import CategoryFormSlideOver from '@/components/products/CategoryFormSlideOver';
@@ -228,8 +228,8 @@ function CategoriesPageContent() {
       />
 
       {loading ? (
-        <div className="card p-16 flex items-center justify-center">
-          <Spinner size="lg" className="text-accent" />
+        <div className="card p-5">
+          <Skeleton lines={6} />
         </div>
       ) : tree.length === 0 ? (
         <EmptyState

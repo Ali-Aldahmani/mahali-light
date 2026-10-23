@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Bug } from 'lucide-react';
+import { Bug, Keyboard, Settings } from 'lucide-react';
 import { UserMenu } from '@/components/ui/user-menu';
 import { RoleBadge } from '@/components/ui/Badge';
 import { useAuthStore } from '@/store/authStore';
 import { useSocketStore } from '@/store/socketStore';
 import { useUiErrorStore } from '@/store/uiErrorStore';
-import { getMe, logout as apiLogout } from '@/services/authService';
+import { useQuickActionStore } from '@/store/quickActionStore';
+import { getMe } from '@/services/authService';
+import { useSignOut } from '@/hooks/useSignOut';
 
 /**
  * The account menu in the top-right of the header: username, the person's
@@ -17,9 +18,10 @@ import { getMe, logout as apiLogout } from '@/services/authService';
 export default function HeaderUserMenu() {
   const user = useAuthStore((s) => s.user);
   const isConnected = useSocketStore((s) => s.isConnected);
-  const disconnect = useSocketStore((s) => s.disconnect);
   const openBugReport = useUiErrorStore((s) => s.openBugReport);
-  const router = useRouter();
+  const openShortcuts = useQuickActionStore((s) => s.openShortcuts);
+  const openSettings = useQuickActionStore((s) => s.openSettings);
+  const handleSignOut = useSignOut();
 
   // Sessions saved before the server sent full_name don't have it yet; fetch once.
   const missingName = !!user && user.full_name === undefined;
@@ -30,15 +32,6 @@ export default function HeaderUserMenu() {
   if (!user) return null;
 
   const fullName = user.full_name?.trim();
-
-  async function handleSignOut() {
-    try {
-      await apiLogout();
-    } finally {
-      disconnect();
-      router.replace('/login');
-    }
-  }
 
   return (
     <UserMenu
@@ -53,6 +46,16 @@ export default function HeaderUserMenu() {
       showName
       showTheme={false}
       items={[
+        {
+          label: 'Settings',
+          icon: <Settings size={16} strokeWidth={1.75} />,
+          onSelect: openSettings,
+        },
+        {
+          label: 'Keyboard shortcuts',
+          icon: <Keyboard size={16} strokeWidth={1.75} />,
+          onSelect: openShortcuts,
+        },
         {
           label: 'Report a bug',
           icon: <Bug size={16} strokeWidth={1.75} />,

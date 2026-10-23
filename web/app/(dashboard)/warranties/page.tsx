@@ -20,6 +20,8 @@ import { formatDate } from '@/lib/utils/format';
 import { onWarrantyEvent } from '@/store/socketStore';
 import WarrantyFormSlideOver from '@/components/warranties/WarrantyFormSlideOver';
 import type { SelectOption, Warranty } from '@/components/warranties/types';
+import { viewColumn } from '@/components/ui/viewColumn';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 const TABS: SelectOption[] = [
   { value: '', label: 'All' },
@@ -130,7 +132,7 @@ function WarrantiesPageContent() {
       header: 'Customer',
       render: (row: Warranty) => (
         <div>
-          <div className="text-sm">{row.customerName || 'Guest'}</div>
+          <div className="text-sm"><CustomerHoverName id={row.customerId} name={row.customerName} /></div>
           {row.customerPhone && (
             <div className="text-xs text-ink-muted">{row.customerPhone}</div>
           )}
@@ -230,7 +232,7 @@ function WarrantiesPageContent() {
       </div>
 
       <Table
-        columns={columns}
+        columns={[...columns, viewColumn<Warranty>({ label: 'Warranty actions', onView: (r) => router.push(`/warranties/${r.id}`) })]}
         rows={rows}
         loading={loading}
         empty={
@@ -240,7 +242,6 @@ function WarrantiesPageContent() {
             description="Warranties are created automatically when an invoice is confirmed."
           />
         }
-        onRowClick={(row: Warranty) => router.push(`/warranties/${row.id}`)}
         pagination={
           meta
             ? {

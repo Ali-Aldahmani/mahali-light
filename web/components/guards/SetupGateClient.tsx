@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSetupStore } from '@/store/setupStore';
 import { useAppSettingsStore } from '@/store/appSettingsStore';
+import Skeleton from '@/components/ui/skeleton';
 
 const DEFAULT_TITLE = 'Bytecra POS';
 
@@ -45,8 +46,10 @@ export default function SetupGateClient({ children }: { children: React.ReactNod
 
   if (completed === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg text-ink-muted">
-        Loading…
+      <div className="flex min-h-screen items-start justify-center bg-bg px-4 pt-[18vh]">
+        <div className="w-full max-w-xl rounded-card border border-border bg-surface p-6">
+          <Skeleton lines={6} avatar label="Loading" />
+        </div>
       </div>
     );
   }

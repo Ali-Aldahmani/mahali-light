@@ -17,6 +17,10 @@ function qs(params: Record<string, any>): string {
 export function getKPIs(params) {
   return apiGet(`/analytics/kpis${qs(params)}`);
 }
+/** Per-day revenue, net profit, receivables and payables for the dashboard cards. */
+export function getKpiSeries(params) {
+  return apiGet(`/analytics/kpi-series${qs(params)}`);
+}
 export function getSparkline(metric = 'revenue', days = 7) {
   return apiGet(`/analytics/sparkline${qs({ metric, days })}`);
 }

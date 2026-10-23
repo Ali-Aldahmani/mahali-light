@@ -1,4 +1,4 @@
-import http, { apiDelete, apiGet, apiGetWithMeta, apiPost, apiPut } from './http';
+import http, { apiDelete, apiGet, apiGetWithMeta, apiPost, apiPut, uploadConfig, type UploadOptions } from './http';
 
 export async function listProducts({
   page = 1,
@@ -52,12 +52,10 @@ export function getProductHistory(id: string | number) {
   return apiGet(`/products/${id}/history`);
 }
 
-export async function uploadProductImage(id: string | number, file: File) {
+export async function uploadProductImage(id: string | number, file: File, opts?: UploadOptions) {
   const fd = new FormData();
   fd.append('image', file);
-  const res = await http.post(`/products/${id}/image`, fd, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const res = await http.post(`/products/${id}/image`, fd, uploadConfig(opts));
   return res.data?.data;
 }
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Lock } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import SlideOver from '@/components/ui/SlideOver';
 import Input from '@/components/ui/Input';
@@ -96,8 +96,8 @@ function AccountsPageInner() {
       />
 
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
+        <div className="py-4">
+          <Skeleton lines={4} />
         </div>
       )}
       {error && !loading && (

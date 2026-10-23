@@ -1,12 +1,11 @@
 import { localIsoDate } from '@/lib/utils/format';
 
-// Quick-range presets for the dashboard. We deliberately stick to four
-// useful windows; the analytics hub offers the full range editor.
+// Period presets for the dashboard: this month or last month. The analytics
+// hub offers the full range editor. (rangeDates still understands this_week,
+// this_quarter and this_year for other callers.)
 export const DASHBOARD_RANGES = [
-  { value: 'this_week', label: 'This week' },
-  { value: 'this_month', label: 'This month' },
-  { value: 'this_quarter', label: 'This quarter' },
-  { value: 'this_year', label: 'This year' },
+  { value: 'this_month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
 ];
 
 export const DEFAULT_DASHBOARD_RANGE = 'this_month';
@@ -25,6 +24,9 @@ export function rangeDates(key: string, now: Date = new Date()) {
     const qStart = Math.floor(m / 3) * 3;
     start = new Date(y, qStart, 1);
     end = new Date(y, qStart + 3, 0);
+  } else if (key === 'last_month') {
+    start = new Date(y, m - 1, 1);
+    end = new Date(y, m, 0);
   } else if (key === 'this_year') {
     start = new Date(y, 0, 1);
     end = new Date(y, 11, 31);

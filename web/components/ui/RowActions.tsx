@@ -54,8 +54,8 @@ function reservedWidth(actions: readonly RowAction[], size: ExpandingButtonGroup
 
 /**
  * The standard actions cell for every table: an expanding pill of icon
- * buttons, right-aligned. Clicks inside never reach the row, so rows with
- * onRowClick don't also navigate.
+ * buttons, right-aligned. Table rows themselves are not clickable; opening
+ * a record is always an action here (see viewColumn for the simple case).
  */
 export default function RowActions({
   actions,

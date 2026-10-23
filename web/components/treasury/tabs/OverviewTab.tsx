@@ -16,7 +16,7 @@ import { getTreasurySummary } from '@/services/treasuryService';
 import { onTreasuryEvent } from '@/store/socketStore';
 import { formatCurrency, timeAgo } from '@/lib/utils/format';
 import EmptyState from '@/components/ui/EmptyState';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 
 interface RecentActivity {
   source: string;
@@ -74,8 +74,8 @@ export default function OverviewTab({ onJumpTab }: OverviewTabProps) {
 
   if (loading || !summary) {
     return (
-      <div className="card p-12 flex items-center justify-center">
-        <Spinner className="text-accent" />
+      <div className="card p-5">
+        <Skeleton lines={4} />
       </div>
     );
   }

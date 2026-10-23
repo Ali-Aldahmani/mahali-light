@@ -7,7 +7,7 @@ import { ArrowLeft, Lock, Save, Search } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import Badge from '@/components/ui/Badge';
 import RequirePermission from '@/components/guards/RequirePermission';
 import {
@@ -133,8 +133,8 @@ function RolePermissionsPageInner() {
 
   if (loading || !role) {
     return (
-      <div className="card p-16 flex items-center justify-center">
-        <Spinner size="lg" className="text-accent" />
+      <div className="card p-5">
+        <Skeleton lines={6} />
       </div>
     );
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -9,18 +9,18 @@ import {
   PackageCheck,
   Plus,
   RefreshCcw,
-  Upload,
   XCircle,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import POStatusBadge from '@/components/ui/POStatusBadge';
 import PaymentStatusBadge from '@/components/ui/PaymentStatusBadge';
 import DownloadPDFButton from '@/components/ui/DownloadPDFButton';
 import PrintPreviewModal from '@/components/ui/PrintPreviewModal';
 import POItemsTable from '@/components/ui/POItemsTable';
 import PaymentHistoryTable from '@/components/ui/PaymentHistoryTable';
+import { FileDropzone, uploadWith } from '@/components/ui/file-dropzone';
 import AttachmentCard from '@/components/ui/AttachmentCard';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RequirePermission from '@/components/guards/RequirePermission';
@@ -47,18 +47,19 @@ import type { Payment, PurchaseOrder } from '@/components/purchases/types';
 function PurchaseOrderDetailPageContent() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const permissions = useAuthStore((s: any) => s.permissions);
   const canCreatePo = permissions.includes('supplier.purchase_order.create');
   const canPay = permissions.includes('supplier.purchase_order.pay');
   const canSeeCost = permissions.includes('product.view_cost');
 
+  // Bumped when the attachment is deleted, so the dropzone clears its "Uploaded" row.
+  const [dropzoneKey, setDropzoneKey] = useState(0);
+
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -100,8 +101,8 @@ function PurchaseOrderDetailPageContent() {
 
   if (loading || !po) {
     return (
-      <div className="flex justify-center py-20">
-        <Spinner size="lg" />
+      <div className="py-4">
+        <Skeleton lines={6} />
       </div>
     );
   }
@@ -136,26 +137,11 @@ function PurchaseOrderDetailPageContent() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const saved = await uploadPurchaseOrderAttachment(id, file);
-      setPo((p) => (p ? { ...p, attachmentPath: saved.attachmentPath } : p));
-      toast.success('Invoice uploaded.');
-    } catch (err: any) {
-      toast.error(err?.message || 'Upload failed.');
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }
-
   async function handleRemoveAttachment() {
     try {
       await deletePurchaseOrderAttachment(id);
       setPo((p) => (p ? { ...p, attachmentPath: null } : p));
+      setDropzoneKey((k) => k + 1);
       toast.success('Attachment removed.');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to remove attachment.');
@@ -316,26 +302,6 @@ function PurchaseOrderDetailPageContent() {
           <div className="card p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-ink">Invoice attachment</h2>
-              {canCreatePo && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    leftIcon={<Upload className="h-4 w-4" />}
-                    onClick={() => fileInputRef.current?.click()}
-                    loading={uploading}
-                  >
-                    {po.attachmentPath ? 'Replace' : 'Upload'}
-                  </Button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/pdf,image/*"
-                    className="hidden"
-                    onChange={handleUpload}
-                  />
-                </>
-              )}
             </div>
             {po.attachmentPath ? (
               <AttachmentCard
@@ -344,10 +310,32 @@ function PurchaseOrderDetailPageContent() {
                 uploadedAt={po.updatedAt}
                 onDelete={canCreatePo ? handleRemoveAttachment : undefined}
               />
-            ) : (
+            ) : !canCreatePo ? (
               <div className="rounded-card border border-dashed border-border bg-surface-2 p-6 text-center text-xs text-ink-muted">
                 No invoice attached yet.
               </div>
+            ) : null}
+            {canCreatePo && (
+              <FileDropzone
+                key={dropzoneKey}
+                accept="application/pdf,image/jpeg,image/png,image/webp"
+                multiple={false}
+                maxFiles={1}
+                maxSize={10 * 1024 * 1024}
+                label={po.attachmentPath ? 'Replace invoice' : 'Upload invoice'}
+                description="Drop the supplier invoice here, paste it, or choose it"
+                note="PDF or image · max 10 MB"
+                dropLabel="Drop to upload"
+                compactAt={1}
+                onUpload={uploadWith(
+                  (file, opts) => uploadPurchaseOrderAttachment(id, file, opts),
+                  (saved: any) =>
+                    setPo((p) => (p ? { ...p, attachmentPath: saved.attachmentPath } : p)),
+                )}
+                onRemove={(item) => {
+                  if (item.status === 'uploaded') handleRemoveAttachment();
+                }}
+              />
             )}
           </div>
 

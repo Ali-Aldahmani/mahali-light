@@ -20,6 +20,7 @@ import {
 } from '@/services/invoiceEditRequestService';
 import { formatDateTime } from '@/lib/utils/format';
 import RowActions from '@/components/ui/RowActions';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
@@ -127,7 +128,7 @@ function InvoiceEditRequestsPageContent() {
       key: 'customer',
       header: 'Customer',
       render: (r: any) => (
-        <span className="text-sm text-ink">{r.customerName || 'Guest'}</span>
+        <CustomerHoverName id={r.customerId} name={r.customerName} className="text-sm text-ink" />
       ),
     },
     {

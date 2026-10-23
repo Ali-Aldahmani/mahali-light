@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiGetWithMeta } from './http';
+import { apiGet, apiPost, apiPut, apiDelete, apiGetWithMeta } from './http';
 
 function qs(params: Record<string, any>): string {
   const usp = new URLSearchParams();
@@ -29,6 +29,13 @@ export function markAllRead() {
   return apiPut(`/notifications/read-all`, {});
 }
 
+/** Keeps a notification at the top of this user's list. */
+export function pinNotification(id) {
+  return apiPut(`/notifications/${id}/pin`, {});
+}
+export function unpinNotification(id) {
+  return apiDelete(`/notifications/${id}/pin`);
+}
 export function dismissNotification(id) {
   return apiPut(`/notifications/${id}/dismiss`, {});
 }

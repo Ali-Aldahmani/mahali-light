@@ -488,3 +488,11 @@
   .panel[data-state='closed'] { animation: none; }
   .trigger, .item { transition: none; }
 }
+
+/* Pinned items show a small pin before the title. */
+.pinMark {
+  flex-shrink: 0;
+  margin-right: 4px;
+  color: theme('colors.accent.DEFAULT');
+  transform: rotate(35deg);
+}

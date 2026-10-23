@@ -28,6 +28,8 @@ import { listReturnOrders } from '@/services/returnOrderService';
 import { onReturnEvent } from '@/store/socketStore';
 import { formatCurrency, formatDate, timeAgo } from '@/lib/utils/format';
 import type { ReturnRequest, ReturnOrder, SelectOption } from './types';
+import { viewColumn } from '@/components/ui/viewColumn';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 const TYPE_OPTIONS: SelectOption[] = [
   { value: '', label: 'All types' },
@@ -182,7 +184,7 @@ function RequestsTab() {
       header: 'Customer / Supplier',
       render: (row: ReturnRequest) => (
         <div>
-          <div className="text-sm">{row.customerName || row.supplierName || '—'}</div>
+          <div className="text-sm">{row.customerName ? <CustomerHoverName id={row.customerId} name={row.customerName} /> : row.supplierName || '—'}</div>
           {row.customerPhone && (
             <div className="text-xs text-ink-muted">{row.customerPhone}</div>
           )}
@@ -247,7 +249,7 @@ function RequestsTab() {
       </div>
 
       <Table
-        columns={columns}
+        columns={[...columns, viewColumn<ReturnRequest>({ label: 'Return request actions', onView: (r) => router.push(`/returns/requests/${r.id}`) })]}
         rows={rows}
         loading={loading}
         empty={
@@ -257,7 +259,6 @@ function RequestsTab() {
             description="Submit a new return request from the POS or this page."
           />
         }
-        onRowClick={(row: ReturnRequest) => router.push(`/returns/requests/${row.id}`)}
         pagination={
           meta
             ? {
@@ -327,7 +328,7 @@ function OrdersTab() {
     {
       key: 'party',
       header: 'Customer / Supplier',
-      render: (row: ReturnOrder) => row.customerName || row.supplierName || '—',
+      render: (row: ReturnOrder) => (row.customerName ? <CustomerHoverName id={row.customerId} name={row.customerName} /> : row.supplierName || '—'),
     },
     {
       key: 'invoice',
@@ -375,7 +376,7 @@ function OrdersTab() {
       </div>
 
       <Table
-        columns={columns}
+        columns={[...columns, viewColumn<ReturnOrder>({ label: 'Return order actions', onView: (r) => router.push(`/returns/orders/${r.id}`) })]}
         rows={rows}
         loading={loading}
         empty={
@@ -385,7 +386,6 @@ function OrdersTab() {
             description="Approved return requests will create return orders here."
           />
         }
-        onRowClick={(row: ReturnOrder) => router.push(`/returns/orders/${row.id}`)}
         pagination={
           meta
             ? {

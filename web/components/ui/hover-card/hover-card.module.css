@@ -1,0 +1,130 @@
+/* Styles for HoverCard and HoverCardProfile. */
+
+.card {
+  z-index: 85;
+  width: 288px;
+  max-width: calc(100vw - 24px);
+  padding: 14px;
+  border: 1px solid theme('colors.border');
+  border-radius: 14px;
+  background: theme('colors.surface');
+  box-shadow: 0 16px 40px rgb(17 24 39 / 0.14), 0 2px 6px rgb(17 24 39 / 0.06);
+  transform-origin: var(--radix-popover-content-transform-origin);
+  outline: none;
+}
+
+/* ---- Profile ---------------------------------------------------------- */
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.avatar {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: theme('colors.surface-2');
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: filter 200ms ease, opacity 200ms ease;
+}
+
+.avatar img[data-loading] {
+  filter: blur(6px);
+  opacity: 0.6;
+}
+
+.initials {
+  font-size: 14px;
+  font-weight: 600;
+  color: theme('colors.ink.muted');
+}
+
+.identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.name {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  color: theme('colors.ink.DEFAULT');
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  color: theme('colors.ink.muted');
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bio {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: theme('colors.ink.DEFAULT');
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.stat {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: theme('colors.surface-2');
+}
+
+.stat dt {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: theme('colors.ink.muted');
+}
+
+.stat dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: theme('colors.ink.DEFAULT');
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  padding-top: 10px;
+  border-top: 1px solid theme('colors.border');
+  font-size: 12px;
+  line-height: 18px;
+  color: theme('colors.ink.muted');
+}

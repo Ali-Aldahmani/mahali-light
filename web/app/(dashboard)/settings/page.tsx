@@ -20,6 +20,7 @@ import {
   type UpdateCheckResult,
   type UpdateInstallStatus,
 } from '@/services/updateService';
+import PhoneField from '@/components/ui/PhoneField';
 
 const NAV: { id: string; label: string; link?: string }[] = [
   { id: 'store', label: 'Store profile' },
@@ -204,7 +205,7 @@ export default function SettingsHubPage() {
               <Input label="Arabic name" value={draft.store_name_ar || ''} onChange={(e: any) => patch({ store_name_ar: e.target.value })} disabled={!canEdit} />
               <Input label="Tagline" value={draft.store_tagline || ''} onChange={(e: any) => patch({ store_tagline: e.target.value })} disabled={!canEdit} placeholder="Electrical · POS" />
               <Textarea label="Address" value={draft.store_address || ''} onChange={(e: any) => patch({ store_address: e.target.value })} disabled={!canEdit} />
-              <Input label="Phone" value={draft.store_phone || ''} onChange={(e: any) => patch({ store_phone: e.target.value })} disabled={!canEdit} />
+              <PhoneField label="Phone" value={draft.store_phone || ''} onChange={(next) => patch({ store_phone: next })} disabled={!canEdit} />
               <Input label="Email" value={draft.store_email || ''} onChange={(e: any) => patch({ store_email: e.target.value })} disabled={!canEdit} />
               <Input label="TRN" value={draft.store_trn || ''} onChange={(e: any) => patch({ store_trn: e.target.value })} disabled={!canEdit} />
               {draft.store_logo_path && (

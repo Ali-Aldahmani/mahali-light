@@ -26,6 +26,7 @@ import { initStockCache } from '@/services/stockCacheService';
 import { syncAllCaches } from '@/services/localCacheService';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import KeyboardShortcutOverlay from '@/components/errors/KeyboardShortcutOverlay';
+import ShortcutEngine from '@/components/shortcuts/ShortcutEngine';
 import { useAppSettingsStore } from '@/store/appSettingsStore';
 import {
   onAdjustmentEvent,
@@ -267,6 +268,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       </div>
       <RestoreOverlay />
       <KeyboardShortcutOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <ShortcutEngine />
     </div>
   );
 }

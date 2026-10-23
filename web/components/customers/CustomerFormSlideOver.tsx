@@ -10,6 +10,8 @@ import {
   updateCustomer,
   searchCustomers,
 } from '@/services/customerService';
+import PhoneField from '@/components/ui/PhoneField';
+import { samePhone } from '@/lib/utils/phone';
 
 export interface CustomerRecord {
   id: number | string;
@@ -71,6 +73,8 @@ export default function CustomerFormSlideOver({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const lastCheckedPhone = useRef('');
+  // Set while the typed number is too short or too long for its country.
+  const phoneIncomplete = useRef(false);
 
   useEffect(() => {
     if (open) {
@@ -111,7 +115,7 @@ export default function CustomerFormSlideOver({
     try {
       const matches = await searchCustomers(phone);
       const conflict = (matches || []).find(
-        (m: CustomerRecord) => m.phone === phone && m.id !== customer?.id,
+        (m: CustomerRecord) => samePhone(m.phone, phone) && m.id !== customer?.id,
       );
       setErrors((e) => ({
         ...e,
@@ -128,6 +132,7 @@ export default function CustomerFormSlideOver({
     const localErrors: Record<string, string> = {};
     if (!form.name.trim()) localErrors.name = 'Name is required.';
     if (!form.phone.trim()) localErrors.phone = 'Phone is required.';
+    else if (phoneIncomplete.current) localErrors.phone = 'Enter the full phone number.';
     if (!isValidTrn(form.trnNumber))
       localErrors.trnNumber = 'TRN must be exactly 15 digits.';
     if (Number(form.creditLimit) < 0)
@@ -200,14 +205,16 @@ export default function CustomerFormSlideOver({
           placeholder="Customer or contact person"
         />
         <div className="grid grid-cols-2 gap-4">
-          <Input
+          <PhoneField
             label="Phone"
             required
             value={form.phone}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setField('phone', e.target.value)}
+            onChange={(next, details) => {
+              phoneIncomplete.current = !!next && !details?.valid;
+              setField('phone', next);
+            }}
             onBlur={checkPhoneUniqueness}
             error={errors.phone}
-            placeholder="+971…"
           />
           <Input
             label="Email"

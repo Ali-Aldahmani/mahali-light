@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
 import VATSummaryCard from '@/components/ui/VATSummaryCard';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import { getVATReport } from '@/services/financeService';
 import { useAuthStore } from '@/store/authStore';
@@ -77,8 +77,8 @@ export default function VATTab() {
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
+        <div className="py-4">
+          <Skeleton lines={4} />
         </div>
       )}
       {error && !loading && (

@@ -9,12 +9,15 @@ import NumberField from '../ui/number-field/NumberField';
 // hint comes from the variant; meter / kg products allow decimal qty.
 export default function CartItem({
   item,
+  maxQty,
   onQtyChange,
   onUnitPriceChange,
   onDiscountChange,
   onRemove,
 }: {
   item: any;
+  /** Units available. The stepper stops here; undefined means no limit. */
+  maxQty?: number;
   onQtyChange: (qty: number | string) => void;
   onUnitPriceChange?: (price: number) => void;
   onDiscountChange: (patch: { percent?: number; amount?: number }) => void;
@@ -93,6 +96,7 @@ export default function CartItem({
             <input
               type="number"
               min={0.01}
+              max={maxQty != null && Number.isFinite(maxQty) ? maxQty : undefined}
               step="0.01"
               value={item.quantity}
               onChange={(e) => onQtyChange(e.target.value)}
@@ -105,6 +109,8 @@ export default function CartItem({
               hideLabel
               label={`Quantity of ${item.productName}`}
               min={1}
+              max={maxQty != null && Number.isFinite(maxQty) ? Math.max(1, maxQty) : undefined}
+              limitHint={(edge, limit) => (edge === 'max' ? `Only ${limit} in stock` : `At least ${limit}`)}
               value={Number(item.quantity) || 1}
               onValueChange={(n) => onQtyChange(n)}
             />

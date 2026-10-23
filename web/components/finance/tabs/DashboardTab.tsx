@@ -13,7 +13,7 @@ import {
 import FinanceMetricCard from '@/components/ui/FinanceMetricCard';
 import PLStatementTable from '@/components/ui/PLStatementTable';
 import BalanceSheetTable from '@/components/ui/BalanceSheetTable';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import Button from '@/components/ui/Button';
 import {
@@ -72,8 +72,8 @@ export default function DashboardTab() {
 
   if (loading && !snapshot) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={6} />
       </div>
     );
   }

@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import { toast } from '@/store/toastStore';
 import { createSupplier, updateSupplier } from '@/services/supplierService';
 import type { Supplier } from './types';
+import PhoneField from '@/components/ui/PhoneField';
 
 interface SupplierFormState {
   name: string;
@@ -145,11 +146,10 @@ export default function SupplierFormSlideOver({
             }
             placeholder="Sales rep name"
           />
-          <Input
+          <PhoneField
             label="Phone"
             value={form.phone}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setField('phone', e.target.value)}
-            placeholder="+971…"
+            onChange={(next) => setField('phone', next)}
           />
         </div>
         <Input

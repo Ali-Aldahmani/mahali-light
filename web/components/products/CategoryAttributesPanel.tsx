@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, GripVertical, Plus, Save, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import { getCategoryAttributes, setCategoryAttributes } from '@/services/categoryService';
 import { toast } from '@/store/toastStore';
 import { cn } from '@/lib/utils/cn';
@@ -176,8 +176,8 @@ export default function CategoryAttributesPanel({
 
       <div className="p-5">
         {loading ? (
-          <div className="flex items-center justify-center py-10">
-            <Spinner size="md" className="text-accent" />
+          <div className="py-4">
+            <Skeleton lines={4} />
           </div>
         ) : items.length === 0 ? (
           <div className="rounded-input border border-dashed border-border bg-surface-2 px-4 py-8 text-center text-sm text-ink-muted">

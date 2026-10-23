@@ -289,7 +289,6 @@ function SuppliersPageContent() {
         rows={rows}
         rowKey={(r: Supplier) => r.id}
         loading={loading}
-        onRowClick={(r: Supplier) => router.push(`/suppliers/${r.id}`)}
         empty={
           <EmptyState
             title="No suppliers"

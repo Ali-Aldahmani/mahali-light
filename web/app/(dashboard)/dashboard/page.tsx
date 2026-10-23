@@ -2,22 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import {
-  Banknote,
-  CalendarDays,
-  ChartArea,
-  PiggyBank,
-  RefreshCw,
-  TrendingDown,
-  TrendingUp,
-  Wallet,
-} from 'lucide-react';
+import { RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
+import { motion } from 'motion/react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Select from '@/components/ui/Select';
 import PermissionGate from '@/components/ui/PermissionGate';
 import { useAuthStore } from '@/store/authStore';
-import KPICard from '@/components/analytics/KPICard';
+import DashboardSparkCards from '@/components/analytics/DashboardSparkCards';
+import { motionTokens } from '@/lib/motion-tokens';
 import SalesTimelineChart from '@/components/analytics/SalesTimelineChart';
 import TopProductsTable from '@/components/analytics/TopProductsTable';
 import EmployeePerformanceTable from '@/components/analytics/EmployeePerformanceTable';
@@ -28,6 +20,7 @@ import FinanceDashboardWidget from '@/components/ui/FinanceDashboardWidget';
 import { DASHBOARD_RANGES as RANGES, rangeDates } from '@/lib/dashboard/ranges';
 import {
   getKPIs,
+  getKpiSeries,
   getSparkline,
   getDailySnapshot,
   getSalesTimeline,
@@ -36,17 +29,19 @@ import {
   getCategoryBreakdown,
   getPeakHeatmap,
 } from '@/services/analyticsService';
+import Skeleton from '@/components/ui/skeleton';
 
 const REFRESH_MS_KPI = 5 * 60 * 1000;
 const REFRESH_MS_CHART = 15 * 60 * 1000;
 
 // Skeleton placeholder used while data loads. Pure visual filler.
 function SkeletonCard({ height = 96 }: { height?: number }) {
+  // Roughly one placeholder line per 40px of the card it stands in for.
+  const lines = Math.max(2, Math.min(6, Math.round((height - 32) / 30)));
   return (
-    <div
-      className="rounded-card border border-border bg-surface animate-pulse"
-      style={{ height }}
-    />
+    <div className="rounded-card border border-border bg-surface p-4 overflow-hidden" style={{ height }}>
+      <Skeleton lines={lines} />
+    </div>
   );
 }
 
@@ -62,6 +57,7 @@ export default function DashboardPage() {
   const [snapshot, setSnapshot] = useState<any>(null);
   const [kpis, setKpis] = useState<any>(null);
   const [revenueSparkline, setRevenueSparkline] = useState<any[]>([]);
+  const [series, setSeries] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -73,13 +69,15 @@ export default function DashboardPage() {
   const loadKpiBundle = useCallback(async () => {
     if (!canAnalytics) return;
     try {
-      const [k, snap, spark] = await Promise.all([
+      const [k, snap, spark, ser] = await Promise.all([
         getKPIs(range).then((r: any) => r?.data || r),
         getDailySnapshot().then((r: any) => r?.data || r),
-        getSparkline('revenue', 7).then((r: any) => r?.data || r),
+        getSparkline('revenue', 14).then((r: any) => r?.data || r),
+        getKpiSeries(range).then((r: any) => r?.data || r).catch(() => null),
       ]);
       setKpis(k);
       setSnapshot(snap);
+      setSeries(ser);
       setRevenueSparkline((spark || []).map((d: any) => ({ value: d.value, label: d.bucket })));
     } catch (_err) {
       // soft-fail — leave previous data in place
@@ -140,12 +138,7 @@ export default function DashboardPage() {
         action={
           canAnalytics ? (
             <div className="flex items-center gap-2">
-              <Select
-                value={rangeKey}
-                onChange={setRangeKey}
-                options={RANGES}
-                className="min-w-[160px]"
-              />
+              <PeriodToggle value={rangeKey} onChange={setRangeKey} />
               <Button
                 variant="secondary"
                 onClick={manualRefresh}
@@ -169,64 +162,22 @@ export default function DashboardPage() {
 
       {canAnalytics && (
         <>
-          {/* Row 1 — KPI tiles */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {snapshot ? (
-              <KPICard
-                label="Today's revenue"
-                value={snapshot.today_revenue}
-                delta={snapshot.revenue_growth_pct}
-                hint={`${snapshot.today_invoices} invoices today`}
-                sparkline={revenueSparkline}
-                Icon={Banknote}
-              />
-            ) : (
-              <SkeletonCard />
-            )}
-            {kpis ? (
-              <KPICard
-                label="Revenue (period)"
-                value={kpis.revenue}
-                delta={kpis.revenue_growth_pct}
-                hint={`${kpis.invoice_count || 0} invoices`}
-                Icon={ChartArea}
-              />
-            ) : (
-              <SkeletonCard />
-            )}
-            {kpis ? (
-              <KPICard
-                label="Receivables"
-                value={kpis.receivables_total}
-                hint="Outstanding from customers"
-                Icon={Wallet}
-              />
-            ) : (
-              <SkeletonCard />
-            )}
-            {kpis ? (
-              <KPICard
-                label="Payables"
-                value={kpis.payables_total}
-                hint="Outstanding to suppliers"
-                Icon={CalendarDays}
-                invertDelta
-              />
-            ) : (
-              <SkeletonCard />
-            )}
-            {kpis ? (
-              <KPICard
-                label="Net profit"
-                value={kpis.net_profit}
-                delta={kpis.revenue_growth_pct}
-                hint={`${kpis.net_margin_pct?.toFixed(1)}% margin`}
-                Icon={PiggyBank}
-              />
-            ) : (
-              <SkeletonCard />
-            )}
-          </div>
+          {/* Row 1 — KPI sparkline cards */}
+          {snapshot && kpis ? (
+            <DashboardSparkCards
+              snapshot={snapshot}
+              kpis={kpis}
+              series={series}
+              todaySeries={revenueSparkline}
+              periodLabel={RANGES.find((x) => x.value === rangeKey)?.label ?? ''}
+            />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {Array.from({ length: 5 }, (_, i) => (
+                <SkeletonCard key={i} height={168} />
+              ))}
+            </div>
+          )}
 
           {/* Row 2 — sales chart + employee leaderboard */}
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -309,6 +260,36 @@ export default function DashboardPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** This Month / Last Month switch for the whole dashboard. */
+function PeriodToggle({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div role="radiogroup" aria-label="Dashboard period" className="inline-flex h-10 items-center gap-0.5 rounded-input border border-border bg-surface p-1">
+      {RANGES.map((r) => {
+        const on = r.value === value;
+        return (
+          <button
+            key={r.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(r.value)}
+            className={`relative h-8 rounded-[6px] px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${on ? 'text-white' : 'text-ink-muted hover:text-ink'}`}
+          >
+            {on && (
+              <motion.span
+                layoutId="dashboard-period"
+                className="absolute inset-0 rounded-[6px] bg-accent shadow-sm"
+                transition={motionTokens.spring.snappy}
+              />
+            )}
+            <span className="relative">{r.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

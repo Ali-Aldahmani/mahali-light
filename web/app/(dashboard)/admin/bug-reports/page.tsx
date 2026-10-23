@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Eye, RefreshCw } from 'lucide-react';
+import RowActions from '@/components/ui/RowActions';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
@@ -15,6 +16,7 @@ import {
 import { usePrivateFileUrl } from '@/components/ui/PrivateFileLink';
 import { formatDateTime, timeAgo } from '@/lib/utils/format';
 import { toast } from '@/store/toastStore';
+import Skeleton from '@/components/ui/skeleton';
 
 const URGENCY_TONE: Record<string, string> = { blocking: 'error', major: 'warning', minor: 'success' };
 const STATUS_TONE: Record<string, string> = {
@@ -132,19 +134,20 @@ function BugReportsAdminPageInner() {
               <tr>
                 <th className="px-3 py-2 text-left">Ticket</th>
                 <th className="px-3 py-2 text-left">Urgency</th>
+                <th className="px-3 py-2" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={2} className="px-3 py-6 text-center text-ink-muted">
-                    Loading…
+                  <td colSpan={3} className="px-3 py-4">
+                    <Skeleton lines={4} label="Loading bug reports" />
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-3 py-6 text-center text-ink-muted">
+                  <td colSpan={3} className="px-3 py-6 text-center text-ink-muted">
                     No bug reports.
                   </td>
                 </tr>
@@ -152,10 +155,9 @@ function BugReportsAdminPageInner() {
               {rows.map((r) => (
                 <tr
                   key={r.id}
-                  className={`cursor-pointer border-t border-border hover:bg-surface-2/60 ${
+                  className={`border-t border-border ${
                     selectedId === r.id ? 'bg-accent-light/40' : ''
                   }`}
-                  onClick={() => openDetail(r.id)}
                 >
                   <td className="px-3 py-2">
                     <p className="font-medium text-ink">{r.ticket_number}</p>
@@ -163,6 +165,12 @@ function BugReportsAdminPageInner() {
                   </td>
                   <td className="px-3 py-2">
                     <Badge tone={URGENCY_TONE[r.urgency] || 'neutral'}>{r.urgency}</Badge>
+                  </td>
+                  <td className="px-3 py-2">
+                    <RowActions
+                      label="Bug report actions"
+                      actions={[{ id: 'view', label: 'View', icon: <Eye />, onClick: () => openDetail(r.id) }]}
+                    />
                   </td>
                 </tr>
               ))}

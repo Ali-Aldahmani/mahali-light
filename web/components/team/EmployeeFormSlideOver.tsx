@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import { createEmployee, updateEmployee } from '@/services/employeeService';
 import { toast } from '@/store/toastStore';
 import DateField from '@/components/ui/DateField';
+import PhoneField from '@/components/ui/PhoneField';
 
 const EMPTY = {
   name: '',
@@ -142,10 +143,10 @@ export default function EmployeeFormSlideOver({
         />
 
         <div className="grid grid-cols-2 gap-3">
-          <Input
+          <PhoneField
             label="Phone"
             value={form.phone}
-            onChange={(e: any) => set('phone', e.target.value)}
+            onChange={(next) => set('phone', next)}
             error={errors.phone}
           />
           <Input

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banknote,
   CheckCircle2,
-  Loader2,
   Package,
   PackagePlus,
   Search,
@@ -43,6 +42,8 @@ import { prepareCheckout, submitSale, checkoutErrorMessage } from '@/lib/pos/che
 import { formatCurrency } from '@/lib/utils/format';
 import { useAppSettingsStore } from '@/store/appSettingsStore';
 import { useAuthStore } from '@/store/authStore';
+import Skeleton from '@/components/ui/skeleton';
+import { stockShortfall } from '@/lib/pos/stockGuard';
 
 export default function POSPage() {
   return (
@@ -77,6 +78,63 @@ function POSPageContent() {
   const publicSettings = useAppSettingsStore((s) => s.publicSettings);
 
   const totals = usePosStore((s) => s.calculateTotals());
+
+  // ---- Stock guard -------------------------------------------------------
+  // The cart never asks for more than is on the shelf (same rule as Cashier
+  // Mode). The server refuses an over-stock sale at checkout anyway; this
+  // stops it at the counter. Custom lines and stores that allow negative
+  // stock are exempt.
+  const allowNegativeStock = !!publicSettings?.pos_allow_negative_stock;
+
+  const addWithinStock = useCallback(
+    (variant: any, qty: any = 1) => {
+      const amount = Number(qty) || 1;
+      const existing = usePosStore.getState().cart.find((i) => i.variantId === variant?.variantId);
+      const stock = Number(variant?.stockQty ?? existing?.stockQty ?? 0);
+      const requested = (existing ? Number(existing.quantity) : 0) + amount;
+      const short = stockShortfall({ name: variant.productName, unit: variant.unitLabel, stock, requested, allowNegative: allowNegativeStock });
+      if (short) {
+        toast.error(short);
+        return false;
+      }
+      addToCart(variant, amount);
+      return true;
+    },
+    [addToCart, allowNegativeStock],
+  );
+
+  const setQtyWithinStock = useCallback(
+    (variantId: any, qty: any) => {
+      const line = usePosStore.getState().cart.find((i) => i.variantId === variantId);
+      if (!line) return;
+      const stock = Number(line.stockQty);
+      const short = stockShortfall({ name: line.productName, unit: line.unitLabel, stock, requested: Number(qty), allowNegative: allowNegativeStock, isCustom: line.isCustom });
+      if (short) {
+        toast.error(short);
+        // Settle on what's available instead of keeping an impossible number.
+        updateQty(variantId, Math.max(stock, 0));
+        return;
+      }
+      updateQty(variantId, qty);
+    },
+    [updateQty, allowNegativeStock],
+  );
+
+  // A cart saved before this check (or before the settings loaded) can hold
+  // more than is in stock; bring those lines down once the rule is known.
+  useEffect(() => {
+    if (!publicSettings || allowNegativeStock) return;
+    for (const line of usePosStore.getState().cart) {
+      const stock = Number(line.stockQty);
+      const short = stockShortfall({ name: line.productName, unit: line.unitLabel, stock, requested: Number(line.quantity), isCustom: line.isCustom });
+      if (short) {
+        updateQty(line.variantId, Math.max(stock, 0));
+        toast.warning(`${short} The cart was adjusted.`);
+      }
+    }
+    // Runs when the setting becomes known, not on every cart change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicSettings, allowNegativeStock]);
 
   useEffect(() => {
     fetchPublicSettings().catch(() => {});
@@ -193,16 +251,11 @@ function POSPageContent() {
         toast.warning(`No product found for barcode ${code}.`);
         return;
       }
-      if (Number(exact.stockQty || 0) <= 0) {
-        toast.error(`${exact.productName} is out of stock.`);
-        return;
-      }
-      addToCart(exact, 1);
-      toast.success(`Added ${exact.productName} to cart.`);
+      if (addWithinStock(exact, 1)) toast.success(`Added ${exact.productName} to cart.`);
     } catch (_e) {
       toast.error('Could not look up scanned code.');
     }
-  }, [addToCart]);
+  }, [addWithinStock]);
 
   useBarcodeListener(onScan, {
     enabled: !confirmOpen && !success && !customerFormOpen && !productFormOpen,
@@ -213,7 +266,7 @@ function POSPageContent() {
       (v) => v.productId === variant.productId,
     );
     if (siblings.length <= 1 && (!variant.attributes || variant.attributes.length === 0)) {
-      addToCart(variant, 1);
+      addWithinStock(variant, 1);
       return;
     }
     setVariantSelector(variant);
@@ -282,7 +335,8 @@ function POSPageContent() {
         invoiceDiscount={invoiceDiscount}
         selectedCustomer={selectedCustomer}
         onCustomerChange={setCustomer}
-        onQtyChange={updateQty}
+        onQtyChange={setQtyWithinStock}
+        allowNegativeStock={allowNegativeStock}
         onDiscountChange={setLineDiscount}
         onSerialChange={(variantId: any, value: any, status: any) =>
           setSerial(variantId, value, status)
@@ -300,7 +354,7 @@ function POSPageContent() {
         open={productFormOpen}
         onClose={() => setProductFormOpen(false)}
         onRefreshProducts={fetchProducts}
-        onAddToCart={(v) => addToCart(v, 1)}
+        onAddToCart={(v) => addWithinStock(v, 1)}
       />
 
       <CustomerFormSlideOver
@@ -315,7 +369,7 @@ function POSPageContent() {
         onClose={() => setVariantSelector(null)}
         variant={variantSelector}
         siblings={products}
-        onAdd={(v: any, qty: any) => addToCart(v, qty)}
+        onAdd={(v: any, qty: any) => addWithinStock(v, qty)}
       />
 
       {confirmOpen && (
@@ -411,8 +465,8 @@ function ProductBrowser({
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-ink-muted" />
+          <div className="rounded-card border border-border bg-surface p-5">
+            <Skeleton lines={6} label="Loading products" />
           </div>
         ) : products.length === 0 ? (
           <div className="rounded-card border border-dashed border-border bg-surface-2 p-10 text-center">
@@ -472,6 +526,7 @@ function CartPanel({
   selectedCustomer,
   onCustomerChange,
   onQtyChange,
+  allowNegativeStock = false,
   onDiscountChange,
   onSerialChange,
   onRemove,
@@ -488,6 +543,7 @@ function CartPanel({
   selectedCustomer: any;
   onCustomerChange: (c: any) => void;
   onQtyChange: (variantId: any, qty: any) => void;
+  allowNegativeStock?: boolean;
   onDiscountChange: (variantId: any, patch: any) => void;
   onSerialChange: (variantId: any, value: any, status: any) => void;
   onRemove: (variantId: any) => void;
@@ -597,6 +653,7 @@ function CartPanel({
             <div key={it.variantId} className="space-y-1.5">
               <CartItem
                 item={it}
+                maxQty={allowNegativeStock || it.isCustom ? undefined : Number(it.stockQty)}
                 onQtyChange={(q: any) => onQtyChange(it.variantId, q)}
                 onDiscountChange={(d: any) => onDiscountChange(it.variantId, d)}
                 onRemove={() => onRemove(it.variantId)}

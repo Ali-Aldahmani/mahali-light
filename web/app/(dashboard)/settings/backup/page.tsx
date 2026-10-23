@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, Database, Server, ShieldCheck, Trash2, Loader2, History,
+  Activity, Database, Server, ShieldCheck, Trash2, History,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
@@ -17,6 +17,7 @@ import RetentionSlider from '@/components/backup/RetentionSlider';
 import RestoreConfirmModal from '@/components/backup/RestoreConfirmModal';
 import { downloadBackup } from '@/services/backupService';
 import { toast } from '@/store/toastStore';
+import Skeleton from '@/components/ui/skeleton';
 
 const TABS = [
   { value: 'status', label: 'Status', icon: <Activity size={14} /> },
@@ -171,8 +172,8 @@ function BackupSettingsPageInner() {
 
   if (!draft) {
     return (
-      <div className="flex h-64 items-center justify-center text-ink-muted">
-        <Loader2 className="mr-2 animate-spin" /> Loading backup settings…
+      <div className="rounded-card border border-border bg-surface p-5">
+        <Skeleton lines={6} label="Loading backup settings" />
       </div>
     );
   }
@@ -220,8 +221,8 @@ function BackupSettingsPageInner() {
               <tbody>
                 {loadingJobs && (
                   <tr>
-                    <td className="px-3 py-6 text-center text-ink-muted" colSpan={6}>
-                      Loading…
+                    <td className="px-3 py-4" colSpan={6}>
+                      <Skeleton lines={4} label="Loading backup history" />
                     </td>
                   </tr>
                 )}

@@ -1,0 +1,247 @@
+/* Styles for CommandPalette: a search field over a grouped, filterable list
+   of actions with one gliding highlight. */
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid theme('colors.border');
+  border-radius: 16px;
+  background: theme('colors.surface');
+  box-shadow: 0 24px 64px rgb(17 24 39 / 0.22), 0 4px 12px rgb(17 24 39 / 0.08);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Search row ------------------------------------------------------- */
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 14px 0 16px;
+  border-bottom: 1px solid theme('colors.border');
+}
+
+.searchIcon {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  color: theme('colors.ink.muted');
+}
+
+.searchRow input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  color: theme('colors.ink.DEFAULT');
+  outline: none;
+}
+
+.searchRow input::placeholder { color: theme('colors.ink.muted'); }
+
+.clearButton {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 9999px;
+  background: theme('colors.surface-2');
+  color: theme('colors.ink.muted');
+  cursor: pointer;
+}
+
+.clearButton:hover { color: theme('colors.ink.DEFAULT'); }
+
+.closeButton,
+.commandKey {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid theme('colors.border');
+  border-radius: 6px;
+  background: theme('colors.surface');
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 20px;
+  color: theme('colors.ink.muted');
+}
+
+.closeButton { cursor: pointer; }
+.closeButton:hover { background: theme('colors.surface-2'); color: theme('colors.ink.DEFAULT'); }
+
+.clearButton:focus-visible,
+.closeButton:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: 2px;
+}
+
+/* The shortcut hint repeats the open shortcut; the Esc button does the closing. */
+.closeButton + .commandKey { display: none; }
+
+/* ---- Results ---------------------------------------------------------- */
+
+.resultsFrame {
+  overflow: hidden;
+}
+
+.results {
+  position: relative;
+  max-height: min(420px, 60vh);
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.highlight {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  right: 6px;
+  z-index: 0;
+  border-radius: 10px;
+  background: theme('colors.surface-2');
+  pointer-events: none;
+}
+
+.group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.group + .group { margin-top: 4px; }
+
+.groupHeading {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: theme('colors.ink.muted');
+}
+
+.result {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font: inherit;
+  color: theme('colors.ink.DEFAULT');
+  text-align: left;
+  cursor: pointer;
+}
+
+.result:focus { outline: none; }
+
+.itemIcon {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid theme('colors.border');
+  border-radius: 8px;
+  background: theme('colors.surface');
+  color: theme('colors.ink.muted');
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.itemIcon > svg { width: 16px; height: 16px; }
+
+.activeResult .itemIcon {
+  border-color: rgb(249 115 22 / 0.35);
+  color: theme('colors.accent.DEFAULT');
+}
+
+.resultCopy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.resultCopy strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resultCopy small {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  color: theme('colors.ink.muted');
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid theme('colors.border');
+  border-radius: 5px;
+  background: theme('colors.surface');
+  font-family: inherit;
+  font-size: 11px;
+  color: theme('colors.ink.muted');
+}
+
+/* ---- Empty state ------------------------------------------------------ */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 32px 16px 36px;
+  text-align: center;
+}
+
+.empty span {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 6px;
+  border-radius: 9999px;
+  background: theme('colors.surface-2');
+  color: theme('colors.ink.muted');
+}
+
+.empty strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: theme('colors.ink.DEFAULT');
+}
+
+.empty small {
+  font-size: 12px;
+  color: theme('colors.ink.muted');
+}

@@ -13,6 +13,7 @@ import {
 } from '@/services/attendanceService';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
+import Skeleton from '@/components/ui/skeleton';
 
 interface Correction {
   id: string;
@@ -171,8 +172,8 @@ export default function CorrectionsTab() {
             All corrections {statusFilter ? `(${statusFilter})` : ''}
           </h3>
           {loading ? (
-            <div className="rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted">
-              Loading…
+            <div className="rounded-card border border-border bg-surface p-5">
+              <Skeleton lines={4} label="Loading corrections" />
             </div>
           ) : items.length === 0 ? (
             <div className="rounded-card border border-border bg-surface p-6 text-center text-sm text-ink-muted">

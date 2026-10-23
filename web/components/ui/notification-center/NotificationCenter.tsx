@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion, type AnimationPlaybackControls, type HTMLMotionProps, type TargetAndTransition, type Transition, type Variants } from "motion/react";
-import { ArrowUpRight, Bell, Check, CheckCheck, CircleAlert, CircleCheck, CircleDot, MessageCircle, Settings, TriangleAlert, X } from "lucide-react";
+import { ArrowUpRight, Bell, Check, CheckCheck, CircleAlert, CircleCheck, CircleDot, MessageCircle, Pin, PinOff, Settings, Trash2, TriangleAlert, X } from "lucide-react";
+import { SwipeActions, SwipeActionsRow } from "@/components/ui/swipe-actions";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import Avatar from "@/components/ui/Avatar";
 import { motionTokens } from "@/lib/motion-tokens";
@@ -21,6 +22,10 @@ export interface NotificationItem {
   action?: { label: string; onSelect: () => void };
   /** false hides Dismiss and keeps the item when clearing read ones. */
   dismissible?: boolean;
+  /** Pinned items stay on top of the list, oldest pin first. */
+  pinned?: boolean;
+  /** When it was pinned (ISO), for ordering pins. */
+  pinnedAt?: string | null;
 }
 
 export interface NotificationCenterProps {
@@ -28,6 +33,8 @@ export interface NotificationCenterProps {
   label?: string;
   onReadChange?: (notification: NotificationItem, read: boolean) => void;
   onDismiss?: (notification: NotificationItem) => void;
+  /** Swipe left (or More actions › Pin) toggles a pin. */
+  onPinChange?: (notification: NotificationItem, pinned: boolean) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   avoidCollisions?: boolean;
@@ -118,7 +125,7 @@ function NotificationVisual({ item }: { item: NotificationItem }) {
   </span>;
 }
 
-export function NotificationCenter({ notifications: initial, label = "Notifications", onReadChange, onDismiss, open, onOpenChange, avoidCollisions = true, onSettings, hasMore = false, onLoadMore, loading = false, triggerClassName }: NotificationCenterProps) {
+export function NotificationCenter({ notifications: initial, label = "Notifications", onReadChange, onDismiss, onPinChange, open, onOpenChange, avoidCollisions = true, onSettings, hasMore = false, onLoadMore, loading = false, triggerClassName }: NotificationCenterProps) {
   const reduce = useReducedMotion();
   const layoutId = useId();
   const [internalOpen, setInternalOpen] = useState(false);
@@ -136,7 +143,12 @@ export function NotificationCenter({ notifications: initial, label = "Notificati
   const isOpen = open ?? internalOpen;
   const unreadCount = useMemo(() => items.filter((item) => !item.read).length, [items]);
   const readCount = items.length - unreadCount;
-  const visible = view === "unread" ? items.filter((item) => !item.read) : items;
+  // Pinned first (oldest pin on top), then everything else in the order given.
+  const ordered = useMemo(() => {
+    const pinned = items.filter((item) => item.pinned).sort((a, b) => String(a.pinnedAt ?? "").localeCompare(String(b.pinnedAt ?? "")));
+    return [...pinned, ...items.filter((item) => !item.pinned)];
+  }, [items]);
+  const visible = view === "unread" ? ordered.filter((item) => !item.read) : ordered;
   const summary = unreadCount ? `${unreadCount} update${unreadCount === 1 ? "" : "s"} waiting for you` : "You’re all caught up";
 
   function setOpen(next: boolean) {
@@ -175,6 +187,13 @@ export function NotificationCenter({ notifications: initial, label = "Notificati
     onDismiss?.(item);
   }
 
+  function togglePin(item: NotificationItem) {
+    const next = !item.pinned;
+    setBulk(false);
+    setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, pinned: next, pinnedAt: next ? new Date().toISOString() : null } : entry));
+    onPinChange?.(item, next);
+  }
+
   function clearRead() {
     const clearable = (item: NotificationItem) => item.read && item.dismissible !== false;
     items.filter(clearable).forEach((item) => onDismiss?.(item));
@@ -211,16 +230,17 @@ export function NotificationCenter({ notifications: initial, label = "Notificati
         </div>
 
         {/* Rows collapse their own height on the way out, so the list and the panel close the gap together. */}
-        <div className={styles.list} role="list" aria-label={view === "all" ? "All notifications" : "Unread notifications"}>
-          <AnimatePresence initial={false} custom={bulk}>
-            {visible.map((item, index) => <motion.div key={item.id} role="listitem" className={styles.row} custom={bulk}
-              variants={{ exit: (isBulk: boolean) => reduce ? fadeOut : { height: 0, opacity: 0, transition: { height: { ...motionTokens.spring.smooth, delay: isBulk ? cascade(index) : 0 }, opacity: { ...exitFast, delay: isBulk ? cascade(index) : 0 } } } }}
-              initial={reduce ? { opacity: 0 } : { height: 0 }} animate={{ height: "auto", opacity: 1 }} exit="exit" transition={height}>
+        <div className={styles.list}>
+          {/* Swipe right deletes; swipe left pins. Each row's More actions menu does the same without the gesture. */}
+          <SwipeActions label={view === "all" ? "All notifications" : "Unread notifications"}>
+            {visible.map((item, index) => <SwipeActionsRow key={item.id} label={item.title}
+              leading={item.dismissible === false ? [] : [{ label: "Delete", icon: <Trash2 />, tone: "danger", onSelect: () => dismiss(item) }]}
+              trailing={[{ label: item.pinned ? "Unpin" : "Pin", icon: item.pinned ? <PinOff /> : <Pin />, tone: "accent", keepRow: true, onSelect: () => togglePin(item) }]}>
               <article className={[styles.item, item.read ? styles.itemRead : "", expandedId === item.id ? styles.itemExpanded : ""].filter(Boolean).join(" ")} style={{ "--index": Math.min(index, 7) } as CSSProperties}>
                 <div className={styles.itemMain}>
                   <NotificationVisual item={item} />
                   <button ref={(node) => { if (node) itemRefs.current.set(item.id, node); else itemRefs.current.delete(item.id); }} type="button" className={styles.itemToggle} aria-expanded={expandedId === item.id} aria-label={`${item.title}${item.read ? "" : ", unread"}. ${expandedId === item.id ? "Hide details" : "Show details"}`} onClick={() => setExpandedId((current) => current === item.id ? null : item.id)}>
-                    <span className={styles.itemTitle}><strong>{item.title}</strong>
+                    <span className={styles.itemTitle}>{item.pinned && <Pin className={styles.pinMark} size={12} strokeWidth={2} aria-label="Pinned" />}<strong>{item.title}</strong>
                       <AnimatePresence initial={false} custom={bulk}>{!item.read && <motion.span key="dot" className={styles.unreadDot} aria-hidden="true" custom={bulk}
                         variants={{ exit: (isBulk: boolean) => reduce ? fadeOut : { opacity: 0, scale: .3, transition: { ...exitFast, delay: isBulk ? cascade(index) : 0 } } }}
                         initial={reduce ? { opacity: 0 } : { opacity: 0, scale: .3 }} animate={{ opacity: 1, scale: 1 }} exit="exit" transition={reduce ? instant : motionTokens.spring.snappy} />}</AnimatePresence>
@@ -238,12 +258,14 @@ export function NotificationCenter({ notifications: initial, label = "Notificati
                         <span className={styles.actionIcon}><AnimatePresence mode="popLayout" initial={false}><Swap key={item.read ? "unread" : "read"} className={styles.actionGlyph} initial={reduce ? { opacity: 0 } : iconIn} animate={shown} exit={reduce ? fadeOut : { ...iconIn, transition: exitFast }} transition={reduce ? instant : motionTokens.spring.snappy}>{item.read ? <CircleDot size={14} strokeWidth={1.75} aria-hidden="true" /> : <Check size={14} strokeWidth={1.75} aria-hidden="true" />}</Swap></AnimatePresence></span>
                         <SwapText reduce={reduce}>{item.read ? "Mark unread" : "Mark read"}</SwapText>
                       </MorphWidth></button>
-                      {item.dismissible !== false && <button type="button" onClick={() => dismiss(item)}><X size={14} strokeWidth={1.75} aria-hidden="true" />Dismiss</button>}
+                      {item.dismissible !== false && <button type="button" onClick={() => dismiss(item)}><Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />Delete</button>}
                     </div>
                   </motion.div>}
                 </AnimatePresence>
               </article>
-            </motion.div>)}
+            </SwipeActionsRow>)}
+          </SwipeActions>
+          <AnimatePresence initial={false}>
             {/* The empty state opens its height on the same spring the rows close on, so the panel morphs between them instead of stacking both. After a bulk action it waits for the cascade to get going, so the panel never grows before it shrinks. */}
             {visible.length === 0 && <motion.div key="empty" className={styles.emptyFrame} initial={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={reduce ? fadeOut : { height: 0, opacity: 0, transition: { height: motionTokens.spring.smooth, opacity: exitFast } }} transition={reduce ? instant : { height: { ...motionTokens.spring.smooth, delay: bulk ? cascade(3) : 0 }, opacity: { ...enter, delay: motionTokens.duration.fast } }}>
               <motion.div className={styles.empty} initial={reduce ? false : { y: 6 }} animate={{ y: 0 }} transition={reduce ? instant : { ...enter, delay: motionTokens.duration.fast }}><CircleCheck size={24} strokeWidth={1.5} aria-hidden="true" /><strong><SwapText reduce={reduce}>{view === "unread" ? "Nothing unread" : "All clear"}</SwapText></strong><p><SwapText reduce={reduce}>{view === "unread" ? "You’ve seen every update." : "New updates will appear here."}</SwapText></p>{view === "unread" && items.length > 0 && <button type="button" onClick={() => { setBulk(false); setView("all"); }}>View all updates</button>}</motion.div>

@@ -150,7 +150,7 @@ describe('Cashier Mode — products, barcode and cart', () => {
     expect(search().value).toBe('');
     expect(within(cart()).getByText('LED Bulb')).toBeInTheDocument();
     await scan('6291000000011');
-    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue(2);
+    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue('2');
     expect(screen.getByText('Added LED Bulb · qty 2')).toBeInTheDocument();
   });
 
@@ -183,9 +183,9 @@ describe('Cashier Mode — products, barcode and cart', () => {
     await renderTerminal();
     fireEvent.click(screen.getByRole('button', { name: /Add LED Bulb/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of LED Bulb' }));
-    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue(2);
+    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue('2');
     fireEvent.click(screen.getByRole('button', { name: 'Decrease quantity of LED Bulb' }));
-    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue(1);
+    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue('1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove LED Bulb' }));
     expect(within(cart()).getByText('LED Bulb')).toBeInTheDocument();
@@ -227,10 +227,10 @@ describe('Cashier Mode — keyboard', () => {
     (document.activeElement as HTMLElement)?.blur();
     await pause();
     fireEvent.keyDown(document.body, { key: '+' });
-    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue(2);
+    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue('2');
     await pause();
     fireEvent.keyDown(document.body, { key: '-' });
-    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue(1);
+    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue('1');
     fireEvent.keyDown(document.body, { key: 'Delete' });
     expect(within(cart()).getByText('LED Bulb')).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'Delete' });
@@ -244,7 +244,7 @@ describe('Cashier Mode — keyboard', () => {
     fireEvent.keyDown(search(), { key: 'Delete' });
     const qty = screen.getByLabelText('Quantity of LED Bulb');
     fireEvent.keyDown(qty, { key: '+' });
-    expect(qty).toHaveValue(1);
+    expect(qty).toHaveValue('1');
     expect(within(cart()).getByText('LED Bulb')).toBeInTheDocument();
   });
 
@@ -256,7 +256,7 @@ describe('Cashier Mode — keyboard', () => {
     fireEvent.keyDown(document.body, { key: 'A' });
     search().blur();
     fireEvent.keyDown(document.body, { key: '-' });
-    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue(1);
+    expect(screen.getByLabelText('Quantity of LED Bulb')).toHaveValue('1');
   });
 });
 
@@ -274,7 +274,8 @@ describe('Cashier Mode — quick actions and permissions', () => {
     fireEvent.change(within(create).getByLabelText(/Phone/), { target: { value: '0501234567' } });
     fireEvent.click(within(create).getByRole('button', { name: 'Save & select' }));
     await waitFor(() =>
-      expect(createCustomer).toHaveBeenCalledWith({ name: '0501234567', phone: '0501234567', email: null }),
+      // Typed locally, saved in international form (the phone field's standard).
+      expect(createCustomer).toHaveBeenCalledWith({ name: '+971501234567', phone: '+971501234567', email: null }),
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(usePosStore.getState().selectedCustomer).toMatchObject({ id: 'c9' });

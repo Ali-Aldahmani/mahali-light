@@ -25,7 +25,7 @@ import {
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Tabs from '@/components/ui/Tabs';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import RequirePermission from '@/components/guards/RequirePermission';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
@@ -51,6 +51,7 @@ import SupplierFormSlideOver from '@/components/suppliers/SupplierFormSlideOver'
 import { onPurchaseOrderEvent } from '@/store/socketStore';
 import type { Supplier } from '@/components/suppliers/types';
 import type { Payment, PurchaseOrder } from '@/components/purchases/types';
+import { viewColumn } from '@/components/ui/viewColumn';
 
 const TABS = [
   { value: 'orders', label: 'Purchase orders', icon: <Truck className="h-4 w-4" /> },
@@ -119,8 +120,8 @@ function SupplierProfilePageContent() {
 
   if (loading || !supplier) {
     return (
-      <div className="flex justify-center py-20">
-        <Spinner size="lg" />
+      <div className="py-4">
+        <Skeleton lines={6} avatar />
       </div>
     );
   }
@@ -427,11 +428,10 @@ function PurchaseOrdersTab({
         </div>
       )}
       <Table
-        columns={columns}
+        columns={[...columns, viewColumn<PurchaseOrder>({ label: 'Purchase order actions', onView: (r) => router.push(`/purchase-orders/${r.id}`) })]}
         rows={rows}
         loading={loading}
         rowKey={(r: PurchaseOrder) => r.id}
-        onRowClick={(r: PurchaseOrder) => router.push(`/purchase-orders/${r.id}`)}
         empty={
           <EmptyState
             title="No purchase orders yet"
@@ -729,8 +729,8 @@ function ReturnsTab({ supplier }: { supplier: Supplier }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-10">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={4} />
       </div>
     );
   }
@@ -803,8 +803,8 @@ function TimelineTab({ supplier }: { supplier: Supplier }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-12">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={4} />
       </div>
     );
   }
@@ -866,8 +866,8 @@ function AttachmentsTab({ supplier }: { supplier: Supplier }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-12">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={4} />
       </div>
     );
   }

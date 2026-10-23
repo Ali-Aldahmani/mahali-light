@@ -25,6 +25,8 @@ import { toast } from '@/store/toastStore';
 import { formatDate } from '@/lib/utils/format';
 import RaiseClaimSlideOver from '@/components/warranties/RaiseClaimSlideOver';
 import type { Warranty, WarrantyClaimSummary } from '@/components/warranties/types';
+import { viewColumn } from '@/components/ui/viewColumn';
+import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 function WarrantyDetailPageContent() {
   const { id } = useParams<{ id: string }>();
@@ -204,12 +206,12 @@ function WarrantyDetailPageContent() {
             <User className="h-3.5 w-3.5" /> Customer
           </div>
           {warranty.customerId ? (
-            <Link
+            <CustomerHoverName
+              id={warranty.customerId}
+              name={warranty.customerName || warranty.customerId}
               href={`/customers/${warranty.customerId}`}
               className="text-sm text-accent hover:underline"
-            >
-              {warranty.customerName || warranty.customerId}
-            </Link>
+            />
           ) : (
             <div className="text-sm text-ink-muted">Walk-in / guest</div>
           )}
@@ -271,9 +273,8 @@ function WarrantyDetailPageContent() {
           )}
         </div>
         <Table
-          columns={claimColumns}
+          columns={[...claimColumns, viewColumn<WarrantyClaimSummary>({ label: 'Claim actions', onView: (r) => router.push(`/warranty-claims/${r.id}`) })]}
           rows={warranty.claims || []}
-          onRowClick={(row: WarrantyClaimSummary) => router.push(`/warranty-claims/${row.id}`)}
           empty={
             <div className="text-center text-ink-muted py-8 text-sm">
               No claims raised against this warranty.

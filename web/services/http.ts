@@ -8,6 +8,22 @@ import { addBreadcrumb } from './breadcrumbService';
 
 const APP_VERSION = '1.9.1';
 
+/** Progress and cancellation for multipart uploads (used by FileDropzone rows). */
+export type UploadOptions = { onProgress?: (percent: number) => void; signal?: AbortSignal };
+
+export function uploadConfig(opts: UploadOptions = {}) {
+  return {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    signal: opts.signal,
+    timeout: 120000,
+    onUploadProgress: opts.onProgress
+      ? (e: { loaded: number; total?: number }) => {
+          if (e.total) opts.onProgress!(Math.round((e.loaded / e.total) * 100));
+        }
+      : undefined,
+  };
+}
+
 const http = axios.create({
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
@@ -38,6 +54,8 @@ http.interceptors.response.use(
     return res;
   },
   (err) => {
+    // An upload the user cancelled is not a network failure.
+    if (axios.isCancel(err)) return Promise.reject(err);
     const config = err.config || {};
     const method = config.method?.toUpperCase();
     const url = config.url;

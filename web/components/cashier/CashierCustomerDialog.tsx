@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Search, UserPlus, UserRound } from 'lucide-react';
+import { Search, UserPlus, UserRound } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { createCustomer, searchCustomers } from '@/services/customerService';
 import { formatCurrency } from '@/lib/utils/format';
+import Skeleton from '@/components/ui/skeleton';
+import PhoneField from '@/components/ui/PhoneField';
 
 const PHONE_RE = /^\+?[0-9][0-9\s-]{5,19}$/;
 
@@ -38,11 +40,21 @@ export default function CashierCustomerDialog({
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const [phone, setPhone] = useState('');
+  // Set while the typed number is too short or too long for its country.
+  const phoneIncomplete = useRef(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+
+  // The new-customer form starts on the phone number.
+  useEffect(() => {
+    if (!open || mode !== 'create') return undefined;
+    const t = setTimeout(() => phoneRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [open, mode]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,7 +91,7 @@ export default function CashierCustomerDialog({
     const next: Record<string, string> = {};
     const p = phone.trim();
     if (!p) next.phone = 'Phone number is required.';
-    else if (!PHONE_RE.test(p)) next.phone = 'Enter a valid phone number.';
+    else if (phoneIncomplete.current || !PHONE_RE.test(p)) next.phone = 'Enter the full phone number.';
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) next.email = 'Enter a valid email.';
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -167,8 +179,8 @@ export default function CashierCustomerDialog({
           {searchError && <p role="alert" className="text-sm text-error">{searchError}</p>}
           <ul className="max-h-[45vh] space-y-1.5 overflow-y-auto" aria-label="Customer results">
             {searching && (
-              <li className="flex justify-center py-4" role="status" aria-label="Searching">
-                <Loader2 className="h-5 w-5 animate-spin text-ink-muted" />
+              <li className="px-1 py-3">
+                <Skeleton lines={3} avatar label="Searching customers" />
               </li>
             )}
             {!searching && query.trim() && results.length === 0 && !searchError && (
@@ -208,16 +220,16 @@ export default function CashierCustomerDialog({
             saveAndSelect();
           }}
         >
-          <Input
-            autoFocus
+          <PhoneField
+            ref={phoneRef}
             label="Phone"
             required
-            type="tel"
-            inputMode="tel"
             value={phone}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value)}
+            onChange={(next, details) => {
+              phoneIncomplete.current = !!next && !details?.valid;
+              setPhone(next);
+            }}
             error={errors.phone}
-            className="h-12 text-base"
           />
           <Input
             label="Name"

@@ -1,0 +1,356 @@
+/* Styles for PhoneInput: a country chip that grows into a searchable list,
+   beside a number field with a faint typing guide. Matches the app's 40px inputs. */
+
+.field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field[data-disabled] { opacity: 0.6; }
+.field[data-open] { z-index: 40; }
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+  color: theme('colors.ink.DEFAULT');
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Control ---------------------------------------------------------- */
+
+.control {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  padding: 0;
+  border: 1px solid theme('colors.border');
+  border-radius: theme('borderRadius.input');
+  background: theme('colors.surface');
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.control:focus-within {
+  border-color: theme('colors.accent.DEFAULT');
+  box-shadow: 0 0 0 3px rgb(249 115 22 / 0.15);
+}
+
+.control[data-invalid] { border-color: theme('colors.error.DEFAULT'); }
+.control[data-invalid]:focus-within { box-shadow: 0 0 0 3px rgb(220 38 38 / 0.12); }
+
+/* Holds the chip's place in the row; the chip itself grows out of it. */
+.anchor {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.shape {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  overflow: hidden;
+  background: theme('colors.surface-2');
+  transition: background-color 160ms ease, box-shadow 200ms ease;
+}
+
+.field[data-open] .shape {
+  background: theme('colors.surface');
+  box-shadow: 0 0 0 1px theme('colors.border'), 0 16px 40px rgb(17 24 39 / 0.16), 0 2px 6px rgb(17 24 39 / 0.06);
+}
+
+.lid {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 38px;
+}
+
+/* ---- Country button --------------------------------------------------- */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 28px 0 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: theme('colors.ink.DEFAULT');
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.trigger:disabled { cursor: not-allowed; }
+.trigger:focus { outline: none; }
+
+.trigger:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: -2px;
+}
+
+.measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.slot {
+  position: relative;
+  display: inline-grid;
+}
+
+.slot[data-hidden] { visibility: hidden; }
+
+.layer {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flag {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.dial {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.chevron {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  margin-top: -8px;
+  color: theme('colors.ink.muted');
+  pointer-events: none;
+}
+
+/* ---- Search (open) ---------------------------------------------------- */
+
+.searchRow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 34px 0 10px;
+}
+
+.searchIcon {
+  flex-shrink: 0;
+  color: theme('colors.ink.muted');
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: theme('colors.ink.DEFAULT');
+  outline: none;
+}
+
+.search::placeholder { color: theme('colors.ink.muted'); }
+
+.clear {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 9999px;
+  background: theme('colors.surface-2');
+  color: theme('colors.ink.muted');
+  cursor: pointer;
+}
+
+/* An invisible button over the chevron, so tapping it closes the list. */
+.closeHit {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* ---- Country list ----------------------------------------------------- */
+
+.listFace {
+  width: var(--pi-panel-w, 300px);
+  margin-top: 2px;
+  border-top: 1px solid theme('colors.border');
+}
+
+.scroll {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.options {
+  position: relative;
+  padding: 4px;
+}
+
+.highlight {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  left: 4px;
+  border-radius: 7px;
+  background: theme('colors.surface-2');
+  pointer-events: none;
+}
+
+.group + .group { margin-top: 4px; }
+
+.groupLabel {
+  padding: 8px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: theme('colors.ink.muted');
+}
+
+.option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 14px;
+  color: theme('colors.ink.DEFAULT');
+  cursor: pointer;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: theme('colors.ink.muted');
+}
+
+.check {
+  display: inline-grid;
+  width: 16px;
+  place-items: center;
+  color: theme('colors.accent.DEFAULT');
+  opacity: 0;
+}
+
+.check[data-on] { opacity: 1; }
+
+.empty {
+  margin: 0;
+  padding: 16px 8px;
+  font-size: 13px;
+  text-align: center;
+  color: theme('colors.ink.muted');
+}
+
+/* ---- Number ----------------------------------------------------------- */
+
+.numberWrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+
+.guide,
+.number {
+  padding: 0 32px 0 10px;
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* The rest of an example number, drawn faintly after what was typed. */
+.guide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  color: rgb(107 114 128 / 0.45);
+  white-space: pre;
+  pointer-events: none;
+}
+
+.guideTyped { color: transparent; }
+
+.number {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: theme('colors.ink.DEFAULT');
+  outline: none;
+}
+
+.number:disabled { cursor: not-allowed; }
+
+.valid {
+  position: absolute;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  color: theme('colors.success.DEFAULT');
+}
+
+/* ---- Messages --------------------------------------------------------- */
+
+.messageSlot {
+  display: block;
+  overflow: hidden;
+}
+
+.hint,
+.error {
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hint { color: theme('colors.ink.muted'); }
+.error { color: theme('colors.error.DEFAULT'); }

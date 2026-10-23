@@ -12,6 +12,7 @@ import { listInvoices } from '@/services/invoiceService';
 import { searchProducts } from '@/services/productService';
 import { formatCurrency } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import Skeleton from '@/components/ui/skeleton';
 
 function useRemoteList<T>(open: boolean, load: () => Promise<T[]>, deps: unknown[]) {
   const [rows, setRows] = useState<T[]>([]);
@@ -37,8 +38,8 @@ function useRemoteList<T>(open: boolean, load: () => Promise<T[]>, deps: unknown
 function ListState({ loading, error, empty, emptyText }: { loading: boolean; error: string | null; empty: boolean; emptyText: string }) {
   if (loading) {
     return (
-      <div className="flex justify-center py-6" role="status" aria-label="Loading">
-        <Loader2 className="h-5 w-5 animate-spin text-ink-muted" />
+      <div className="py-3">
+        <Skeleton lines={3} />
       </div>
     );
   }

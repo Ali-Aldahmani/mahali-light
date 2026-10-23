@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Tabs from '@/components/ui/Tabs';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import Table, { type TableColumn } from '@/components/ui/Table';
 import Badge from '@/components/ui/Badge';
 import EmptyState from '@/components/ui/EmptyState';
@@ -55,6 +55,7 @@ import { voidPayment } from '@/services/customerPaymentService';
 import { formatCurrency, formatDate, formatDateTime, storeDate } from '@/lib/utils/format';
 import { onCustomerBalanceUpdate } from '@/store/socketStore';
 import RowActions from '@/components/ui/RowActions';
+import { viewColumn } from '@/components/ui/viewColumn';
 
 interface CustomerProfile extends CustomerRecord {
   totalSpent?: number;
@@ -178,8 +179,8 @@ function CustomerProfilePageContent() {
 
   if (loading || !customer) {
     return (
-      <div className="flex justify-center py-20">
-        <Spinner size="lg" />
+      <div className="py-4">
+        <Skeleton lines={6} avatar />
       </div>
     );
   }
@@ -519,18 +520,17 @@ function InvoicesTab({ customerId }: { customerId: string }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-10">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={4} />
       </div>
     );
   }
 
   return (
     <Table
-      columns={columns}
+      columns={[...columns, viewColumn<InvoiceRow>({ label: 'Invoice actions', onView: (r) => router.push(`/invoices/${r.id}`) })]}
       rows={rows}
       rowKey={(r: InvoiceRow) => r.id}
-      onRowClick={(r: InvoiceRow) => router.push(`/invoices/${r.id}`)}
       empty={
         <EmptyState
           title="No invoices yet"
@@ -702,8 +702,8 @@ function ReturnsTab({ customerId }: { customerId: string }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-10">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={4} />
       </div>
     );
   }
@@ -806,8 +806,8 @@ function WarrantiesTab({ customerId }: { customerId: string }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-10">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={4} />
       </div>
     );
   }
@@ -880,8 +880,8 @@ function TimelineTab({ customerId }: { customerId: string }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-10">
-        <Spinner />
+      <div className="py-4">
+        <Skeleton lines={4} />
       </div>
     );
   }

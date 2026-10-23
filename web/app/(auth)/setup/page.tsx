@@ -14,6 +14,7 @@ import {
 } from '@/services/setupService';
 import { toast } from '@/store/toastStore';
 import { useSetupStore } from '@/store/setupStore';
+import PhoneField from '@/components/ui/PhoneField';
 
 const TOTAL = 8;
 
@@ -256,7 +257,7 @@ export default function SetupWizardPage() {
           <Input label="Store name" value={store.store_name} onChange={(e: any) => setStore({ ...store, store_name: e.target.value })} required />
           <Input label="Store name (Arabic)" value={store.store_name_ar} onChange={(e: any) => setStore({ ...store, store_name_ar: e.target.value })} />
           <Textarea label="Address" value={store.store_address} onChange={(e: any) => setStore({ ...store, store_address: e.target.value })} rows={2} />
-          <Input label="Phone" value={store.store_phone} onChange={(e: any) => setStore({ ...store, store_phone: e.target.value })} />
+          <PhoneField label="Phone" value={store.store_phone} onChange={(next) => setStore({ ...store, store_phone: next })} />
           <Input label="Email" value={store.store_email} onChange={(e: any) => setStore({ ...store, store_email: e.target.value })} />
           <Input label="TRN" value={store.store_trn} onChange={(e: any) => setStore({ ...store, store_trn: e.target.value })} />
           <div className="rounded-card border border-border bg-surface-2/50 p-3 text-xs">

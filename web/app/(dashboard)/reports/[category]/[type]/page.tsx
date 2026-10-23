@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import EmptyState from '@/components/ui/EmptyState';
@@ -186,8 +186,8 @@ export default function ReportPage() {
       )}
 
       {loading ? (
-        <div className="card border border-border p-12 flex items-center justify-center">
-          <Spinner size="md" className="text-accent" />
+        <div className="card border border-border p-5">
+          <Skeleton lines={4} />
         </div>
       ) : error ? (
         <EmptyState

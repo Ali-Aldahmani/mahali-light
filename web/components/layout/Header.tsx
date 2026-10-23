@@ -8,7 +8,7 @@ import { useSocketStore } from '@/store/socketStore';
 import PresenceWidget from './PresenceWidget';
 import CashBalanceWidget from '../ui/CashBalanceWidget';
 import HeaderNotifications from '../notifications/HeaderNotifications';
-import GlobalSearchBar from '../search/GlobalSearchBar';
+import HeaderCommandPalette from '../search/HeaderCommandPalette';
 import PCIdentifierBadge from './PCIdentifierBadge';
 import HeaderUserMenu from './HeaderUserMenu';
 
@@ -25,7 +25,7 @@ export default function Header({ title }: { title?: string }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <GlobalSearchBar />
+        <HeaderCommandPalette />
         {canSell && !onPos && <CashierModeEntry compact />}
         <PCIdentifierBadge />
         <div

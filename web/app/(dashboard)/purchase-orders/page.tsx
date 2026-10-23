@@ -33,6 +33,7 @@ import type {
 } from '@/components/purchases/types';
 import type { Supplier } from '@/components/suppliers/types';
 import DateRangeField from '@/components/ui/DateRangeField';
+import { viewColumn } from '@/components/ui/viewColumn';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -377,11 +378,10 @@ function PurchaseOrdersPageContent() {
       </div>
 
       <Table
-        columns={columns}
+        columns={[...columns, viewColumn<PurchaseOrder>({ label: 'Purchase order actions', onView: (r) => router.push(`/purchase-orders/${r.id}`) })]}
         rows={rows}
         rowKey={(r: PurchaseOrder) => r.id}
         loading={loading}
-        onRowClick={(r: PurchaseOrder) => router.push(`/purchase-orders/${r.id}`)}
         empty={
           <EmptyState
             title="No purchase orders"

@@ -15,6 +15,7 @@ import {
 import { formatDateTime, storeDate } from '@/lib/utils/format';
 import { toast } from '@/store/toastStore';
 import Select from '@/components/ui/Select';
+import Skeleton from '@/components/ui/skeleton';
 
 const SEV_TONE: Record<string, string> = {
   critical: 'error',
@@ -174,8 +175,8 @@ function ErrorLogsAdminPageInner() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-ink-muted">
-                  Loading…
+                <td colSpan={6} className="px-3 py-4">
+                  <Skeleton lines={5} label="Loading error logs" />
                 </td>
               </tr>
             )}

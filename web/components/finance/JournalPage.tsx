@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Plus, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, ArrowLeft, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import JournalEntryTable from '@/components/ui/JournalEntryTable';
 import ManualJournalEntrySlideOver from '@/components/finance/ManualJournalEntrySlideOver';
@@ -17,6 +17,7 @@ import { toast } from '@/store/toastStore';
 import Select from '@/components/ui/Select';
 import Pagination from '@/components/ui/pagination/Pagination';
 import DateRangeField from '@/components/ui/DateRangeField';
+import RowActions from '@/components/ui/RowActions';
 
 export default function JournalPage() {
   const router = useRouter();
@@ -90,7 +91,7 @@ export default function JournalPage() {
             </Link>
           }
         />
-        {detailLoading && <Spinner />}
+        {detailLoading && <Skeleton lines={5} className="rounded-card border border-border bg-surface p-5" />}
         {detail && (
           <>
             <div className="rounded-card border border-border bg-surface p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -195,8 +196,8 @@ export default function JournalPage() {
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
+        <div className="py-4">
+          <Skeleton lines={4} />
         </div>
       )}
       {error && !loading && (
@@ -220,14 +221,14 @@ export default function JournalPage() {
                 <th className="text-right py-2 px-3">Lines</th>
                 <th className="text-right py-2 px-3">Total</th>
                 <th className="py-2 px-3">Balanced</th>
+                <th className="py-2 px-3" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-b border-border last:border-b-0 hover:bg-surface-2 cursor-pointer"
-                  onClick={() => router.push(`/finance/journal/${r.id}`)}
+                  className="border-b border-border last:border-b-0"
                 >
                   <td className="py-2 px-3 text-sm font-mono">{r.entryNumber}</td>
                   <td className="py-2 px-3 text-sm">{formatDate(r.date)}</td>
@@ -252,6 +253,12 @@ export default function JournalPage() {
                     ) : (
                       <AlertCircle className="h-4 w-4 text-error inline" />
                     )}
+                  </td>
+                  <td className="py-2 px-3">
+                    <RowActions
+                      label="Journal entry actions"
+                      actions={[{ id: 'view', label: 'View', icon: <Eye />, onClick: () => router.push(`/finance/journal/${r.id}`) }]}
+                    />
                   </td>
                 </tr>
               ))}

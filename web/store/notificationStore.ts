@@ -106,6 +106,7 @@ interface NotificationState {
   markUnread: (id: number | string) => Promise<void>;
   markAllRead: () => Promise<void>;
   dismiss: (id: number | string) => Promise<void>;
+  setPinned: (id: number | string, pinned: boolean) => Promise<void>;
   fetchPreferences: () => Promise<void>;
   updatePreferences: (patch: any) => Promise<any>;
   reset: () => void;
@@ -252,7 +253,7 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
     if (target?.severity === 'critical') {
       const role = useAuthStore.getState().user?.role;
       if (role !== 'Admin') {
-        toast.warning('Critical notifications can only be dismissed by Admin.');
+        toast.warning('Critical notifications can only be deleted by Admin.');
         return;
       }
     }
@@ -263,7 +264,26 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
     try {
       await api.dismissNotification(id);
     } catch (err) {
-      toast.error(err.message || 'Could not dismiss notification.');
+      toast.error(err.message || 'Could not delete notification.');
+    }
+  },
+
+  // Pins are saved per user on the server; the list shows pinned items first.
+  setPinned: async (id, pinned) => {
+    const before = get().notifications.find((n) => n.id === id)?.pinned_at ?? null;
+    const stamp = pinned ? new Date().toISOString() : null;
+    set((s) => ({
+      notifications: s.notifications.map((n) => (n.id === id ? { ...n, pinned_at: stamp } : n)),
+    }));
+    try {
+      const res: any = pinned ? await api.pinNotification(id) : await api.unpinNotification(id);
+      const saved = res?.pinned_at ?? res?.data?.pinned_at;
+      if (pinned && saved) {
+        set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, pinned_at: saved } : n)) }));
+      }
+    } catch (err: any) {
+      set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, pinned_at: before } : n)) }));
+      toast.error(err?.message || (pinned ? 'Could not pin notification.' : 'Could not unpin notification.'));
     }
   },
 

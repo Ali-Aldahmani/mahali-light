@@ -8,11 +8,15 @@ export const motionTokens = {
     enter: [0.16, 1, 0.3, 1],
     /** Elements leaving or changing state. */
     standard: [0.4, 0, 0.2, 1],
+    /** Slow at both ends, like a pen stroke (charts drawing in). */
+    inOut: [0.65, 0, 0.35, 1],
   },
   duration: {
     instant: 0.1,
     fast: 0.16,
     standard: 0.24,
+    /** Larger moves that should read as deliberate (a chart line drawing). */
+    considered: 0.4,
   },
   /** Delay between items when a list animates one after another (s). */
   stagger: {

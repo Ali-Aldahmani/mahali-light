@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import PeriodSelector from '@/components/ui/PeriodSelector';
 import BalanceSheetTable from '@/components/ui/BalanceSheetTable';
-import Spinner from '@/components/ui/Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import { getBalanceSheet } from '@/services/financeService';
 import { storeDate } from '@/lib/utils/format';
@@ -50,8 +50,8 @@ export default function BalanceSheetTab() {
         />
       </div>
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
+        <div className="py-4">
+          <Skeleton lines={4} />
         </div>
       )}
       {error && !loading && (

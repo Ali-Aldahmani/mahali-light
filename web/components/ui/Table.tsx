@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import Spinner from './Spinner';
+import Skeleton from '@/components/ui/skeleton';
 import Pagination from './pagination/Pagination';
 
 export interface TableColumn {
@@ -27,7 +27,6 @@ export interface TableProps {
   rowKey?: (row: any) => string | number;
   loading?: boolean;
   empty?: ReactNode;
-  onRowClick?: (row: any) => void;
   initialSort?: { key: string; direction: 'asc' | 'desc' } | null;
   pagination?: TablePagination | null;
   className?: string;
@@ -42,7 +41,6 @@ export default function Table({
   rowKey = (row) => row.id,
   loading = false,
   empty = null,
-  onRowClick,
   initialSort = null, // { key, direction: 'asc' | 'desc' }
   // pagination is optional, controlled by parent
   pagination = null, // { page, pageSize, total, onPageChange }
@@ -124,8 +122,8 @@ export default function Table({
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={columns.length} className="px-4 py-16 text-center">
-                  <Spinner size="md" className="text-accent" />
+                <td colSpan={columns.length} className="px-4 py-5">
+                  <Skeleton lines={5} label="Loading rows" />
                 </td>
               </tr>
             ) : sortedRows.length === 0 ? (
@@ -138,11 +136,9 @@ export default function Table({
               sortedRows.map((row, idx) => (
                 <tr
                   key={rowKey(row)}
-                  onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={cn(
                     'border-t border-border transition',
                     idx % 2 === 1 ? 'bg-bg/40' : 'bg-surface',
-                    onRowClick && 'cursor-pointer hover:bg-accent-light/40',
                   )}
                 >
                   {columns.map((col) => {
