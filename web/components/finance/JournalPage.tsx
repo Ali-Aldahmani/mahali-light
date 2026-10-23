@@ -6,7 +6,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { Plus, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
 import Spinner from '@/components/ui/Spinner';
 import EmptyState from '@/components/ui/EmptyState';
 import JournalEntryTable from '@/components/ui/JournalEntryTable';
@@ -15,6 +14,9 @@ import { useAuthStore } from '@/store/authStore';
 import { listJournal, getJournalEntry } from '@/services/financeService';
 import { formatDate, formatCurrency } from '@/lib/utils/format';
 import { toast } from '@/store/toastStore';
+import Select from '@/components/ui/Select';
+import Pagination from '@/components/ui/pagination/Pagination';
+import DateRangeField from '@/components/ui/DateRangeField';
 
 export default function JournalPage() {
   const router = useRouter();
@@ -148,45 +150,40 @@ export default function JournalPage() {
       />
 
       <div className="rounded-card border border-border bg-surface p-3 grid grid-cols-2 md:grid-cols-5 gap-2">
-        <Input
-          type="date"
-          value={filters.from}
-          onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
-          placeholder="From"
+        <DateRangeField
+          label="Entry dates"
+          className="md:col-span-2"
+          from={filters.from}
+          to={filters.to}
+          onChange={({ from, to }) => setFilters((f) => ({ ...f, from, to }))}
         />
-        <Input
-          type="date"
-          value={filters.to}
-          onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
-          placeholder="To"
-        />
-        <select
+        <Select
+          containerClassName="w-48"
           value={filters.referenceType}
-          onChange={(e) =>
-            setFilters((f) => ({ ...f, referenceType: e.target.value }))
-          }
-          className="h-10 px-3 rounded-md border border-border bg-surface text-sm"
-        >
-          <option value="">All sources</option>
-          <option value="invoice">Invoice</option>
-          <option value="customer_payment">Customer payment</option>
-          <option value="purchase_order">Purchase order</option>
-          <option value="supplier_payment">Supplier payment</option>
-          <option value="bill_payment">Bill payment</option>
-          <option value="expense">Expense</option>
-          <option value="return_order">Return order</option>
-          <option value="stock_movement">Stock movement</option>
-          <option value="manual">Manual</option>
-        </select>
-        <select
+          onChange={(v) => setFilters((f) => ({ ...f, referenceType: v }))}
+          options={[
+            { value: '', label: 'All sources' },
+            { value: 'invoice', label: 'Invoice' },
+            { value: 'customer_payment', label: 'Customer payment' },
+            { value: 'purchase_order', label: 'Purchase order' },
+            { value: 'supplier_payment', label: 'Supplier payment' },
+            { value: 'bill_payment', label: 'Bill payment' },
+            { value: 'expense', label: 'Expense' },
+            { value: 'return_order', label: 'Return order' },
+            { value: 'stock_movement', label: 'Stock movement' },
+            { value: 'manual', label: 'Manual' },
+          ]}
+        />
+        <Select
+          containerClassName="w-40"
           value={filters.isManual}
-          onChange={(e) => setFilters((f) => ({ ...f, isManual: e.target.value }))}
-          className="h-10 px-3 rounded-md border border-border bg-surface text-sm"
-        >
-          <option value="">Auto + manual</option>
-          <option value="true">Manual only</option>
-          <option value="false">Auto only</option>
-        </select>
+          onChange={(v) => setFilters((f) => ({ ...f, isManual: v }))}
+          options={[
+            { value: '', label: 'Auto + manual' },
+            { value: 'true', label: 'Manual only' },
+            { value: 'false', label: 'Auto only' },
+          ]}
+        />
         <Button
           variant="secondary"
           onClick={() =>
@@ -268,24 +265,11 @@ export default function JournalPage() {
           <span>
             Page {meta.page} · {meta.total} total
           </span>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => fetchList(meta.page - 1)}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page * meta.limit >= meta.total}
-              onClick={() => fetchList(meta.page + 1)}
-            >
-              Next
-            </Button>
-          </div>
+          <Pagination
+            page={meta.page}
+            pageCount={Math.ceil(meta.total / meta.limit)}
+            onPageChange={(next) => fetchList(next)}
+          />
         </div>
       )}
 

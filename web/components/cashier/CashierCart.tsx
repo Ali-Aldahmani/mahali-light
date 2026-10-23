@@ -1,12 +1,13 @@
 'use client';
 
 import { memo, useEffect, useRef } from 'react';
-import { AlertTriangle, Minus, Plus, ShoppingCart, Trash2, User, UserRound, X } from 'lucide-react';
+import { AlertTriangle, ShoppingCart, Trash2, User, UserRound, X } from 'lucide-react';
 import InvoiceTotalsBlock from '@/components/ui/InvoiceTotalsBlock';
 import SerialNumberInput from '@/components/ui/SerialNumberInput';
 import { formatCurrency } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import type { PriceViolation } from '@/lib/cashier/pricing';
+import NumberField from '@/components/ui/number-field/NumberField';
 
 export interface CashierCartProps {
   lines: any[];
@@ -267,37 +268,20 @@ const CartLine = memo(function CartLine({
       </div>
 
       <div className="mt-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          onClick={() => onQtyChange(id, Math.max(step, qty - step))}
-          disabled={qty <= step}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-input bg-surface-2 text-ink touch-manipulation hover:bg-accent-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
-          aria-label={`Decrease quantity of ${line.productName}`}
-        >
-          <Minus className="h-4 w-4" />
-        </button>
-        <input
-          type="number"
-          inputMode={decimal ? 'decimal' : 'numeric'}
+        <NumberField
+          size="lg"
+          hideLabel
+          label={`Quantity of ${line.productName}`}
+          // Typed metres/kg keep cent precision; each press moves a whole step.
           min={decimal ? 0.01 : 1}
-          step={decimal ? '0.01' : '1'}
-          value={line.quantity}
-          onFocus={() => onSelect(id)}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            if (Number.isFinite(n) && n > 0) onQtyChange(id, n);
+          step={decimal ? 0.01 : 1}
+          buttonStep={step}
+          value={qty}
+          onValueChange={(n) => {
+            onSelect(id);
+            onQtyChange(id, n);
           }}
-          className="h-11 w-16 rounded-input border border-border text-center text-base text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-          aria-label={`Quantity of ${line.productName}`}
         />
-        <button
-          type="button"
-          onClick={() => onQtyChange(id, qty + step)}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-input bg-surface-2 text-ink touch-manipulation hover:bg-accent-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          aria-label={`Increase quantity of ${line.productName}`}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
         <span className="flex-1" />
         <button
           type="button"

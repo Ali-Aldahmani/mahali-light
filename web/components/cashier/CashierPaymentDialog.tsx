@@ -6,6 +6,7 @@ import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import { formatCurrency } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import Select from '@/components/ui/Select';
 
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
@@ -138,18 +139,14 @@ export default function CashierPaymentDialog({
             const meta = METHODS.find((m) => m.value === p.method) || METHODS[0];
             return (
               <li key={p.id} className="flex items-center gap-2">
-                <select
+                <Select
+                  containerClassName="w-40 shrink-0"
+                  className="h-12"
+                  placeholder="Payment method"
                   value={p.method}
-                  onChange={(e) => onUpdate(p.id, { method: e.target.value })}
-                  aria-label="Payment method"
-                  className="h-12 rounded-input border border-border bg-surface px-3 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-                >
-                  {METHODS.filter((m) => m.value !== 'credit' || registered).map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => onUpdate(p.id, { method: v })}
+                  options={METHODS.filter((m) => m.value !== 'credit' || registered).map((m) => ({ value: m.value, label: m.label }))}
+                />
                 <label className="relative flex-1">
                   <span className="sr-only">{meta.label} amount</span>
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-muted">AED</span>

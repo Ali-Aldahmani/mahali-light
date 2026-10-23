@@ -33,6 +33,7 @@ import {
   printInvoice,
 } from '@/services/printService';
 import { fileUrl } from '@/lib/config';
+import Select from '@/components/ui/Select';
 
 function PrintSettingsPageInner() {
   const permissions = useAuthStore((s) => s.permissions);
@@ -440,18 +441,12 @@ function PrinterRow({
   return (
     <div className="flex flex-col md:flex-row md:items-end gap-3">
       <div className="flex-1">
-        <label className="text-sm font-medium text-ink">{label}</label>
-        <select
-          className="mt-1 h-10 w-full rounded-input border border-border bg-surface px-3 text-sm focus:border-accent focus:outline-none"
+        <Select
+          label={label}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {options.map((opt, idx) => (
-            <option key={idx} value={opt}>
-              {opt || '— Not selected —'}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onChange(v)}
+          options={options.map((opt) => ({ value: opt, label: opt || '— Not selected —' }))}
+        />
       </div>
       <Button
         variant="ghost"

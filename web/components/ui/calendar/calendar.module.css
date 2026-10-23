@@ -1,0 +1,159 @@
+/* Styles for Calendar (one month, single pick). */
+
+.calendar {
+  --cell: 36px;
+  width: calc(var(--cell) * 7);
+  user-select: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.title {
+  position: relative;
+  display: inline-grid;
+  flex: 1;
+  overflow: hidden;
+  padding-left: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: theme('colors.ink.DEFAULT');
+}
+
+.titleText {
+  display: block;
+  white-space: nowrap;
+}
+
+.nav,
+.today {
+  display: inline-grid;
+  place-items: center;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: theme('colors.ink.muted');
+  cursor: pointer;
+}
+
+.nav { width: 30px; }
+
+.today {
+  padding: 0 10px;
+  color: theme('colors.accent.DEFAULT');
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nav:hover:not(:disabled) { background: theme('colors.surface-2'); color: theme('colors.ink.DEFAULT'); }
+.today:hover:not(:disabled) { background: theme('colors.accent.light'); }
+.nav:disabled, .today:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, var(--cell));
+  margin-bottom: 2px;
+}
+
+.weekdays span {
+  display: grid;
+  place-items: center;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  color: theme('colors.ink.muted');
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Fixed six-week height; leaving and arriving months overlap in one cell. */
+.viewport {
+  display: grid;
+  height: calc(var(--cell) * 6);
+  overflow: hidden;
+}
+
+.month { grid-area: 1 / 1; }
+
+.grid { position: relative; }
+
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, var(--cell));
+}
+
+.blank { height: var(--cell); }
+
+/* The selected disc sits under the day buttons and glides between them. */
+.selection {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--cell);
+  height: var(--cell);
+  padding: 2px;
+  pointer-events: none;
+}
+
+.selection::before {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  background: theme('colors.accent.DEFAULT');
+  box-shadow: 0 2px 6px rgb(249 115 22 / 0.35);
+}
+
+.day {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--cell);
+  height: var(--cell);
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: theme('colors.ink.DEFAULT');
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.day:hover:not(:disabled):not([data-selected]) { background: theme('colors.surface-2'); }
+
+.day[data-today]:not([data-selected]) {
+  color: theme('colors.accent.DEFAULT');
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgb(249 115 22 / 0.45);
+}
+
+.day[data-selected] {
+  color: #fff;
+  font-weight: 600;
+}
+
+.day:disabled {
+  color: theme('colors.ink.muted');
+  opacity: 0.4;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.day:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .day { transition: none; }
+}

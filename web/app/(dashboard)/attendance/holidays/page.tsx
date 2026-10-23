@@ -15,6 +15,7 @@ import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import { cn } from '@/lib/utils/cn';
 import { storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 interface Holiday {
   id: string;
@@ -109,13 +110,7 @@ function AddHolidaySlideOver({
           placeholder="e.g. Founder's Day"
           required
         />
-        <Input
-          label="Date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          required
-        />
+        <DateField label="Date" value={date} onChange={setDate} required />
         <Select
           label="Type"
           value={type}

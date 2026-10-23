@@ -1,0 +1,196 @@
+/* Styles for DropdownMenu (a button that opens a menu of actions).
+   Colors come from the Tailwind theme; motion values from lib/motion-tokens. */
+
+/* ---- Trigger ---------------------------------------------------------- */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 10px 0 12px;
+  border: 1px solid theme('colors.border');
+  border-radius: theme('borderRadius.input');
+  background: theme('colors.surface');
+  color: theme('colors.ink.DEFAULT');
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.trigger:hover { background: theme('colors.surface-2'); }
+
+.trigger[data-state='open'] {
+  background: theme('colors.surface-2');
+  border-color: rgb(249 115 22 / 0.45);
+  box-shadow: 0 0 0 3px rgb(249 115 22 / 0.12);
+}
+
+.trigger[data-variant='primary'] {
+  border-color: transparent;
+  background: theme('colors.accent.DEFAULT');
+  color: #fff;
+}
+
+.trigger[data-variant='primary']:hover,
+.trigger[data-variant='primary'][data-state='open'] {
+  background: theme('colors.accent.hover');
+}
+
+.trigger:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: 2px;
+}
+
+.trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.triggerIcon {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.triggerIcon svg { width: 100%; height: 100%; }
+
+/* The label's width is animated from a hidden measuring copy, so a new
+   label can rise in while the old one leaves without the button jumping. */
+.label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 1.2em;
+  overflow: hidden;
+}
+
+.labelMeasure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.labelText {
+  display: block;
+  white-space: nowrap;
+}
+
+.chevron {
+  flex: none;
+  opacity: 0.6;
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.trigger[data-state='open'] .chevron { transform: rotate(180deg); }
+
+/* ---- Menu ------------------------------------------------------------- */
+
+.menu {
+  position: relative; /* items' offsetTop is measured against the menu */
+  z-index: 60;
+  min-width: max(var(--radix-dropdown-menu-trigger-width), 168px);
+  padding: 4px;
+  border: 1px solid theme('colors.border');
+  border-radius: 10px;
+  background: theme('colors.surface');
+  box-shadow: 0 10px 28px rgb(17 24 39 / 0.12), 0 2px 6px rgb(17 24 39 / 0.06);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  outline: none;
+}
+
+.menu[data-state='open'] { animation: menu-in 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+.menu[data-state='closed'] { animation: menu-out 120ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes menu-out {
+  to { opacity: 0; transform: translateY(-2px) scale(0.98); }
+}
+
+/* One highlight glides behind the items (positioned by the component). */
+.highlight {
+  position: absolute;
+  top: 0;
+  left: 4px;
+  right: 4px;
+  z-index: 0;
+  border-radius: 6px;
+  background: theme('colors.surface-2');
+  pointer-events: none;
+}
+
+.highlight[data-tone='danger'] { background: theme('colors.error.light'); }
+
+.item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: theme('colors.ink.DEFAULT');
+  font-size: 13.5px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+/* Items arrive one after another as the menu opens. */
+.menu[data-state='open'] .item {
+  animation: item-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 22ms + 30ms);
+}
+
+@keyframes item-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+.item[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.destructive { color: theme('colors.error.DEFAULT'); }
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: theme('colors.ink.muted');
+}
+
+.destructive .icon { color: currentColor; }
+
+.icon svg { width: 100%; height: 100%; }
+
+.separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: theme('colors.border');
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu[data-state='open'],
+  .menu[data-state='closed'],
+  .menu[data-state='open'] .item { animation: none; }
+  .chevron, .trigger { transition: none; }
+}

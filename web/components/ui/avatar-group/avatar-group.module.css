@@ -1,0 +1,81 @@
+/* Styles for AvatarGroup: overlapping avatars with a name tooltip on hover
+   and a +N chip for the rest. */
+
+.group {
+  --overlap: 10px;
+  --ring: 2px;
+  display: inline-flex;
+  align-items: center;
+  isolation: isolate;
+}
+
+.group.sm { --overlap: 8px; --size: 32px; font-size: 12px; }
+.group.md { --overlap: 10px; --size: 40px; font-size: 13px; }
+.group.lg { --overlap: 12px; --size: 48px; font-size: 15px; }
+
+/* Each slot opens and closes its width (animated), so neighbours slide. */
+.slot {
+  position: relative;
+  display: inline-flex;
+  z-index: calc(var(--count) - var(--index));
+}
+
+.slot + .slot { margin-left: calc(var(--overlap) * -1); }
+
+.lift {
+  position: relative;
+  display: inline-flex;
+  border-radius: 9999px;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slot:hover { z-index: 50; }
+.slot:hover .lift { transform: translateY(-2px); }
+
+/* A ring in the surface color separates overlapping avatars. */
+.avatar > div { box-shadow: 0 0 0 var(--ring) theme('colors.surface'); }
+
+.tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: theme('colors.ink.DEFAULT');
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 3px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slot:hover .tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.overflow {
+  display: inline-grid;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  overflow: hidden;
+  border-radius: 9999px;
+  background: theme('colors.surface-2');
+  box-shadow: 0 0 0 var(--ring) theme('colors.surface'), inset 0 0 0 1px theme('colors.border');
+  color: theme('colors.ink.muted');
+  font-weight: 600;
+}
+
+.count {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lift, .tip { transition: none; }
+}

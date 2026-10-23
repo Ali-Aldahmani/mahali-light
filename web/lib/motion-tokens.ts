@@ -14,16 +14,23 @@ export const motionTokens = {
     fast: 0.16,
     standard: 0.24,
   },
+  /** Delay between items when a list animates one after another (s). */
+  stagger: {
+    item: 0.035,
+  },
   /** Blur radii in px, for text and icons cross-fading. */
   blur: {
     subtle: 2,
     soft: 4,
   },
+  /** Springs are defined by how long they look (visualDuration, s) and how much they overshoot (bounce, 0-1). */
   spring: {
-    /** Small elements popping in (icons, checks). */
-    snappy: { type: 'spring', stiffness: 560, damping: 34, mass: 0.6 },
+    /** Small elements popping in (icons, checks, digits). */
+    snappy: { type: 'spring', visualDuration: 0.28, bounce: 0.18 },
     /** Size changes (a button widening to show its label). */
-    morph: { type: 'spring', stiffness: 420, damping: 38, mass: 0.8 },
+    morph: { type: 'spring', visualDuration: 0.36, bounce: 0.08 },
+    /** Things closing or settling, with no overshoot. */
+    smooth: { type: 'spring', visualDuration: 0.42, bounce: 0 },
   },
 } as const;
 

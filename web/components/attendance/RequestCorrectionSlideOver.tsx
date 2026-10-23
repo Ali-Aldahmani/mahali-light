@@ -9,6 +9,7 @@ import {
 } from '@/services/attendanceService';
 import { toast } from '@/store/toastStore';
 import { storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 const REASONS = [
   { value: 'forgot_checkout', label: 'Forgot to check out' },
@@ -139,15 +140,7 @@ export default function RequestCorrectionSlideOver({ open, onClose, employeeId, 
       }
     >
       <div className="space-y-4">
-        <Input
-          label="Date"
-          type="date"
-          value={date}
-          min={lastNDaysIso(30)}
-          max={todayIso()}
-          onChange={(e) => setDate(e.target.value)}
-          required
-        />
+        <DateField label="Date" value={date} min={lastNDaysIso(30)} max={todayIso()} onChange={setDate} required />
         <div className="rounded-input bg-surface-2 p-3 text-xs">
           <p className="mb-1 font-medium text-ink">Current record</p>
           {currentRecord ? (

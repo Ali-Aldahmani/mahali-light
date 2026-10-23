@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import ExpenseCategoryIcon from './ExpenseCategoryIcon';
+import Select from './Select';
 
 // Inline-SVG bar chart of expenses by category for a single month. Designed
 // for the One-time Expenses tab and the dashboard summary card.
@@ -20,31 +21,26 @@ export default function MonthlyExpenseSummary({
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h3 className="font-medium">Monthly expense summary</h3>
         <div className="flex items-center gap-2 text-sm">
-          <select
+          <Select
+            containerClassName="w-36"
+            className="h-8"
             value={month}
-            onChange={(e) => onChangeMonth?.({ month: Number(e.target.value), year })}
-            className="h-8 rounded-input border border-border bg-surface px-2"
-          >
-            {Array.from({ length: 12 }).map((_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {new Date(0, i).toLocaleString('default', { month: 'long' })}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={(v) => onChangeMonth?.({ month: Number(v), year })}
+            options={Array.from({ length: 12 }).map((_, i) => ({
+              value: i + 1,
+              label: new Date(0, i).toLocaleString('default', { month: 'long' }),
+            }))}
+          />
+          <Select
+            containerClassName="w-24"
+            className="h-8"
             value={year}
-            onChange={(e) => onChangeMonth?.({ month, year: Number(e.target.value) })}
-            className="h-8 rounded-input border border-border bg-surface px-2"
-          >
-            {Array.from({ length: 5 }).map((_, i) => {
+            onChange={(v) => onChangeMonth?.({ month, year: Number(v) })}
+            options={Array.from({ length: 5 }).map((_, i) => {
               const y = new Date().getFullYear() - 2 + i;
-              return (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              );
+              return { value: y, label: String(y) };
             })}
-          </select>
+          />
         </div>
       </div>
       <div className="p-4">

@@ -28,6 +28,7 @@ import { useAuthStore } from '@/store/authStore';
 import { formatCurrency, formatQty, storeDate } from '@/lib/utils/format';
 import type { POItem, VariantSearchResult } from '@/components/purchases/types';
 import type { Supplier } from '@/components/suppliers/types';
+import DateField from '@/components/ui/DateField';
 
 const STEPS = [
   { id: 1, label: 'Order info' },
@@ -331,25 +332,9 @@ function NewPurchaseOrderPageContent() {
             </PermissionGate>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <Input
-              label="Order date"
-              type="date"
-              value={orderDate}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderDate(e.target.value)}
-              required
-            />
-            <Input
-              label="Expected delivery"
-              type="date"
-              value={expectedDate}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExpectedDate(e.target.value)}
-            />
-            <Input
-              label="Payment due date"
-              type="date"
-              value={dueDate}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDueDate(e.target.value)}
-            />
+            <DateField label="Order date" value={orderDate} onChange={setOrderDate} required />
+            <DateField label="Expected delivery" value={expectedDate} onChange={setExpectedDate} min={orderDate || undefined} />
+            <DateField label="Payment due date" value={dueDate} onChange={setDueDate} min={orderDate || undefined} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-ink">Notes</label>

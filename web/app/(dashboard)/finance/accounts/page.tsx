@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/authStore';
 import { listAccounts, createAccount, deleteAccount } from '@/services/financeService';
 import { toast } from '@/store/toastStore';
+import Select from '@/components/ui/Select';
 
 const TYPE_TONE: Record<string, string> = {
   asset: 'bg-accent-light text-accent',
@@ -282,18 +283,18 @@ function NewAccountSlideOver({
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
-          <label className="text-xs uppercase tracking-wide text-ink-muted">Type</label>
-          <select
+          <Select
+            label={<span className="text-xs uppercase tracking-wide text-ink-muted font-normal">Type</span>}
             value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="w-full h-10 px-3 rounded-md border border-border bg-surface text-sm"
-          >
-            <option value="asset">Asset</option>
-            <option value="liability">Liability</option>
-            <option value="equity">Equity</option>
-            <option value="revenue">Revenue</option>
-            <option value="expense">Expense</option>
-          </select>
+            onChange={(v) => setType(v)}
+            options={[
+              { value: 'asset', label: 'Asset' },
+              { value: 'liability', label: 'Liability' },
+              { value: 'equity', label: 'Equity' },
+              { value: 'revenue', label: 'Revenue' },
+              { value: 'expense', label: 'Expense' },
+            ]}
+          />
         </div>
         <div>
           <label className="text-xs uppercase tracking-wide text-ink-muted">

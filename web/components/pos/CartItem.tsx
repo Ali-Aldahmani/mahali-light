@@ -1,6 +1,7 @@
-import { Minus, Percent, Plus, ShieldAlert, Trash2 } from 'lucide-react';
+import { Percent, ShieldAlert, Trash2 } from 'lucide-react';
 import Input from '../ui/Input';
 import { formatCurrency } from '@/lib/utils/format';
+import NumberField from '../ui/number-field/NumberField';
 
 // Single cart line item with qty stepper, discount toggle (% or AED), and
 // remove. Discount toggle is local — the global posStore stores either
@@ -88,33 +89,25 @@ export default function CartItem({
 
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          {!isDecimal && (
-            <button
-              type="button"
-              onClick={() =>
-                onQtyChange(Math.max(1, Number(item.quantity) - 1))
-              }
-              className="inline-flex h-7 w-7 items-center justify-center rounded-input bg-surface-2 text-ink hover:bg-accent-light hover:text-accent"
-            >
-              <Minus className="h-3.5 w-3.5" />
-            </button>
-          )}
-          <input
-            type="number"
-            min={isDecimal ? 0.01 : 1}
-            step={isDecimal ? '0.01' : '1'}
-            value={item.quantity}
-            onChange={(e) => onQtyChange(e.target.value)}
-            className="h-7 w-16 rounded-input border border-border bg-surface px-2 text-sm text-ink text-center focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20"
-          />
-          {!isDecimal && (
-            <button
-              type="button"
-              onClick={() => onQtyChange(Number(item.quantity) + 1)}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-input bg-surface-2 text-ink hover:bg-accent-light hover:text-accent"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
+          {isDecimal ? (
+            <input
+              type="number"
+              min={0.01}
+              step="0.01"
+              value={item.quantity}
+              onChange={(e) => onQtyChange(e.target.value)}
+              aria-label={`Quantity of ${item.productName}`}
+              className="h-7 w-16 rounded-input border border-border bg-surface px-2 text-sm text-ink text-center focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20"
+            />
+          ) : (
+            <NumberField
+              size="sm"
+              hideLabel
+              label={`Quantity of ${item.productName}`}
+              min={1}
+              value={Number(item.quantity) || 1}
+              onValueChange={(n) => onQtyChange(n)}
+            />
           )}
           <span className="text-[11px] text-ink-muted ml-1">
             × {formatCurrency(item.unitPrice)}

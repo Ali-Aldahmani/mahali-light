@@ -29,6 +29,7 @@ import { useTreasuryStore } from '@/store/treasuryStore';
 import { onTreasuryEvent } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
 import { formatCurrency, formatDateTime, storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 export interface BankAccount {
   id: string;
@@ -509,12 +510,7 @@ function BankMovementSlideOver({
           required
           autoFocus
         />
-        <Input
-          label="Date"
-          type="date"
-          value={date}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(e.target.value)}
-        />
+        <DateField label="Date" value={date} onChange={setDate} />
         <Input
           label="Description"
           value={description}

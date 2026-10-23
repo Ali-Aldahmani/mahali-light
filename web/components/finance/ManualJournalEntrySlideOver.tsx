@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils/cn';
 import { listAccounts, postManualJournalEntry } from '@/services/financeService';
 import { toast } from '@/store/toastStore';
 import { storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 function todayIso() {
   return storeDate();
@@ -135,11 +136,7 @@ export default function ManualJournalEntrySlideOver({
       <div className="space-y-4">
         <div>
           <label className="text-xs uppercase tracking-wide text-ink-muted">Date</label>
-          <Input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
+          <DateField value={date} onChange={setDate} placeholder="Entry date" />
         </div>
         <div>
           <label className="text-xs uppercase tracking-wide text-ink-muted">

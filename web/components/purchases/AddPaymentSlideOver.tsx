@@ -9,6 +9,7 @@ import { toast } from '@/store/toastStore';
 import { addPoPayment, uploadPaymentReceipt } from '@/services/supplierPaymentService';
 import { formatCurrency, storeDate } from '@/lib/utils/format';
 import type { PurchaseOrder } from './types';
+import DateField from '@/components/ui/DateField';
 
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
@@ -195,13 +196,7 @@ export default function AddPaymentSlideOver({
           </div>
         </div>
 
-        <Input
-          label="Payment date"
-          type="date"
-          value={date}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(e.target.value)}
-          required
-        />
+        <DateField label="Payment date" value={date} onChange={setDate} required />
 
         <div>
           <label className="text-sm font-medium text-ink mb-1.5 block">

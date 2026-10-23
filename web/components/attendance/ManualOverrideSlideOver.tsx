@@ -6,6 +6,7 @@ import Select from '../ui/Select';
 import { createManualAttendance } from '@/services/attendanceService';
 import { toast } from '@/store/toastStore';
 import { storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
@@ -99,13 +100,7 @@ export default function ManualOverrideSlideOver({ open, onClose, employee, onSav
       }
     >
       <div className="space-y-4">
-        <Input
-          label="Date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          required
-        />
+        <DateField label="Date" value={date} onChange={setDate} required />
         <div className="grid grid-cols-2 gap-3">
           <Input
             label="Check-in"

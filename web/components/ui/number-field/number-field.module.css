@@ -1,0 +1,245 @@
+/* Styles for NumberField (a − value + stepper with odometer digits).
+   Sizes set the control height, type size and default width. */
+
+.field {
+  --nf-h: 40px;
+  --nf-font: 15px;
+  --nf-w: 160px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: var(--nf-w);
+  min-width: 0;
+}
+
+.field[data-size='sm'] { --nf-h: 32px; --nf-font: 14px; --nf-w: 116px; }
+.field[data-size='lg'] { --nf-h: 48px; --nf-font: 18px; --nf-w: 200px; }
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 0;
+}
+
+/* A hidden label leaves only the limit note, which floats above the control
+   so a tight row (a cart line) never changes height. */
+.field[data-label-hidden] .head {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 2px);
+  pointer-events: none;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+  color: theme('colors.ink.DEFAULT');
+  user-select: none;
+}
+
+.label[data-scrub] { cursor: ew-resize; }
+
+.limit {
+  font-size: 11px;
+  font-weight: 500;
+  color: theme('colors.warning.DEFAULT');
+  white-space: nowrap;
+}
+
+.control {
+  display: flex;
+  align-items: stretch;
+  height: var(--nf-h);
+  overflow: hidden;
+  border: 1px solid theme('colors.border');
+  border-radius: theme('borderRadius.input');
+  background: theme('colors.surface');
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.control:focus-within {
+  border-color: theme('colors.accent.DEFAULT');
+  box-shadow: 0 0 0 3px rgb(249 115 22 / 0.15);
+}
+
+.control[data-warn] { border-color: theme('colors.warning.DEFAULT'); }
+.control[data-strain] { border-color: theme('colors.warning.DEFAULT'); }
+
+.control[data-disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.step {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--nf-h);
+  border: 0;
+  background: theme('colors.surface-2');
+  color: theme('colors.ink.DEFAULT');
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.step:hover:not(:disabled),
+.step[data-pressed] {
+  background: theme('colors.accent.light');
+  color: theme('colors.accent.DEFAULT');
+}
+
+.step[data-pressed] .icon { transform: scale(0.88); }
+
+/* At a limit the button dims but stays focusable. */
+.step[aria-disabled] { color: theme('colors.ink.muted'); opacity: 0.55; }
+.step[aria-disabled]:hover { background: theme('colors.surface-2'); color: theme('colors.ink.muted'); }
+
+.step:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.step:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: -2px;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  transition: transform 120ms ease;
+}
+
+.valueWrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  cursor: text;
+}
+
+.value {
+  display: inline-flex;
+  align-items: center;
+  color: theme('colors.ink.DEFAULT');
+  font-size: var(--nf-font);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.affix {
+  display: inline-flex;
+  color: theme('colors.ink.muted');
+  font-weight: 500;
+}
+
+.char,
+.symbol {
+  display: inline-block;
+  overflow: hidden;
+}
+
+/* The number: rolling digits at rest, a plain mirror while typing, and the
+   real input laid over both with transparent text (caret only). */
+.number {
+  position: relative;
+  display: inline-grid;
+}
+
+.number > * { grid-area: 1 / 1; }
+
+.display { display: inline-flex; }
+.display[data-hidden] { display: none; }
+
+.mirror { white-space: pre; }
+
+.input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-width: 1ch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: theme('colors.accent.DEFAULT');
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  outline: none;
+}
+
+.input::selection { background: rgb(249 115 22 / 0.2); }
+
+/* One odometer column: a hidden "0" sets the width, the ten glyphs stack. */
+.column {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  padding-block: 0.12em;
+  margin-block: -0.12em;
+}
+
+.sizer {
+  visibility: hidden;
+}
+
+.glyph {
+  position: absolute;
+  inset: 0.12em 0 auto;
+  text-align: center;
+}
+
+/* Messages under the control (description) open their height on a spring. */
+.messageSlot {
+  display: block;
+  overflow: hidden;
+}
+
+.hint {
+  display: block;
+  font-size: 12px;
+  color: theme('colors.ink.muted');
+}
+
+.words { display: inline; }
+
+.wordSlot {
+  position: relative;
+  display: inline-grid;
+  vertical-align: bottom;
+}
+
+.wordSlot > * { grid-area: 1 / 1; }
+
+.wordSizer {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+.word { white-space: nowrap; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control, .step, .icon { transition: none; }
+}

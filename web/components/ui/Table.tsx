@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import Spinner from './Spinner';
-import Button from './Button';
+import Pagination from './pagination/Pagination';
 
 export interface TableColumn {
   key: string;
@@ -178,27 +178,11 @@ export default function Table({
                   pagination.total,
                 )} of ${pagination.total}`}
           </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={pagination.page <= 1}
-              onClick={() => pagination.onPageChange(pagination.page - 1)}
-            >
-              Previous
-            </Button>
-            <span className="text-ink-muted px-2">
-              Page {pagination.page} of {totalPages}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={pagination.page >= totalPages}
-              onClick={() => pagination.onPageChange(pagination.page + 1)}
-            >
-              Next
-            </Button>
-          </div>
+          <Pagination
+            page={pagination.page}
+            pageCount={totalPages}
+            onPageChange={(next) => pagination.onPageChange(next)}
+          />
         </div>
       )}
     </div>

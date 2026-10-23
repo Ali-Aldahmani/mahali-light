@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input';
 import { toast } from '@/store/toastStore';
 import { collectPayment } from '@/services/customerPaymentService';
 import { formatCurrency, storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 interface CollectPaymentCustomer {
   id: number | string;
@@ -182,13 +183,7 @@ export default function CollectPaymentSlideOver({
             </div>
           </div>
 
-          <Input
-            label="Payment date"
-            type="date"
-            value={date}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(e.target.value)}
-            required
-          />
+          <DateField label="Payment date" value={date} onChange={setDate} required />
 
           <div>
             <label className="text-sm font-medium text-ink mb-1.5 block">

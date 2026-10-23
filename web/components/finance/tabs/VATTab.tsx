@@ -7,6 +7,7 @@ import Spinner from '@/components/ui/Spinner';
 import EmptyState from '@/components/ui/EmptyState';
 import { getVATReport } from '@/services/financeService';
 import { useAuthStore } from '@/store/authStore';
+import Select from '@/components/ui/Select';
 
 // UAE quarterly cycle. Quarter 1 = Jan–Mar etc.
 function quarterRange(year: number, q: number) {
@@ -66,17 +67,13 @@ export default function VATTab() {
             </Button>
           ))}
         </div>
-        <select
+        <Select
+          containerClassName="w-24"
+          className="h-8"
           value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          className="h-8 px-2 rounded-md border border-border bg-surface text-sm"
-        >
-          {[year - 1, year, year + 1].map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setYear(Number(v))}
+          options={[year - 1, year, year + 1].map((y) => ({ value: y, label: String(y) }))}
+        />
       </div>
 
       {loading && (

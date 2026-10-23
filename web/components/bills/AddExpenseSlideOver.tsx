@@ -9,6 +9,7 @@ import { listCategories } from '@/services/expenseCategoryService';
 import { listBankAccounts } from '@/services/bankAccountService';
 import { toast } from '@/store/toastStore';
 import { storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 const METHOD_OPTIONS = [
   { value: 'cash', label: 'Cash' },
@@ -142,12 +143,7 @@ export default function AddExpenseSlideOver({ open, onClose, onSaved }) {
           onChange={(e) => setAmount(e.target.value)}
           required
         />
-        <Input
-          label="Date"
-          type="date"
-          value={expenseDate}
-          onChange={(e) => setExpenseDate(e.target.value)}
-        />
+        <DateField label="Date" value={expenseDate} onChange={setExpenseDate} />
         <Select
           label="Payment method"
           value={paymentMethod}

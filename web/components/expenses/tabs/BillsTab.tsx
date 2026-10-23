@@ -34,6 +34,7 @@ import { useBillStore } from '@/store/billStore';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import RowActions from '@/components/ui/RowActions';
+import Select from '@/components/ui/Select';
 
 function aed(n: any) {
   return `AED ${Number(n || 0).toFixed(2)}`;
@@ -298,16 +299,18 @@ export default function BillsTab({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <label className="text-sm text-ink-muted">Status</label>
-          <select
+          <Select
+            containerClassName="w-36"
+            className="h-9"
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="h-9 rounded-input border border-border bg-surface px-3 text-sm"
-          >
-            <option value="">All</option>
-            <option value="active">Active</option>
-            <option value="paused">Paused</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+            onChange={(v) => setFilterStatus(v)}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'active', label: 'Active' },
+              { value: 'paused', label: 'Paused' },
+              { value: 'cancelled', label: 'Cancelled' },
+            ]}
+          />
         </div>
         {hasPermission('bills.manage') && (
           <Button size="sm" variant="secondary" onClick={onAddBill}>

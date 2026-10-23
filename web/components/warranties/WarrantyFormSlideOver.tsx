@@ -12,6 +12,7 @@ import { createWarranty } from '@/services/warrantyService';
 import { toast } from '@/store/toastStore';
 import type { SelectOption } from './types';
 import { storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 const TYPE_OPTIONS: SelectOption[] = [
   { value: 'customer', label: 'Customer warranty' },
@@ -199,13 +200,7 @@ export default function WarrantyFormSlideOver({ open, onClose }: WarrantyFormSli
           options={TYPE_OPTIONS}
         />
         <div className="grid grid-cols-2 gap-3">
-          <Input
-            type="date"
-            label="Start date"
-            required
-            value={startDate}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
-          />
+          <DateField label="Start date" required value={startDate} onChange={setStartDate} />
           <Select
             label="Duration"
             value={duration}

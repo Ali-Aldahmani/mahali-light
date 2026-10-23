@@ -6,6 +6,7 @@ import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 import { createEmployee, updateEmployee } from '@/services/employeeService';
 import { toast } from '@/store/toastStore';
+import DateField from '@/components/ui/DateField';
 
 const EMPTY = {
   name: '',
@@ -163,12 +164,7 @@ export default function EmployeeFormSlideOver({
             value={form.roleTitle}
             onChange={(e: any) => set('roleTitle', e.target.value)}
           />
-          <Input
-            label="Hire date"
-            type="date"
-            value={form.hireDate}
-            onChange={(e: any) => set('hireDate', e.target.value)}
-          />
+          <DateField label="Hire date" value={form.hireDate} onChange={(v) => set('hireDate', v)} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import Button from './Button';
-import Input from './Input';
+import DateField from './DateField';
+import DateRangeField from './DateRangeField';
 import { cn } from '@/lib/utils/cn';
 
 // Returns ISO date strings for a quick-pick window.
@@ -154,10 +155,11 @@ export default function PeriodSelector({
     return (
       <div className={cn('flex flex-wrap items-center gap-2', className)}>
         <span className="text-sm text-ink-muted">As of</span>
-        <Input
-          type="date"
+        <DateField
+          containerClassName="w-44"
+          placeholder="As of date"
           value={asOfDate || ''}
-          onChange={(e) => onChange({ asOfDate: e.target.value })}
+          onChange={(value) => onChange({ asOfDate: value })}
         />
       </div>
     );
@@ -177,17 +179,14 @@ export default function PeriodSelector({
           </Button>
         ))}
       </div>
-      <div className="flex items-center gap-2 ml-auto">
-        <Input
-          type="date"
-          value={startDate || ''}
-          onChange={(e) => onChange({ startDate: e.target.value, endDate })}
-        />
-        <span className="text-ink-muted">to</span>
-        <Input
-          type="date"
-          value={endDate || ''}
-          onChange={(e) => onChange({ startDate, endDate: e.target.value })}
+      <div className="ml-auto">
+        {/* A period always has both ends, so there's no Clear. */}
+        <DateRangeField
+          label="Period"
+          clearable={false}
+          from={startDate || ''}
+          to={endDate || ''}
+          onChange={({ from, to }) => onChange({ startDate: from, endDate: to })}
         />
       </div>
     </div>

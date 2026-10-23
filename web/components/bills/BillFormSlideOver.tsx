@@ -8,6 +8,7 @@ import { listCategories } from '@/services/expenseCategoryService';
 import { listBankAccounts } from '@/services/bankAccountService';
 import { toast } from '@/store/toastStore';
 import { storeDate, localIsoDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 const FREQ_OPTIONS = [
   { value: 'monthly', label: 'Monthly' },
@@ -239,19 +240,12 @@ export default function BillFormSlideOver({ open, onClose, bill = null, onSaved 
         />
 
         <div className="grid grid-cols-2 gap-3">
-          <Input
-            label="Start date"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            required
-          />
-          <Input
+          <DateField label="Start date" value={startDate} onChange={setStartDate} required />
+          <DateField
             label="First due date"
-            type="date"
             value={firstDueDate}
-            onChange={(e) => {
-              setFirstDueDate(e.target.value);
+            onChange={(v) => {
+              setFirstDueDate(v);
               setFirstDueTouched(true);
             }}
             required

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import SlideOver from '../ui/SlideOver';
 import Button from '../ui/Button';
-import Input from '../ui/Input';
 import Select from '../ui/Select';
 import LeaveBalanceBar from '../ui/LeaveBalanceBar';
 import { calculateLeaveDays, submitLeave } from '@/services/leaveService';
 import { getEmployeeBalances } from '@/services/leaveBalanceService';
 import { toast } from '@/store/toastStore';
 import { storeDate } from '@/lib/utils/format';
+import DateRangeField from '@/components/ui/DateRangeField';
 
 const LEAVE_TYPES = [
   { value: 'annual', label: 'Annual' },
@@ -19,6 +19,16 @@ const LEAVE_TYPES = [
 function todayIso() {
   return storeDate();
 }
+
+// Leave is booked ahead, so the shortcuts look forward.
+const addDays = (date: Date, days: number) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+const LEAVE_PRESETS = [
+  { label: 'Today', range: (today: Date) => ({ start: today, end: today }) },
+  { label: 'Tomorrow', range: (today: Date) => ({ start: addDays(today, 1), end: addDays(today, 1) }) },
+  { label: 'Next 3 days', range: (today: Date) => ({ start: addDays(today, 1), end: addDays(today, 3) }) },
+  { label: 'Next 7 days', range: (today: Date) => ({ start: addDays(today, 1), end: addDays(today, 7) }) },
+  { label: 'Next 14 days', range: (today: Date) => ({ start: addDays(today, 1), end: addDays(today, 14) }) },
+];
 
 export default function RequestLeaveSlideOver({
   open,
@@ -153,21 +163,22 @@ export default function RequestLeaveSlideOver({
           searchable={false}
           required
         />
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label="Start date"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            required
-          />
-          <Input
-            label="End date"
-            type="date"
-            value={endDate}
-            min={startDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            required
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-ink">
+            Leave dates<span className="ml-0.5 text-error">*</span>
+          </span>
+          <DateRangeField
+            label="Leave dates"
+            placeholder="Choose start and end"
+            clearable={false}
+            presets={LEAVE_PRESETS}
+            months={1}
+            from={startDate}
+            to={endDate}
+            onChange={({ from, to }) => {
+              setStartDate(from);
+              setEndDate(to);
+            }}
           />
         </div>
         <div className="grid grid-cols-2 gap-3 rounded-input bg-surface-2 p-3 text-xs">

@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Minus, Package, Plus, X } from 'lucide-react';
+import { Package, X } from 'lucide-react';
 import Button from '../ui/Button';
-import Input from '../ui/Input';
 import Badge from '../ui/Badge';
 import { fileUrl } from '@/lib/config';
 import { formatCurrency } from '@/lib/utils/format';
+import NumberField from '@/components/ui/number-field/NumberField';
 
 // Modal-style variant picker for products with attributes. The parent passes
 // an initially-selected variant; the cashier may switch to a sibling variant
@@ -88,13 +88,6 @@ export default function POSVariantSelector({
     if (!selected || stock <= 0) return;
     onAdd?.(selected, Number(qty) || 1);
     onClose?.();
-  }
-
-  function adjustQty(delta) {
-    setQty((q) => {
-      const next = Number(q) + delta;
-      return Math.max(isDecimal ? 0.01 : 1, Number(next.toFixed(2)));
-    });
   }
 
   return (
@@ -183,36 +176,14 @@ export default function POSVariantSelector({
             );
           })}
 
-          <div>
-            <div className="text-xs font-medium text-ink-muted mb-2">
-              Quantity{isDecimal ? ` (${selected.unitLabel})` : ''}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => adjustQty(-1)}
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <div className="w-24">
-                <Input
-                  type="number"
-                  min={isDecimal ? 0.01 : 1}
-                  step={isDecimal ? '0.01' : '1'}
-                  value={qty}
-                  onChange={(e) => setQty(Number(e.target.value))}
-                />
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => adjustQty(1)}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          <NumberField
+            label={`Quantity${isDecimal ? ` (${selected.unitLabel})` : ''}`}
+            min={isDecimal ? 0.01 : 1}
+            step={isDecimal ? 0.01 : 1}
+            buttonStep={1}
+            value={Number(qty) || (isDecimal ? 0.01 : 1)}
+            onValueChange={(n) => setQty(n)}
+          />
         </div>
 
         <div className="p-4 border-t border-border flex items-center justify-between gap-2">

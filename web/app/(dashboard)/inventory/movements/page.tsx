@@ -20,6 +20,7 @@ import { useAuthStore } from '@/store/authStore';
 import { formatDateTime, formatQty, formatCurrency, storeDate } from '@/lib/utils/format';
 import { onStockUpdate } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
+import DateRangeField from '@/components/ui/DateRangeField';
 
 const TYPE_FILTERS = [
   { value: 'all', label: 'All types' },
@@ -321,25 +322,16 @@ function StockMovementsPageContent() {
             searchable={false}
           />
         </div>
-        <div className="col-span-2">
-          <Input
-            label="From"
-            type="date"
-            value={dateFrom}
-            onChange={(e) => {
+        <div className="col-span-4 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-ink">Dates</span>
+          <DateRangeField
+            label="Movement dates"
+            from={dateFrom}
+            to={dateTo}
+            onChange={({ from, to }) => {
               setPage(1);
-              setDateFrom(e.target.value);
-            }}
-          />
-        </div>
-        <div className="col-span-2">
-          <Input
-            label="To"
-            type="date"
-            value={dateTo}
-            onChange={(e) => {
-              setPage(1);
-              setDateTo(e.target.value);
+              setDateFrom(from);
+              setDateTo(to);
             }}
           />
         </div>

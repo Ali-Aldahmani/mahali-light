@@ -1,6 +1,5 @@
-import { useState } from 'react';
-import { Play, ChevronDown } from 'lucide-react';
-import Button from '../ui/Button';
+import { Archive, Database, Play } from 'lucide-react';
+import DropdownMenu from '@/components/ui/dropdown-menu';
 import DiskUsageBar from './DiskUsageBar';
 import DestinationStatusBadge from './DestinationStatusBadge';
 import { useAuthStore } from '@/store/authStore';
@@ -59,7 +58,6 @@ export default function BackupStatusCard({
   const hasPerm = useAuthStore((s) => s.hasPermission);
   const canRun = role === 'Admin' || hasPerm('backup.run_manual');
 
-  const [menuOpen, setMenuOpen] = useState(false);
   const next = nextScheduleTime(settings);
 
   const completed = lastJob && lastJob.status === 'completed';
@@ -73,43 +71,16 @@ export default function BackupStatusCard({
           </p>
         </div>
         {canRun && (
-          <div className="relative">
-            <Button onClick={() => setMenuOpen((v) => !v)} disabled={isRunning}>
-              <Play size={14} />
-              {isRunning ? 'Running…' : 'Run manual backup'}
-              <ChevronDown size={14} className="opacity-70" />
-            </Button>
-            {menuOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-20"
-                  onClick={() => setMenuOpen(false)}
-                />
-                <div className="absolute right-0 top-full z-30 mt-2 w-52 card overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onRunBackup?.('full');
-                    }}
-                    className="block w-full px-4 py-2 text-left text-sm hover:bg-surface-2"
-                  >
-                    Full backup
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onRunBackup?.('db_only');
-                    }}
-                    className="block w-full px-4 py-2 text-left text-sm hover:bg-surface-2"
-                  >
-                    Database only
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <DropdownMenu
+            variant="primary"
+            label={isRunning ? 'Running…' : 'Run manual backup'}
+            icon={<Play />}
+            disabled={isRunning}
+            items={[
+              { label: 'Full backup', icon: <Archive />, onSelect: () => onRunBackup?.('full') },
+              { label: 'Database only', icon: <Database />, onSelect: () => onRunBackup?.('db_only') },
+            ]}
+          />
         )}
       </div>
 

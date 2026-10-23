@@ -5,6 +5,7 @@ import Input from '../ui/Input';
 import Select from '../ui/Select';
 import Textarea from '../ui/Textarea';
 import { formatCurrency, storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 // Reusable transfer form. Source/destination are chosen from the union of the
 // cash drawer + every active bank account. The caller wires `onSubmit` to the
@@ -115,12 +116,7 @@ export default function TransferForm({
           onChange={(e) => setAmount(e.target.value)}
           required
         />
-        <Input
-          label="Date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
+        <DateField label="Date" value={date} onChange={setDate} />
       </div>
 
       <Textarea

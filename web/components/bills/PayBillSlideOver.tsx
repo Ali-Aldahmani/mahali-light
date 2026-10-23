@@ -10,6 +10,7 @@ import { payBillPayment } from '@/services/billService';
 import { listBankAccounts } from '@/services/bankAccountService';
 import { toast } from '@/store/toastStore';
 import { storeDate } from '@/lib/utils/format';
+import DateField from '@/components/ui/DateField';
 
 const METHOD_OPTIONS = [
   { value: 'bank', label: 'Bank' },
@@ -166,12 +167,7 @@ export default function PayBillSlideOver({
           />
         )}
 
-        <Input
-          label="Paid date"
-          type="date"
-          value={paidDate}
-          onChange={(e) => setPaidDate(e.target.value)}
-        />
+        <DateField label="Paid date" value={paidDate} onChange={setPaidDate} />
 
         <div>
           <label className="mb-1.5 block text-sm font-medium">Receipt (optional)</label>

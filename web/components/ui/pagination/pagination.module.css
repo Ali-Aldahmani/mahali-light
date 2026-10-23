@@ -1,0 +1,85 @@
+/* Styles for Pagination. Buttons are 36px with a 4px gap: the component's
+   slide distance (`slot`) assumes exactly that. */
+
+.nav {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  isolation: isolate;
+}
+
+.nav > button {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: theme('borderRadius.input');
+  background: transparent;
+  color: theme('colors.ink.muted');
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.nav > button:hover:not(:disabled) {
+  background: theme('colors.surface-2');
+  color: theme('colors.ink.DEFAULT');
+}
+
+.nav > button:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: 1px;
+}
+
+.nav > button[aria-current='page'] {
+  color: theme('colors.accent.DEFAULT');
+  font-weight: 600;
+}
+
+.nav > button[aria-current='page']:hover { background: transparent; }
+
+/* Until the mark has measured once (and on the server), the current page
+   draws its own outline so nothing flashes before hydration. */
+.nav:not([data-mark-ready]) > button[aria-current='page'] {
+  border-color: rgb(249 115 22 / 0.5);
+  background: theme('colors.accent.light');
+}
+
+.step {
+  border-color: theme('colors.border') !important;
+  background: theme('colors.surface') !important;
+  color: theme('colors.ink.DEFAULT') !important;
+}
+
+.step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed !important;
+}
+
+/* The mark glides to the current page. */
+.mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgb(249 115 22 / 0.5);
+  border-radius: theme('borderRadius.input');
+  background: theme('colors.accent.light');
+  pointer-events: none;
+}
+
+.nav:not([data-mark-ready]) > .mark { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nav > button { transition: none; }
+}

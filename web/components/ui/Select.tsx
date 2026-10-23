@@ -1,11 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Check, ChevronDown, Search } from 'lucide-react';
-import { cn } from '@/lib/utils/cn';
+'use client';
+
+import type { ReactNode } from 'react';
+import SelectField from './select-field/SelectField';
 
 export interface SelectOption {
   value: any;
   label: string;
   description?: string;
+  disabled?: boolean;
 }
 
 export interface SelectProps {
@@ -14,142 +16,63 @@ export interface SelectProps {
   onChange?: (value: any, option: SelectOption) => void;
   options?: SelectOption[];
   placeholder?: string;
+  /** Kept for compatibility. The list supports type-to-jump instead of a search box. */
   searchable?: boolean;
   error?: ReactNode;
   hint?: ReactNode;
   disabled?: boolean;
   required?: boolean;
+  /** Classes for the trigger. */
   className?: string;
+  /** Classes for the wrapper (label + trigger + hint). */
   containerClassName?: string;
+  /** Kept for compatibility (shown only by the old searchable list). */
   emptyLabel?: string;
 }
 
-// Searchable single-select dropdown.
-// options: [{ value, label, description? }]
+/**
+ * The app's single-select drop-down. Same props it always had; the control
+ * itself is the animated Radix select in ./select-field.
+ *
+ * Radix needs non-empty string values, while our options carry any value
+ * ('' for "All", numbers, ids...). So options are addressed by position and
+ * translated back to the original value and option in onChange.
+ */
 export default function Select({
   label,
   value,
   onChange,
   options = [],
   placeholder = 'Select…',
-  searchable = true,
   error,
   hint,
   disabled = false,
   required = false,
-  className = '',
-  containerClassName = '',
-  emptyLabel = 'No matches',
+  className,
+  containerClassName,
 }: SelectProps) {
-  const autoId = useId();
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const ref = useRef(null);
-
-  const selected = useMemo(
-    () => options.find((o) => o.value === value) || null,
-    [options, value],
-  );
-
-  const filtered = useMemo(() => {
-    if (!q) return options;
-    const term = q.toLowerCase();
-    return options.filter(
-      (o) =>
-        o.label.toLowerCase().includes(term) ||
-        (o.description && o.description.toLowerCase().includes(term)),
-    );
-  }, [options, q]);
-
-  useEffect(() => {
-    function handle(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, []);
-
+  const index = options.findIndex((o) => o.value === value);
   return (
-    <div className={cn('flex flex-col gap-1.5 relative', containerClassName)} ref={ref}>
-      {label && (
-        <label htmlFor={autoId} className="text-sm font-medium text-ink">
-          {label}
-          {required && <span className="text-error ml-0.5">*</span>}
-        </label>
-      )}
-      <button
-        id={autoId}
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          'flex h-10 items-center justify-between rounded-input border bg-surface px-3 text-sm transition',
-          error
-            ? 'border-error'
-            : 'border-border hover:border-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/20',
-          disabled && 'opacity-60 cursor-not-allowed',
-          className,
-        )}
-      >
-        <span className={cn('truncate', !selected && 'text-ink-muted')}>
-          {selected ? selected.label : placeholder}
-        </span>
-        <ChevronDown size={16} className="text-ink-muted shrink-0 ml-2" />
-      </button>
-
-      {open && (
-        <div className="absolute z-30 top-full mt-1 min-w-full w-max rounded-card border border-border bg-surface shadow-pop">
-          {searchable && (
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-              <Search size={14} className="text-ink-muted" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                autoFocus
-                placeholder="Search…"
-                className="flex-1 bg-transparent text-sm outline-none"
-              />
-            </div>
-          )}
-          <div className="max-h-64 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <div className="px-3 py-3 text-sm text-ink-muted">{emptyLabel}</div>
-            ) : (
-              filtered.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  onClick={() => {
-                    onChange?.(o.value, o);
-                    setOpen(false);
-                    setQ('');
-                  }}
-                  className={cn(
-                    'w-full flex items-start gap-2 px-3 py-2 text-left text-sm hover:bg-surface-2',
-                    selected?.value === o.value && 'bg-accent-light',
-                  )}
-                >
-                  <span className="flex-1">
-                    <span className="block font-medium text-ink">{o.label}</span>
-                    {o.description && (
-                      <span className="block text-xs text-ink-muted">{o.description}</span>
-                    )}
-                  </span>
-                  {selected?.value === o.value && (
-                    <Check size={16} className="text-accent shrink-0 mt-0.5" />
-                  )}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {error ? (
-        <p className="text-xs text-error">{error}</p>
-      ) : hint ? (
-        <p className="text-xs text-ink-muted">{hint}</p>
-      ) : null}
-    </div>
+    <SelectField
+      label={label}
+      description={hint}
+      error={error}
+      required={required}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={className}
+      containerClassName={containerClassName}
+      value={index >= 0 ? String(index) : ''}
+      onValueChange={(key) => {
+        const option = options[Number(key)];
+        if (option) onChange?.(option.value, option);
+      }}
+      options={options.map((o, i) => ({
+        value: String(i),
+        label: o.label,
+        hint: o.description,
+        disabled: o.disabled,
+      }))}
+    />
   );
 }

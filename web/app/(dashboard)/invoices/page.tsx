@@ -29,6 +29,8 @@ import { listInvoices } from '@/services/invoiceService';
 import { formatCurrency, formatDateTime } from '@/lib/utils/format';
 import RowActions from '@/components/ui/RowActions';
 import { useInvoiceActions } from '@/components/invoices/useInvoiceActions';
+import AvatarGroup from '@/components/ui/avatar-group/AvatarGroup';
+import DateRangeField from '@/components/ui/DateRangeField';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -207,14 +209,19 @@ function InvoicesPageContent() {
       {
         key: 'createdBy',
         header: 'By',
-        render: (r: any) => (
-          <span className="text-xs text-ink-muted">
-            {r.createdByUsername || '—'}
-            {r.pcIdentifier && (
-              <span className="ml-1 text-ink-muted/70">· {r.pcIdentifier}</span>
-            )}
-          </span>
-        ),
+        render: (r: any) =>
+          r.createdByUsername ? (
+            <span className="inline-flex items-center gap-1.5">
+              <AvatarGroup size="sm" label="Created by" members={[{ name: r.createdByUsername }]} />
+              {r.pcIdentifier && (
+                <span className="text-[11px] text-ink-muted" title="Till / PC">
+                  {r.pcIdentifier}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="text-xs text-ink-muted">—</span>
+          ),
       },
       {
         key: 'actions',
@@ -309,26 +316,16 @@ function InvoicesPageContent() {
             searchable={false}
           />
         </div>
-        <div className="w-40">
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e: any) => {
-              setPage(1);
-              setDateFrom(e.target.value);
-            }}
-          />
-        </div>
-        <div className="w-40">
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e: any) => {
-              setPage(1);
-              setDateTo(e.target.value);
-            }}
-          />
-        </div>
+        <DateRangeField
+          label="Invoice date"
+          from={dateFrom}
+          to={dateTo}
+          onChange={({ from, to }) => {
+            setPage(1);
+            setDateFrom(from);
+            setDateTo(to);
+          }}
+        />
       </div>
 
       <Table

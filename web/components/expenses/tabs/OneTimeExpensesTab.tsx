@@ -15,6 +15,8 @@ import { toast } from '@/store/toastStore';
 import PrivateFileLink from '@/components/ui/PrivateFileLink';
 import { storeDate } from '@/lib/utils/format';
 import RowActions from '@/components/ui/RowActions';
+import Select from '@/components/ui/Select';
+import DateRangeField from '@/components/ui/DateRangeField';
 
 function aed(n: any) {
   return `AED ${Number(n || 0).toFixed(2)}`;
@@ -254,38 +256,34 @@ export default function OneTimeExpensesTab({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            <select
+            <Select
+              className="h-9"
               value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              className="h-9 rounded-input border border-border bg-surface px-2 text-sm"
-            >
-              <option value="">All categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon || ''} {c.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="h-9 rounded-input border border-border bg-surface px-2 text-sm"
-            >
-              <option value="">All methods</option>
-              <option value="cash">Cash</option>
-              <option value="bank">Bank</option>
-            </select>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="h-9 rounded-input border border-border bg-surface px-2 text-sm"
+              onChange={(v) => setCategoryId(v)}
+              options={[
+                { value: '', label: 'All categories' },
+                ...categories.map((c) => ({ value: c.id, label: `${c.icon || ''} ${c.name}`.trim() })),
+              ]}
             />
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="h-9 rounded-input border border-border bg-surface px-2 text-sm"
+            <Select
+              className="h-9"
+              value={paymentMethod}
+              onChange={(v) => setPaymentMethod(v)}
+              options={[
+                { value: '', label: 'All methods' },
+                { value: 'cash', label: 'Cash' },
+                { value: 'bank', label: 'Bank' },
+              ]}
+            />
+            <DateRangeField
+              label="Expense dates"
+              className="md:col-span-2"
+              from={from}
+              to={to}
+              onChange={(range) => {
+                setFrom(range.from);
+                setTo(range.to);
+              }}
             />
             <input
               value={search}

@@ -14,6 +14,7 @@ import {
 } from '@/services/errorLogService';
 import { formatDateTime, storeDate } from '@/lib/utils/format';
 import { toast } from '@/store/toastStore';
+import Select from '@/components/ui/Select';
 
 const SEV_TONE: Record<string, string> = {
   critical: 'error',
@@ -134,26 +135,28 @@ function ErrorLogsAdminPageInner() {
       )}
 
       <div className="flex flex-wrap gap-2">
-        <select
-          className="rounded-input border border-border px-2 py-1 text-sm"
+        <Select
+          containerClassName="w-44"
           value={severity}
-          onChange={(e) => setSeverity(e.target.value)}
-        >
-          <option value="">All severities</option>
-          <option value="critical">Critical</option>
-          <option value="error">Error</option>
-          <option value="warning">Warning</option>
-          <option value="info">Info</option>
-        </select>
-        <select
-          className="rounded-input border border-border px-2 py-1 text-sm"
+          onChange={(v) => setSeverity(v)}
+          options={[
+            { value: '', label: 'All severities' },
+            { value: 'critical', label: 'Critical' },
+            { value: 'error', label: 'Error' },
+            { value: 'warning', label: 'Warning' },
+            { value: 'info', label: 'Info' },
+          ]}
+        />
+        <Select
+          containerClassName="w-40"
           value={resolved}
-          onChange={(e) => setResolved(e.target.value)}
-        >
-          <option value="false">Unresolved</option>
-          <option value="true">Resolved</option>
-          <option value="">All</option>
-        </select>
+          onChange={(v) => setResolved(v)}
+          options={[
+            { value: 'false', label: 'Unresolved' },
+            { value: 'true', label: 'Resolved' },
+            { value: '', label: 'All' },
+          ]}
+        />
       </div>
 
       <div className="card overflow-x-auto">

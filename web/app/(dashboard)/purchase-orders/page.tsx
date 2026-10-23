@@ -32,6 +32,7 @@ import type {
   PurchaseOrderListMeta,
 } from '@/components/purchases/types';
 import type { Supplier } from '@/components/suppliers/types';
+import DateRangeField from '@/components/ui/DateRangeField';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -347,12 +348,14 @@ function PurchaseOrdersPageContent() {
           />
         </div>
         <div className="flex items-center gap-1">
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          <DateRangeField
+            label="Order date"
+            from={dateFrom}
+            to={dateTo}
+            onChange={({ from, to }) => {
               setPage(1);
-              setDateFrom(e.target.value);
+              setDateFrom(from);
+              setDateTo(to);
             }}
           />
         </div>
@@ -371,16 +374,6 @@ function PurchaseOrdersPageContent() {
           />
           Overdue only
         </label>
-        <Input
-          type="date"
-          value={dateTo}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-            setPage(1);
-            setDateTo(e.target.value);
-          }}
-          containerClassName="w-44"
-          placeholder="Date to"
-        />
       </div>
 
       <Table

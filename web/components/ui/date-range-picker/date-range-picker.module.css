@@ -1,0 +1,399 @@
+/* Styles for DateRangePicker. One surface sits behind the trigger and
+   springs to the panel's size when it opens (sizes and radius are animated
+   by the component), so the trigger appears to grow into the panel.
+   Two-month layout: rail 148px + 2 × 7 × 36px cells + gap + padding ≈ 712px
+   (the component's WIDE_MIN). */
+
+.root {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+}
+
+.root[data-open] { z-index: 60; }
+
+/* ---- Trigger (transparent; the surface draws it) ---------------------- */
+
+.trigger {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: theme('colors.ink.DEFAULT');
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+.trigger:disabled { cursor: progress; }
+
+.trigger:focus-visible + .surface {
+  border-color: theme('colors.accent.DEFAULT');
+  box-shadow: 0 0 0 3px rgb(249 115 22 / 0.15);
+}
+
+.root:not([data-open]) .trigger:hover + .surface { border-color: theme('colors.ink.muted'); }
+
+.triggerIcon,
+.chevron {
+  display: inline-grid;
+  flex: none;
+  color: theme('colors.ink.muted');
+}
+
+.value {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.value[data-empty] { color: theme('colors.ink.muted'); }
+
+/* Words roll independently; unchanged words hold still. */
+.rolling {
+  display: inline-flex;
+  gap: 0.28em;
+}
+
+.word {
+  position: relative;
+  display: inline-flex;
+}
+
+.wordInner {
+  display: inline-block;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Surface + panel ---------------------------------------------------- */
+
+.surface {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  overflow: hidden;
+  border: 1px solid theme('colors.border');
+  background: theme('colors.surface');
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.04);
+  transition: border-color 150ms ease, box-shadow 200ms ease;
+}
+
+.root[data-open] .surface {
+  z-index: 3;
+  border-color: theme('colors.border');
+  box-shadow: 0 20px 48px rgb(17 24 39 / 0.18), 0 3px 10px rgb(17 24 39 / 0.07);
+}
+
+/* Laid out at its natural size (measured by the component), independent of
+   the surface's animated box. */
+.panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+}
+
+.body { display: flex; }
+
+.panel[data-compact] .body { flex-direction: column; }
+
+/* Preset rail: a column beside the months, or a scrolling row on top. */
+.rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 148px;
+  padding: 12px 8px;
+  border-right: 1px solid theme('colors.border');
+}
+
+.panel[data-compact] .rail {
+  flex-direction: row;
+  width: auto;
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-right: 0;
+  border-bottom: 1px solid theme('colors.border');
+  scrollbar-width: none;
+}
+
+.panel[data-compact] .rail::-webkit-scrollbar { display: none; }
+
+.railHighlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 8px;
+  background: theme('colors.accent.light');
+  pointer-events: none;
+}
+
+.preset {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: theme('colors.ink.DEFAULT');
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.preset:hover:not([aria-pressed='true']) { background: theme('colors.surface-2'); }
+
+.preset[aria-pressed='true'] {
+  color: theme('colors.accent.DEFAULT');
+  font-weight: 600;
+}
+
+.preset:focus-visible { outline: 2px solid theme('colors.accent.DEFAULT'); outline-offset: -2px; }
+
+.calendars {
+  position: relative;
+  padding: 12px 16px 6px;
+}
+
+.navButton {
+  position: absolute;
+  top: 10px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: theme('colors.ink.muted');
+  cursor: pointer;
+}
+
+.navButton[data-side='prev'] { left: 12px; }
+.navButton[data-side='next'] { right: 12px; }
+
+.navButton:hover:not(:disabled) { background: theme('colors.surface-2'); color: theme('colors.ink.DEFAULT'); }
+.navButton:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* Leaving and arriving months overlap in one cell, so the panel never
+   resizes mid-slide. */
+.viewport {
+  display: grid;
+  overflow: hidden;
+}
+
+.months {
+  grid-area: 1 / 1;
+  display: flex;
+  gap: 24px;
+}
+
+.monthTitle {
+  height: 30px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 30px;
+  color: theme('colors.ink.DEFAULT');
+  text-align: center;
+}
+
+.weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, var(--cell));
+}
+
+.weekdays span {
+  display: grid;
+  place-items: center;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  color: theme('colors.ink.muted');
+  text-transform: uppercase;
+}
+
+.weeks { position: relative; }
+
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, var(--cell));
+}
+
+.cell,
+.blank {
+  width: var(--cell);
+  height: var(--cell);
+}
+
+/* Each week's slice of the range. */
+.bar {
+  position: absolute;
+  height: calc(var(--cell) - 6px);
+  border-radius: calc(var(--cell) / 2);
+  background: theme('colors.accent.light');
+}
+
+/* The solid ends of the range. */
+.thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--cell);
+  height: var(--cell);
+  padding: 2px;
+}
+
+.thumb::before {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  background: theme('colors.accent.DEFAULT');
+  box-shadow: 0 2px 6px rgb(249 115 22 / 0.35);
+}
+
+.day {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--cell);
+  height: var(--cell);
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: theme('colors.ink.DEFAULT');
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.day:hover:not(:disabled):not([data-range]) { background: theme('colors.surface-2'); }
+
+.day[data-range] { color: theme('colors.accent.hover'); }
+
+.day[data-edge] {
+  color: #fff;
+  font-weight: 600;
+}
+
+.day[data-today]:not([data-edge]) {
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgb(249 115 22 / 0.45);
+}
+
+.day:disabled {
+  color: theme('colors.ink.muted');
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.day:focus-visible {
+  outline: 2px solid theme('colors.accent.DEFAULT');
+  outline-offset: -2px;
+}
+
+/* ---- Footer ------------------------------------------------------------- */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid theme('colors.border');
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.summaryValue {
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 600;
+  color: theme('colors.ink.DEFAULT');
+  white-space: nowrap;
+}
+
+.summaryCount {
+  display: inline-flex;
+  min-height: 16px;
+  font-size: 12px;
+  color: theme('colors.ink.muted');
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.ghost,
+.primary {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ghost {
+  background: transparent;
+  color: theme('colors.ink.muted');
+}
+
+.ghost:hover { background: theme('colors.surface-2'); color: theme('colors.ink.DEFAULT'); }
+
+.primary {
+  background: theme('colors.accent.DEFAULT');
+  color: #fff;
+}
+
+.primary:hover:not(:disabled) { background: theme('colors.accent.hover'); }
+.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface { transition: none; }
+}

@@ -16,6 +16,7 @@ import { listClaims } from '@/services/warrantyClaimService';
 import { formatDate } from '@/lib/utils/format';
 import { onWarrantyClaimEvent } from '@/store/socketStore';
 import type { SelectOption, WarrantyClaim } from '@/components/warranties/types';
+import DateRangeField from '@/components/ui/DateRangeField';
 
 const STATUS_OPTIONS: SelectOption[] = [
   { value: '', label: 'All statuses' },
@@ -181,17 +182,14 @@ function WarrantyClaimsPageContent() {
             onChange={(v: string) => setResolution(v)}
             options={RESOLUTION_OPTIONS}
           />
-          <Input
-            type="date"
-            placeholder="From"
-            value={from}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFrom(e.target.value)}
-          />
-          <Input
-            type="date"
-            placeholder="To"
-            value={to}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTo(e.target.value)}
+          <DateRangeField
+            label="Claim dates"
+            from={from}
+            to={to}
+            onChange={(range) => {
+              setFrom(range.from);
+              setTo(range.to);
+            }}
           />
         </div>
       </div>

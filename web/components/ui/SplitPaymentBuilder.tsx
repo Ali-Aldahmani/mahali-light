@@ -3,6 +3,7 @@ import Button from './Button';
 import Input from './Input';
 import { formatCurrency } from '@/lib/utils/format';
 import ChangeCalculator from './ChangeCalculator';
+import Select from './Select';
 
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
@@ -118,17 +119,13 @@ function PaymentRow({ payment, customerLinked, onUpdate, onRemove }) {
     <div className="flex items-center gap-2 rounded-input border border-border bg-surface p-2">
       <div className="flex items-center gap-2 w-32 shrink-0">
         <Icon className="h-4 w-4 text-ink-muted" />
-        <select
+        <Select
+          containerClassName="w-full"
+          className="h-8 border-transparent bg-transparent px-1"
           value={payment.method}
-          onChange={(e) => onUpdate({ method: e.target.value })}
-          className="bg-transparent text-sm text-ink outline-none w-full"
-        >
-          {METHODS.map((m) => (
-            <option key={m.value} value={m.value} disabled={m.value === 'credit' && !customerLinked}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onUpdate({ method: v })}
+          options={METHODS.map((m) => ({ value: m.value, label: m.label, disabled: m.value === 'credit' && !customerLinked }))}
+        />
       </div>
       <div className="flex-1">
         <Input
