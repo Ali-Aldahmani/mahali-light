@@ -11,6 +11,7 @@ const TYPE_SUBDIRS = {
   'full-monthly': 'full-monthly',
   'manual-full': 'manual-full',
   'manual-db': 'manual-db',
+  'pre-migration': 'pre-migration',
 };
 
 function resolveBaseDir(localPath) {

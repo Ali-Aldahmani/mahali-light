@@ -28,6 +28,7 @@ const SCHEDULE_KEYS = {
   monthly: 'full-monthly',
   'manual:full': 'manual-full',
   'manual:db_only': 'manual-db',
+  'pre-migration': 'pre-migration',
 };
 
 let ioInstance = null;
@@ -212,7 +213,7 @@ function inProgressError(running) {
 // =======================================================================
 // Run a backup.
 //   type:        'full' | 'db_only'
-//   triggeredBy: 'scheduled' | 'manual'
+//   triggeredBy: 'scheduled' | 'manual' | 'pre_migration'
 //   scheduleKey: '6h' | 'nightly' | 'weekly' | 'monthly' | 'manual:full' | 'manual:db_only'
 //   userId:      uuid (manual only)
 // =======================================================================
@@ -364,7 +365,9 @@ async function runBackupLocked({ type, triggeredBy, scheduleKey, userId = null }
       action:
         triggeredBy === 'scheduled'
           ? 'backup.scheduled_started'
-          : 'backup.manual_started',
+          : triggeredBy === 'pre_migration'
+            ? 'backup.pre_migration_started'
+            : 'backup.manual_started',
       performedBy: userId,
       newValue: { jobNumber, type, scheduleKey },
     });

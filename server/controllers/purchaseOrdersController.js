@@ -65,6 +65,7 @@ function shapePO(row, includeCost) {
     employeeId: row.employee_id,
     employeeUsername: row.employee_username,
     orderDate: row.order_date,
+    confirmedAt: row.confirmed_at || null,
     expectedDate: row.expected_date,
     receivedDate: row.received_date,
     dueDate: row.due_date,
@@ -497,7 +498,7 @@ async function confirm(req, res, next) {
         );
       }
       await client.query(
-        `UPDATE purchase_orders SET status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+        `UPDATE purchase_orders SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`,
         [id],
       );
     });

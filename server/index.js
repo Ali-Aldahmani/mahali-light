@@ -156,7 +156,7 @@ async function bootstrap() {
   assertBackupSecret();
   registerProcessHandlers();
   await waitForDatabase();
-  await runMigrations();
+  await runMigrations({ preMigrationBackup: true });
   await runSeed();
   await runSeedProducts();
   await runSeedSettings();

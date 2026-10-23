@@ -20,6 +20,7 @@ function retentionDaysFor(scheduleKey, settings) {
       return Infinity;
     case 'manual-full':
     case 'manual-db':
+    case 'pre-migration':
       // Manual archives are kept until the operator removes them.
       return Infinity;
     default:

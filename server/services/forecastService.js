@@ -147,7 +147,7 @@ async function calculateReorderRecommendation(variantId) {
     `SELECT v.id AS variant_id, v.product_id, v.stock_qty, v.cost_price,
             p.name AS product_name,
             COALESCE(
-              (SELECT AVG(po.received_date - po.order_date)::float8
+              (SELECT AVG(po.received_date - COALESCE(po.confirmed_at::date, po.order_date))::float8
                  FROM purchase_order_items poi
                  JOIN purchase_orders po ON po.id = poi.purchase_order_id
                 WHERE poi.variant_id = v.id

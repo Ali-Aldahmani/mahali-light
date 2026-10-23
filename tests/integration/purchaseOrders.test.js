@@ -130,6 +130,10 @@ describe.skipIf(!enabled)('purchase order create/update/confirm on real PostgreS
       .send({});
     expect(res.status).toBe(200);
     expect(res.body.data.status).toBe('confirmed');
+    // Lead-time clock starts here, not at draft creation (migration 035).
+    expect(res.body.data.confirmedAt).toBeTruthy();
+    const { rows } = await db.query(`SELECT confirmed_at FROM purchase_orders WHERE id = $1`, [poId]);
+    expect(Date.now() - new Date(rows[0].confirmed_at).getTime()).toBeLessThan(60_000);
   });
 
   it('rejects editing a confirmed PO (409, not silently applied)', async () => {

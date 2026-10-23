@@ -63,7 +63,7 @@ const STATS_JOIN = `
       ) AS overdue_count,
       AVG(
         CASE WHEN received_date IS NOT NULL
-          THEN (received_date - order_date)::numeric
+          THEN (received_date - COALESCE(confirmed_at::date, order_date))::numeric
           ELSE NULL
         END
       ) AS avg_lead_time_days

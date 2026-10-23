@@ -257,7 +257,7 @@ async function getTopSuppliers({ startDate, endDate, limit = 10 } = {}) {
        SELECT s.id, s.name,
               COUNT(p.id)::int AS total_orders,
               COALESCE(SUM(p.total_cost), 0)::float8 AS total_spent,
-              AVG(p.received_date - p.order_date)::float8 AS avg_lead_time_days,
+              AVG(p.received_date - COALESCE(p.confirmed_at::date, p.order_date))::float8 AS avg_lead_time_days,
               SUM(CASE WHEN p.received_date IS NOT NULL
                         AND p.received_date <= p.expected_date THEN 1 ELSE 0 END)::float8 AS on_time_count,
               SUM(CASE WHEN p.received_date IS NOT NULL
@@ -344,7 +344,7 @@ async function getWorstSuppliers(params) {
        SELECT s.id, s.name,
               COUNT(p.id)::int AS total_orders,
               COALESCE(SUM(p.total_cost), 0)::float8 AS total_spent,
-              AVG(p.received_date - p.order_date)::float8 AS avg_lead_time_days
+              AVG(p.received_date - COALESCE(p.confirmed_at::date, p.order_date))::float8 AS avg_lead_time_days
          FROM suppliers s
          LEFT JOIN purchase_orders p ON p.supplier_id = s.id
                                     AND p.status <> 'cancelled'
