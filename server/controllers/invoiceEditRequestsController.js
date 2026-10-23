@@ -36,6 +36,7 @@ function shape(row) {
     id: row.id,
     invoiceId: row.invoice_id,
     invoiceNumber: row.invoice_number,
+    customerId: row.customer_id,
     customerName: row.customer_name,
     requestedBy: row.requested_by,
     requestedByUsername: row.requested_by_username,
@@ -53,6 +54,7 @@ function shape(row) {
 const EDIT_REQUEST_SELECT = `
   SELECT r.*,
          i.invoice_number,
+         i.customer_id,
          c.name AS customer_name,
          u1.username AS requested_by_username,
          u2.username AS reviewed_by_username

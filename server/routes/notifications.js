@@ -33,6 +33,8 @@ router.get('/', ctrl.list);
 router.put('/read-all', ctrl.markAllRead);
 router.put('/:id/read', ctrl.markRead);
 router.put('/:id/unread', ctrl.markUnread);
+router.put('/:id/pin', ctrl.pinOne);
+router.delete('/:id/pin', ctrl.unpinOne);
 router.put('/:id/dismiss', ctrl.dismissOne);
 
 module.exports = router;

@@ -9,6 +9,7 @@ router.use(requireAuth());
 // Light endpoints — anyone with dashboard access can hit these.
 router.get('/kpis', requirePermission('analytics.view_dashboard'), ctrl.kpis);
 router.get('/sparkline', requirePermission('analytics.view_dashboard'), ctrl.sparkline);
+router.get('/kpi-series', requirePermission('analytics.view_dashboard'), ctrl.kpiSeries);
 router.get('/daily-snapshot', requirePermission('analytics.view_dashboard'), ctrl.dailySnapshot);
 router.get('/sales-timeline', requirePermission('analytics.view_dashboard'), ctrl.salesTimeline);
 router.get('/category-breakdown', requirePermission('analytics.view_dashboard'), ctrl.categoryBreakdown);

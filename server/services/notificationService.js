@@ -244,6 +244,7 @@ function shape(row) {
     read_at: row.read_at || null,
     dismissed: row.dismissed === true,
     dismissed_at: row.dismissed_at || null,
+    pinned_at: row.pinned_at || null,
   };
 }
 
@@ -268,7 +269,8 @@ async function listForUser({
   unreadOnly = false,
 }) {
   const offset = Math.max(0, (page - 1) * limit);
-  const where = [userScopeSql(userId, role)];
+  // Deleted (dismissed) notifications never come back for this user.
+  const where = [userScopeSql(userId, role), 'COALESCE(nr.dismissed, false) = false'];
   const params = [userId, role || null];
   if (category) {
     params.push(category);
@@ -288,12 +290,16 @@ async function listForUser({
             (nr.id IS NOT NULL)        AS is_read,
             nr.read_at                 AS read_at,
             COALESCE(nr.dismissed, false) AS dismissed,
-            nr.dismissed_at            AS dismissed_at
+            nr.dismissed_at            AS dismissed_at,
+            np.pinned_at               AS pinned_at
        FROM notifications n
        LEFT JOIN notification_reads nr
               ON nr.notification_id = n.id AND nr.user_id = $1
+       LEFT JOIN notification_pins np
+              ON np.notification_id = n.id AND np.user_id = $1
       WHERE ${where.join(' AND ')}
-      ORDER BY n.created_at DESC
+      -- Pinned first, oldest pin on top; then everything else, newest first.
+      ORDER BY np.pinned_at ASC NULLS LAST, n.created_at DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );
@@ -417,6 +423,8 @@ async function dismiss({ notificationId, userId, role, isAdmin = false }) {
        read_at = EXCLUDED.read_at`,
     [notificationId, userId],
   );
+  // A deleted notification can't stay pinned.
+  await query(`DELETE FROM notification_pins WHERE notification_id = $1 AND user_id = $2`, [notificationId, userId]);
   const count = await getUnreadCount(userId);
   if (ioInstance) {
     ioInstance.to(`user:${userId}`).emit('notification_read_ack', {
@@ -425,6 +433,25 @@ async function dismiss({ notificationId, userId, role, isAdmin = false }) {
       dismissed: true,
     });
   }
+}
+
+// Pin keeps a notification at the top of this user's list. Pinning again
+// keeps the original pin time, so the order of pins never shuffles.
+async function pin({ notificationId, userId, role }) {
+  await assertNotificationVisible({ notificationId, userId, role });
+  const { rows } = await query(
+    `INSERT INTO notification_pins (notification_id, user_id)
+     VALUES ($1, $2)
+     ON CONFLICT (notification_id, user_id) DO UPDATE SET pinned_at = notification_pins.pinned_at
+     RETURNING pinned_at`,
+    [notificationId, userId],
+  );
+  return rows[0]?.pinned_at || null;
+}
+
+async function unpin({ notificationId, userId, role }) {
+  await assertNotificationVisible({ notificationId, userId, role });
+  await query(`DELETE FROM notification_pins WHERE notification_id = $1 AND user_id = $2`, [notificationId, userId]);
 }
 
 // =======================================================================
@@ -495,6 +522,8 @@ async function updatePreferences(userId, patch) {
 
 module.exports = {
   markAsUnread,
+  pin,
+  unpin,
   setIoInstance,
   getIoInstance,
   createNotification,

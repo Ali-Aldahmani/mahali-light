@@ -1152,6 +1152,98 @@ async function getCategoryBreakdown({ startDate, endDate, limit = 8 } = {}) {
   }));
 }
 
+// Per-day series behind the dashboard's sparkline cards, for one period.
+// Days run from the period start up to the period end or today, whichever
+// comes first (no flat tail of future days).
+//  - revenue / net_profit: that day's figure, computed exactly like getKPIs
+//    (returns reversed, COGS and paid expenses subtracted), so the period's
+//    days add up to the card's headline.
+//  - receivables / payables: the balance at the end of each day. The shape
+//    comes from the journal (AR 1003, AP 2001 movements by entry date) and
+//    is anchored to today's live balance, so the last point is the number
+//    the card shows even if older data predates the journal.
+async function getKpiSeries(params = {}) {
+  assertSlice01DateRange(params);
+  const range = parseDateRange(params);
+  if (range.startDate > range.endDate) {
+    const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+    throw new AppError(ERROR_CODES.VAL_INVALID_DATE_RANGE, undefined, { status: 400 });
+  }
+  const { rows } = await query(
+    `WITH days AS (
+       SELECT generate_series($1::date, LEAST($2::date, CURRENT_DATE), '1 day'::interval)::date AS d
+     ),
+     inv AS (
+       SELECT i.confirmed_at::date AS d,
+              SUM(i.taxable_amount) AS revenue,
+              SUM(COALESCE((SELECT SUM(ii.quantity * ii.cost_price_at_time)
+                              FROM invoice_items ii WHERE ii.invoice_id = i.id), 0)) AS cogs
+         FROM invoices i
+        WHERE i.status = 'confirmed'
+          AND i.confirmed_at::date BETWEEN $1::date AND $2::date
+        GROUP BY 1
+     ),
+     ret AS (
+       SELECT ro.created_at::date AS d,
+              SUM(CASE WHEN i.tax_rate > 0 THEN ro.total_value / (1 + i.tax_rate / 100) ELSE ro.total_value END) AS revenue,
+              SUM((SELECT SUM(roi.quantity * v.cost_price)
+                     FROM return_order_items roi
+                     JOIN product_variants v ON v.id = roi.variant_id
+                    WHERE roi.return_order_id = ro.id)) AS cogs
+         FROM return_orders ro
+         LEFT JOIN invoices i ON i.id = ro.original_invoice_id
+        WHERE ro.return_type IN ('customer_refund', 'customer_replace')
+          AND ro.created_at::date BETWEEN $1::date AND $2::date
+        GROUP BY 1
+     ),
+     exp AS (
+       SELECT d, SUM(amount) AS total FROM (
+         SELECT paid_date AS d, amount_paid AS amount FROM bill_payments
+          WHERE paid_date BETWEEN $1::date AND $2::date
+         UNION ALL
+         SELECT expense_date AS d, amount FROM one_time_expenses
+          WHERE expense_date BETWEEN $1::date AND $2::date
+       ) e GROUP BY d
+     ),
+     ledger AS (
+       SELECT je.date AS d,
+              SUM(CASE WHEN a.code = '1003' THEN jl.debit - jl.credit ELSE 0 END) AS ar,
+              SUM(CASE WHEN a.code = '2001' THEN jl.credit - jl.debit ELSE 0 END) AS ap
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+         JOIN chart_of_accounts a ON a.id = jl.account_id
+        WHERE a.code IN ('1003', '2001')
+          AND je.date > $1::date
+        GROUP BY je.date
+     )
+     SELECT days.d::text AS day,
+            (COALESCE(inv.revenue, 0) - COALESCE(ret.revenue, 0))::float8 AS revenue,
+            (COALESCE(inv.revenue, 0) - COALESCE(ret.revenue, 0)
+              - (COALESCE(inv.cogs, 0) - COALESCE(ret.cogs, 0))
+              - COALESCE(exp.total, 0))::float8 AS net_profit,
+            -- Movement after each day, through today: today's balance minus this is the day's closing balance.
+            COALESCE((SELECT SUM(l.ar) FROM ledger l WHERE l.d > days.d), 0)::float8 AS ar_after,
+            COALESCE((SELECT SUM(l.ap) FROM ledger l WHERE l.d > days.d), 0)::float8 AS ap_after
+       FROM days
+       LEFT JOIN inv ON inv.d = days.d
+       LEFT JOIN ret ON ret.d = days.d
+       LEFT JOIN exp ON exp.d = days.d
+      ORDER BY days.d`,
+    [range.startDate, range.endDate],
+  );
+  const { rows: [now] } = await query(
+    `SELECT (SELECT COALESCE(SUM(credit_balance), 0) FROM customers WHERE credit_balance > 0)::float8 AS receivables,
+            (SELECT COALESCE(SUM(balance_due), 0) FROM purchase_orders WHERE balance_due > 0 AND status <> 'cancelled')::float8 AS payables`,
+  );
+  return {
+    days: rows.map((r) => r.day),
+    revenue: rows.map((r) => money(r.revenue)),
+    net_profit: rows.map((r) => money(r.net_profit)),
+    receivables: rows.map((r) => money(Math.max(0, Number(now.receivables) - Number(r.ar_after)))),
+    payables: rows.map((r) => money(Math.max(0, Number(now.payables) - Number(r.ap_after)))),
+  };
+}
+
 module.exports = {
   getNetProfitTrends,
   getTopProducts,
@@ -1167,6 +1259,7 @@ module.exports = {
   getPeakMonths,
   getProductSeasonality,
   getKPIs,
+  getKpiSeries,
   getSparkline,
   getDailySnapshot,
   getSalesTimeline,

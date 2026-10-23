@@ -16,6 +16,7 @@ router.get(
 
 router.get('/', requirePermission('customer.view'), customers.list);
 router.post('/', requirePermission('customer.create'), customers.create);
+router.get('/:id/summary', requirePermission('customer.view'), customers.summary);
 router.get('/:id', requirePermission('customer.view'), customers.getOne);
 router.put('/:id', requirePermission('customer.edit'), customers.update);
 router.delete('/:id', requirePermission('customer.delete'), customers.remove);

@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { query } = require('../db/postgres');
+const { phoneKey, phoneSearchCore, digitsSql } = require('../utils/phone');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
@@ -153,14 +154,19 @@ function trnIsValid(trn) {
   return /^\d{15}$/.test(String(trn).trim());
 }
 
+// Same number in any spelling counts: "+971501234567", "0501234567" and
+// "00971 50 123 4567" are one customer. Candidates share the last 9 digits;
+// the full international key then decides.
 async function ensurePhoneUnique(phone, ignoreId = null) {
   if (!phone) return;
-  const { rows } = await query(
-    `SELECT id FROM customers WHERE phone = $1 ${
-      ignoreId ? 'AND id <> $2' : ''
-    } LIMIT 1`,
-    ignoreId ? [phone, ignoreId] : [phone],
+  const key = phoneKey(phone);
+  if (!key) return;
+  const { rows: candidates } = await query(
+    `SELECT id, phone FROM customers
+      WHERE RIGHT(${digitsSql('phone')}, 9) = RIGHT($1, 9) ${ignoreId ? 'AND id <> $2' : ''}`,
+    ignoreId ? [key, ignoreId] : [key],
   );
+  const rows = candidates.filter((c) => phoneKey(c.phone) === key);
   if (rows.length) {
     throw new AppError(
       ERROR_CODES.VAL_DUPLICATE_PHONE,
@@ -183,8 +189,15 @@ async function list(req, res, next) {
     if (req.query.search) {
       params.push(`%${req.query.search}%`);
       const i = params.length;
+      // A number matches in any stored spelling (050…, +971 50…, 00971…).
+      const core = phoneSearchCore(req.query.search);
+      let phoneDigits = '';
+      if (core) {
+        params.push(`%${core}%`);
+        phoneDigits = ` OR ${digitsSql('c.phone')} LIKE $${params.length}`;
+      }
       where.push(
-        `(c.name ILIKE $${i} OR c.phone ILIKE $${i} OR c.company_name ILIKE $${i} OR c.email ILIKE $${i})`,
+        `(c.name ILIKE $${i} OR c.phone ILIKE $${i} OR c.company_name ILIKE $${i} OR c.email ILIKE $${i}${phoneDigits})`,
       );
     }
     if (req.query.hasBalance === 'true' || req.query.hasBalance === '1') {
@@ -253,6 +266,67 @@ async function getOne(req, res, next) {
       });
     }
     return ok(res, shapeCustomer(rows[0], { includeBalance }));
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Hover-card summary: who the customer is, what they've spent, what they
+// owe, and the last time they paid. "Paid" covers balance payments
+// (customer_payments) and money taken on their invoices (invoice_payments,
+// excluding "credit", which is on account rather than paid). A split payment
+// on one invoice counts as one payment.
+function lastPaymentSql(hasInvoices) {
+  const invoicePart = hasInvoices
+    ? `UNION ALL
+       SELECT MAX(ip.timestamp) AS paid_at,
+              SUM(ip.amount) AS amount,
+              CASE WHEN COUNT(DISTINCT ip.method) > 1 THEN 'split' ELSE MIN(ip.method) END AS method,
+              'invoice' AS source
+         FROM invoice_payments ip
+         JOIN invoices i ON i.id = ip.invoice_id
+        WHERE i.customer_id = $1
+          AND i.status NOT IN ('cancelled', 'draft')
+          AND ip.method <> 'credit'
+        GROUP BY ip.invoice_id, date_trunc('minute', ip.timestamp)`
+    : '';
+  return `
+    SELECT paid_at, amount, method, source FROM (
+      SELECT GREATEST(p.created_at, p.payment_date::timestamptz) AS paid_at,
+             p.amount, p.payment_method AS method, 'balance' AS source
+        FROM customer_payments p
+       WHERE p.customer_id = $1
+      ${invoicePart}
+    ) paid
+    ORDER BY paid_at DESC
+    LIMIT 1`;
+}
+
+async function summary(req, res, next) {
+  try {
+    const includeBalance = canSeeBalance(req);
+    const hasInvoices = await detectInvoicesTable();
+    const base = await baseSelectAndJoin();
+    const { rows } = await query(`${base} WHERE c.id = $1`, [req.params.id]);
+    if (!rows.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
+    const c = rows[0];
+    const { rows: paid } = await query(lastPaymentSql(hasInvoices), [req.params.id]);
+    const last = paid[0];
+    const out = {
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      companyName: c.company_name,
+      totalSpent: c.total_spent != null ? Number(c.total_spent) : 0,
+      invoiceCount: c.invoice_count != null ? Number(c.invoice_count) : 0,
+      lastPayment: last
+        ? { date: last.paid_at, amount: Number(last.amount), method: last.method, source: last.source }
+        : null,
+    };
+    if (includeBalance) out.creditBalance = Number(c.credit_balance || 0);
+    return ok(res, out);
   } catch (err) {
     next(err);
   }
@@ -446,6 +520,12 @@ async function search(req, res, next) {
     if (phonePrefix) {
       params.push(`${phonePrefix}%`);
       phoneCondition = `OR c.phone LIKE $${params.length}`;
+    }
+    // Also match the number in any stored spelling (050…, +971 50…, 00971…).
+    const core = phoneSearchCore(q);
+    if (core) {
+      params.push(`%${core}%`);
+      phoneCondition += ` OR ${digitsSql('c.phone')} LIKE $${params.length}`;
     }
     params.push(limit);
 
@@ -778,6 +858,7 @@ async function listTimeline(req, res, next) {
 module.exports = {
   list,
   getOne,
+  summary,
   create,
   update,
   remove,

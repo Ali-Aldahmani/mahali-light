@@ -251,6 +251,14 @@ async function kpis(req, res, next) {
   }
 }
 
+async function kpiSeries(req, res, next) {
+  try {
+    ok(res, await analyticsService.getKpiSeries(req.query));
+  } catch (err) {
+    next(err.errors ? zodFail(err) : err);
+  }
+}
+
 async function sparkline(req, res, next) {
   try {
     const parsed = z
@@ -502,6 +510,7 @@ module.exports = {
   productSeasonality,
   kpis,
   sparkline,
+  kpiSeries,
   dailySnapshot,
   salesTimeline,
   categoryBreakdown,
