@@ -26,6 +26,8 @@ import KPICard from '@/components/analytics/KPICard';
 import NetProfitTrendChart from '@/components/analytics/NetProfitTrendChart';
 import CategorySalesDonut from '@/components/analytics/CategorySalesDonut';
 import ExpenseCategoryStream from '@/components/analytics/ExpenseCategoryStream';
+import DailyInvoicesBrush from '@/components/analytics/DailyInvoicesBrush';
+import { AnalyticsOverviewSkeleton } from '@/components/layout/AppSkeleton';
 import TopProductsTable from '@/components/analytics/TopProductsTable';
 import SupplierReliabilityChart from '@/components/analytics/SupplierReliabilityChart';
 import SupplierRankings from '@/components/analytics/SupplierRankings';
@@ -131,7 +133,7 @@ function OverviewTab({ range }: { range: { start_date: string; end_date: string 
   }, [profitMonth, canCategories]);
 
   if (!kpis) {
-    return <div className="rounded-card border border-border bg-surface p-6 text-sm text-ink-muted">Loading metrics…</div>;
+    return <AnalyticsOverviewSkeleton />;
   }
   return (
     <div className="space-y-6">
@@ -200,7 +202,10 @@ function OverviewTab({ range }: { range: { start_date: string; end_date: string 
         </div>
       </div>
 
-      <ExpenseCategoryStream />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ExpenseCategoryStream />
+        <DailyInvoicesBrush />
+      </div>
     </div>
   );
 }

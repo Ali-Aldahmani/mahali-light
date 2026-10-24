@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useSetupStore } from '@/store/setupStore';
 import { useAppSettingsStore } from '@/store/appSettingsStore';
 import Skeleton from '@/components/ui/skeleton';
+import { AppShellSkeleton, isShellRoute } from '@/components/layout/AppSkeleton';
 
 const DEFAULT_TITLE = 'Bytecra POS';
 
@@ -45,6 +46,9 @@ export default function SetupGateClient({ children }: { children: React.ReactNod
   }, [completed, pathname, router]);
 
   if (completed === null) {
+    // Inside the app, sketch the real frame so the page lands where the
+    // placeholders were; sign-in and setup keep their centred card.
+    if (isShellRoute(pathname)) return <AppShellSkeleton pathname={pathname} />;
     return (
       <div className="flex min-h-screen items-start justify-center bg-bg px-4 pt-[18vh]">
         <div className="w-full max-w-xl rounded-card border border-border bg-surface p-6">
