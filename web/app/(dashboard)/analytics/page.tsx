@@ -24,6 +24,7 @@ import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 import KPICard from '@/components/analytics/KPICard';
 import NetProfitTrendChart from '@/components/analytics/NetProfitTrendChart';
+import CategorySalesDonut from '@/components/analytics/CategorySalesDonut';
 import TopProductsTable from '@/components/analytics/TopProductsTable';
 import SupplierReliabilityChart from '@/components/analytics/SupplierReliabilityChart';
 import SupplierRankings from '@/components/analytics/SupplierRankings';
@@ -46,6 +47,7 @@ import {
 import {
   getKPIs,
   getNetProfitTrends,
+  getCategoryBreakdown,
   getTopProducts,
   getWorstProducts,
   getTopSuppliers,
@@ -79,23 +81,53 @@ function defaultRange() {
   };
 }
 
+// The net profit chart picks one month: the current one (up to today) or any
+// of the six before it. Value is the months-back offset.
+function profitMonthOptions() {
+  const now = new Date();
+  return Array.from({ length: 7 }, (_, back) => {
+    const first = new Date(now.getFullYear(), now.getMonth() - back, 1);
+    const name = `${MONTH[first.getMonth()]} ${first.getFullYear()}`;
+    return { value: back, label: back === 0 ? `Current month (${name})` : name, name };
+  });
+}
+
+function profitMonthRange(back: number) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - back, 1);
+  const end = back === 0 ? now : new Date(now.getFullYear(), now.getMonth() - back + 1, 0);
+  return { start_date: localIsoDate(start), end_date: localIsoDate(end) };
+}
+
 // =======================================================================
 // Tab: Overview
 // =======================================================================
 function OverviewTab({ range }: { range: { start_date: string; end_date: string } }) {
   const [kpis, setKpis] = useState<any>(null);
   const [trends, setTrends] = useState<any[]>([]);
-  const [groupBy, setGroupBy] = useState('month');
+  const [categories, setCategories] = useState<any[]>([]);
+  const [profitMonth, setProfitMonth] = useState(0);
+  const monthOptions = useMemo(profitMonthOptions, []);
+  const owned = useAuthStore((s) => s.permissions) || [];
+  const canCategories = owned.includes('analytics.view_dashboard');
 
   useEffect(() => {
     getKPIs(range).then((r: any) => setKpis(r?.data || r)).catch(() => {});
   }, [range]);
 
   useEffect(() => {
-    getNetProfitTrends({ ...range, group_by: groupBy })
+    getNetProfitTrends({ ...profitMonthRange(profitMonth), group_by: 'day' })
       .then((r: any) => setTrends(r?.data || r))
       .catch(() => setTrends([]));
-  }, [range, groupBy]);
+  }, [profitMonth]);
+
+  // The category donut follows the same month as the net profit chart.
+  useEffect(() => {
+    if (!canCategories) return;
+    getCategoryBreakdown({ ...profitMonthRange(profitMonth), limit: 20 })
+      .then((r: any) => setCategories(r?.data || r || []))
+      .catch(() => setCategories([]));
+  }, [profitMonth, canCategories]);
 
   if (!kpis) {
     return <div className="rounded-card border border-border bg-surface p-6 text-sm text-ink-muted">Loading metrics…</div>;
@@ -150,21 +182,21 @@ function OverviewTab({ range }: { range: { start_date: string; end_date: string 
       </div>
 
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-ink">Net profit trend</h3>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <h3 className="text-sm font-semibold text-ink">
+            Net profit trend{canCategories && ' & sales by category'}
+          </h3>
           <Select
-            value={groupBy}
-            onChange={setGroupBy}
-            options={[
-              { value: 'day', label: 'By day' },
-              { value: 'week', label: 'By week' },
-              { value: 'month', label: 'By month' },
-              { value: 'year', label: 'By year' },
-            ]}
-            className="min-w-[140px]"
+            value={profitMonth}
+            onChange={setProfitMonth}
+            options={monthOptions}
+            className="min-w-[220px]"
           />
         </div>
-        <NetProfitTrendChart rows={trends} />
+        <div className={canCategories ? 'grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : undefined}>
+          <NetProfitTrendChart rows={trends} period={monthOptions[profitMonth]?.name ?? ''} />
+          {canCategories && <CategorySalesDonut rows={categories} />}
+        </div>
       </div>
     </div>
   );

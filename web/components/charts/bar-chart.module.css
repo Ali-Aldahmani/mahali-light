@@ -1,0 +1,83 @@
+/* Accessible bar chart — layout, paint and interaction states.
+   Matches line-chart.module.css: the Arc foundation tokens are scoped to the
+   figure and mapped onto the app's Tailwind theme, so the bars pick up the
+   same ink / surface / border / accent colours as the cards around them. */
+
+.figure {
+  --space-4: 1rem;
+  --font-body: var(--font-inter, Inter), ui-sans-serif, system-ui, sans-serif;
+  --tracking-body: -0.01em;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --leading-body: 1.4;
+  --foreground: theme('colors.ink.DEFAULT');
+  --text-secondary: theme('colors.ink.muted');
+  --text-muted: color-mix(in oklab, theme('colors.ink.muted') 70%, theme('colors.surface'));
+  --surface: theme('colors.surface');
+  --border: color-mix(in oklab, theme('colors.border') 75%, theme('colors.surface'));
+  --border-strong: color-mix(in oklab, theme('colors.ink.muted') 35%, theme('colors.surface'));
+  --accent: theme('colors.accent.DEFAULT');
+  --bar: color-mix(in oklab, var(--accent) 70%, var(--surface));
+  --negative: theme('colors.error.DEFAULT');
+  --bar-negative: color-mix(in oklab, var(--negative) 70%, var(--surface));
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-instant: 120ms;
+  --duration-fast: 160ms;
+
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* Headline: what is shown, the big number with its unit, and the period or scrubbed day. */
+.header { display: grid; gap: 2px; min-width: 0; }
+.kind { color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); }
+.value { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 1.75rem; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.unit { color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500; letter-spacing: var(--tracking-body); }
+.when { color: var(--text-muted); font-size: var(--text-sm); line-height: var(--leading-body); font-variant-numeric: tabular-nums; }
+
+.swap { position: relative; display: inline-flex; min-width: 0; }
+.swapText { display: inline-block; white-space: nowrap; }
+.roll { position: relative; display: inline-flex; justify-content: flex-end; overflow: hidden; white-space: nowrap; }
+.sizer { position: absolute; visibility: hidden; white-space: nowrap; pointer-events: none; }
+.digits { display: inline-flex; }
+.digit { display: inline-block; white-space: pre; }
+
+/* Plot, right-hand value axis, and the date axis beneath. */
+.chart { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 64px; grid-template-rows: auto 26px; min-width: 0; }
+.plot { position: relative; grid-area: 1 / 1; min-width: 0; }
+.svg { display: block; overflow: visible; }
+.grid { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+.baseline { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; }
+.cursor { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; pointer-events: none; }
+.mean { stroke: var(--foreground); stroke-width: 1; stroke-dasharray: 3 4; opacity: 0.55; shape-rendering: crispEdges; pointer-events: none; }
+
+.bar { fill: var(--bar); transition: fill var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard); }
+.chart[data-scrubbing] .bar { opacity: 0.45; }
+.chart[data-scrubbing] .bar[data-active] { fill: var(--accent); opacity: 1; }
+/* Loss days hang below the zero line in the error colour. */
+.bar[data-negative] { fill: var(--bar-negative); }
+.chart[data-scrubbing] .bar[data-negative][data-active] { fill: var(--negative); }
+
+.gutter { position: relative; grid-area: 1 / 2; min-width: 0; }
+.tick, .meanLabel { position: absolute; top: 0; left: 10px; display: block; height: 0; white-space: nowrap; pointer-events: none; }
+.tickText { display: block; transform: translateY(-50%); color: var(--text-muted); font-size: var(--text-xs); line-height: 1; font-variant-numeric: tabular-nums; }
+.meanLabel .tickText { color: var(--foreground); font-weight: 500; }
+
+.axis { position: relative; grid-area: 2 / 1; min-width: 0; }
+.axisLabel { position: absolute; top: 8px; left: 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.measure { position: absolute; top: 0; left: 0; display: flex; visibility: hidden; font-size: var(--text-xs); line-height: 1; white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums; }
+
+/* The scrubber covers the plot only; vertical swipes still scroll the page. */
+.scrubber { position: absolute; inset: 0 64px 26px 0; outline: none; cursor: crosshair; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.scrubber:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+
+.srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bar { transition: none; }
+}
