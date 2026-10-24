@@ -36,6 +36,9 @@ export function getCategoryBreakdown(params) {
 export function getNetProfitTrends(params) {
   return apiGet(`/analytics/net-profit-trends${qs(params)}`);
 }
+export function getExpenseCategoryMonthly(params) {
+  return apiGet(`/analytics/expense-categories-monthly${qs(params)}`);
+}
 export function getTopProducts(params) {
   return apiGet(`/analytics/top-products${qs(params)}`);
 }

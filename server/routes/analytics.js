@@ -16,6 +16,7 @@ router.get('/category-breakdown', requirePermission('analytics.view_dashboard'),
 
 // Full analytics hub — needs the broader view permission.
 router.get('/net-profit-trends', requirePermission('analytics.view'), ctrl.netProfitTrends);
+router.get('/expense-categories-monthly', requirePermission('analytics.view'), ctrl.expenseCategoryMonthly);
 router.get('/top-products', requirePermission('analytics.view'), ctrl.topProducts);
 router.get('/worst-products', requirePermission('analytics.view'), ctrl.worstProducts);
 router.get('/top-suppliers', requirePermission('analytics.view'), ctrl.topSuppliers);

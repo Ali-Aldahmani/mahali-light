@@ -25,6 +25,7 @@ import { toast } from '@/store/toastStore';
 import KPICard from '@/components/analytics/KPICard';
 import NetProfitTrendChart from '@/components/analytics/NetProfitTrendChart';
 import CategorySalesDonut from '@/components/analytics/CategorySalesDonut';
+import ExpenseCategoryStream from '@/components/analytics/ExpenseCategoryStream';
 import TopProductsTable from '@/components/analytics/TopProductsTable';
 import SupplierReliabilityChart from '@/components/analytics/SupplierReliabilityChart';
 import SupplierRankings from '@/components/analytics/SupplierRankings';
@@ -198,6 +199,8 @@ function OverviewTab({ range }: { range: { start_date: string; end_date: string 
           {canCategories && <CategorySalesDonut rows={categories} />}
         </div>
       </div>
+
+      <ExpenseCategoryStream />
     </div>
   );
 }

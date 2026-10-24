@@ -1152,6 +1152,60 @@ async function getCategoryBreakdown({ startDate, endDate, limit = 8 } = {}) {
   }));
 }
 
+// Bills & expenses per expense category for each month of one year, for the
+// Overview tab's streamgraph. Counts money the way getNetProfitTrends does:
+// bill payments on their paid date plus one-time expenses on their date.
+// `years` lists every year with any spend (and the current one) so the UI
+// can offer them as buttons.
+async function getExpenseCategoryMonthly({ year } = {}) {
+  const thisYear = new Date().getFullYear();
+  const y = Number.isInteger(Number(year)) && Number(year) > 1900 ? Number(year) : thisYear;
+  const { rows } = await query(
+    `WITH spend AS (
+       SELECT b.category_id, bp.paid_date AS d, bp.amount_paid AS amount
+         FROM bill_payments bp
+         JOIN bills b ON b.id = bp.bill_id
+        WHERE bp.paid_date IS NOT NULL
+          AND bp.paid_date >= make_date($1, 1, 1) AND bp.paid_date < make_date($1 + 1, 1, 1)
+       UNION ALL
+       SELECT category_id, expense_date AS d, amount
+         FROM one_time_expenses
+        WHERE expense_date >= make_date($1, 1, 1) AND expense_date < make_date($1 + 1, 1, 1)
+     )
+     SELECT s.category_id::text AS category_id,
+            COALESCE(ec.name, 'Uncategorised') AS category_name,
+            EXTRACT(MONTH FROM s.d)::int AS month,
+            COALESCE(SUM(s.amount), 0)::float8 AS amount
+       FROM spend s
+       LEFT JOIN expense_categories ec ON ec.id = s.category_id
+      GROUP BY 1, 2, 3`,
+    [y],
+  );
+  const { rows: yearRows } = await query(
+    `SELECT DISTINCT y FROM (
+       SELECT EXTRACT(YEAR FROM paid_date)::int AS y FROM bill_payments WHERE paid_date IS NOT NULL
+       UNION
+       SELECT EXTRACT(YEAR FROM expense_date)::int FROM one_time_expenses
+     ) t ORDER BY y DESC`,
+  );
+
+  const categories = new Map();
+  for (const r of rows) {
+    const key = r.category_id || 'uncategorised';
+    if (!categories.has(key)) categories.set(key, { key, name: r.category_name, total: 0, months: new Array(12).fill(0) });
+    const cat = categories.get(key);
+    cat.months[r.month - 1] = money(cat.months[r.month - 1] + Number(r.amount));
+    cat.total = money(cat.total + Number(r.amount));
+  }
+  const years = [...new Set([thisYear, y, ...yearRows.map((r) => r.y)])].sort((a, b) => b - a);
+  return {
+    year: y,
+    years,
+    // Largest spend first, so the biggest category runs through the middle of the stream.
+    categories: [...categories.values()].sort((a, b) => b.total - a.total),
+  };
+}
+
 // Per-day series behind the dashboard's sparkline cards, for one period.
 // Days run from the period start up to the period end or today, whichever
 // comes first (no flat tail of future days).
@@ -1264,6 +1318,7 @@ module.exports = {
   getDailySnapshot,
   getSalesTimeline,
   getCategoryBreakdown,
+  getExpenseCategoryMonthly,
   parseDateRange,
   previousRange,
   percentChange,

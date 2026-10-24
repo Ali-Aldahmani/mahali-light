@@ -1,0 +1,93 @@
+/* Accessible streamgraph — layout, paint and interaction states.
+   Matches line-chart / bar-chart / donut-chart: the Arc foundation tokens are
+   scoped to the figure and mapped onto the app's Tailwind theme, and the four
+   --series-* colours are the same ones the donut uses. */
+
+.figure {
+  --space-4: 1rem;
+  --font-body: var(--font-inter, Inter), ui-sans-serif, system-ui, sans-serif;
+  --tracking-body: -0.01em;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --leading-body: 1.4;
+  --radius-pill: 9999px;
+  --foreground: theme('colors.ink.DEFAULT');
+  --text-secondary: theme('colors.ink.muted');
+  --text-muted: color-mix(in oklab, theme('colors.ink.muted') 70%, theme('colors.surface'));
+  --surface: theme('colors.surface');
+  --surface-raised: theme('colors.surface');
+  --border: color-mix(in oklab, theme('colors.border') 75%, theme('colors.surface'));
+  --border-strong: color-mix(in oklab, theme('colors.ink.muted') 35%, theme('colors.surface'));
+  --accent: theme('colors.accent.DEFAULT');
+  --series-1: theme('colors.accent.DEFAULT');
+  --series-2: #2563eb;
+  --series-3: theme('colors.success.DEFAULT');
+  --series-4: #8b5cf6;
+  --shadow-floating: 0 20px 48px rgb(0 0 0 / 0.105), 0 3px 10px rgb(0 0 0 / 0.045);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-instant: 120ms;
+  --duration-fast: 160ms;
+  --duration-standard: 240ms;
+
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* Layer toggles: a swatch beside each name. A hidden layer keeps its place, its swatch empties and its name steps back. */
+.legend { display: flex; flex-wrap: wrap; gap: 2px 4px; min-width: 0; margin-inline: -8px; }
+.toggle { display: inline-flex; min-height: 32px; align-items: center; gap: 8px; padding: 0 10px 0 8px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: var(--text-sm); line-height: var(--leading-body); -webkit-tap-highlight-color: transparent; transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard), transform var(--duration-instant) var(--ease-standard); }
+.toggle:active { transform: scale(0.97); }
+.toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle[data-active] { color: var(--foreground); }
+.toggle[data-dim] { opacity: 0.6; }
+.toggle[aria-pressed="false"] { color: var(--text-muted); }
+.toggleLabel { white-space: nowrap; }
+.toggle[aria-pressed="false"] .toggleLabel { opacity: 0.72; text-decoration: line-through; text-decoration-color: color-mix(in oklab, currentColor 55%, transparent); }
+.swatch { width: 10px; height: 10px; flex: none; border: 2px solid var(--series); border-radius: 3px; background: var(--series); transition: background-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard); }
+.toggle[aria-pressed="false"] .swatch { background: transparent; opacity: 0.55; }
+@media (hover: hover) and (pointer: fine) { .toggle:hover { background: color-mix(in oklab, var(--foreground) 5%, transparent); color: var(--foreground); } }
+
+/* Plot and the month axis beneath. */
+.chart { position: relative; display: grid; grid-template-rows: auto 26px; min-width: 0; }
+.plot { position: relative; min-width: 0; outline: none; cursor: crosshair; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.plot:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.svg { display: block; overflow: visible; }
+
+.layer { fill: var(--series); stroke: var(--surface); stroke-width: 1; stroke-linejoin: round; transition: opacity var(--duration-fast) var(--ease-standard); }
+.chart[data-layer] .layer:not([data-active]) { opacity: 0.35; }
+
+.crosshair { stroke: var(--foreground); stroke-width: 1; opacity: 0; shape-rendering: crispEdges; pointer-events: none; transition: opacity var(--duration-instant) var(--ease-standard); }
+.chart[data-active] .crosshair { opacity: 0.35; }
+
+/* Direct labels read on any layer: white text with a soft halo of the layer edge colour. */
+.label { fill: #fff; font-size: var(--text-xs); font-weight: 600; paint-order: stroke; stroke: rgb(0 0 0 / 0.18); stroke-width: 2px; pointer-events: none; transition: opacity var(--duration-standard) var(--ease-standard); }
+.label[data-custom] { fill: var(--foreground); stroke: var(--surface); }
+.label[data-hidden] { visibility: hidden; }
+.label[data-dim] { visibility: hidden; }
+
+/* The tooltip floats over the plot, so it is the one layer here with a shadow. */
+.tooltip { position: absolute; top: 0; left: 0; z-index: 1; display: grid; min-width: 160px; max-width: min(240px, 100%); gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-raised); box-shadow: var(--shadow-floating); opacity: 0; pointer-events: none; scale: 0.96; transition: opacity var(--duration-fast) var(--ease-standard), scale var(--duration-fast) var(--ease-standard); }
+.chart[data-active] .tooltip { opacity: 1; scale: 1; }
+.tipTitle { margin: 0 0 2px; color: var(--text-secondary); font-size: var(--text-xs); line-height: var(--leading-body); white-space: nowrap; }
+.tipRow { display: flex; min-width: 0; align-items: center; gap: 8px; margin: 0; font-size: var(--text-sm); line-height: var(--leading-body); transition: opacity var(--duration-fast) var(--ease-standard); }
+.tipRow[data-dim] { opacity: 0.5; }
+.tipRow[data-active] .tipName { color: var(--foreground); font-weight: 500; }
+.tipSwatch { width: 8px; height: 8px; flex: none; border-radius: 2px; background: var(--series); }
+.tipName { min-width: 0; flex: 1; overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.tipValue { flex: none; margin-left: 8px; color: var(--foreground); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.message { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--text-muted); font-size: var(--text-sm); pointer-events: none; }
+
+.axis { position: relative; min-width: 0; }
+.axisLabel { position: absolute; top: 8px; color: var(--text-muted); font-size: var(--text-xs); line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle, .swatch, .layer, .crosshair, .label, .tooltip, .tipRow { transition: none; }
+}

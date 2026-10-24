@@ -293,6 +293,17 @@ async function salesTimeline(req, res, next) {
   }
 }
 
+async function expenseCategoryMonthly(req, res, next) {
+  try {
+    const parsed = z
+      .object({ year: z.coerce.number().int().min(2000).max(2100).optional() })
+      .parse(req.query);
+    ok(res, await analyticsService.getExpenseCategoryMonthly(parsed));
+  } catch (err) {
+    next(err.errors ? zodFail(err) : err);
+  }
+}
+
 async function categoryBreakdown(req, res, next) {
   try {
     const parsed = rangeSchema
@@ -514,6 +525,7 @@ module.exports = {
   dailySnapshot,
   salesTimeline,
   categoryBreakdown,
+  expenseCategoryMonthly,
   listReorder,
   getReorder,
   listAnnualPlan,
