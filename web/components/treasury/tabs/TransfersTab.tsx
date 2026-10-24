@@ -18,6 +18,7 @@ import { useTreasuryStore } from '@/store/treasuryStore';
 import { onTreasuryEvent } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 interface DrawerSummary {
   id?: string;
@@ -61,6 +62,9 @@ export default function TransfersTab() {
   const [banks, setBanks] = useState<BankAccountLite[]>([]);
   const [transfers, setTransfers] = useState<TransferRecord[]>([]);
   const [saving, setSaving] = useState(false);
+  // The transfer form stays on screen, so one key lasts until a transfer
+  // succeeds; a retry after a timeout reuses it and can't move money twice.
+  const transferKey = useRequestKey();
 
   const load = useCallback(async () => {
     try {
@@ -112,7 +116,7 @@ export default function TransfersTab() {
           amount,
           transferDate,
           notes,
-        });
+        }, transferKey.current());
       } else if (from.type === 'bank_account') {
         await bankTransfer(from.id, {
           toType: to.type,
@@ -121,10 +125,11 @@ export default function TransfersTab() {
           transferDate,
           notes,
           allowOverdraft,
-        });
+        }, transferKey.current());
       } else {
         throw new Error('Unsupported transfer direction.');
       }
+      transferKey.renew();
       toast.success('Transfer completed.');
       load();
       refreshStore();

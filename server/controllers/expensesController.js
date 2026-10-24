@@ -2,6 +2,7 @@ const { z } = require('zod');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const expenseService = require('../services/expenseService');
+const { requestKeyFrom } = require('../utils/operations');
 const { saveExpenseReceipt } = require('../utils/upload');
 
 function zodFail(err) {
@@ -56,17 +57,18 @@ async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
     const io = req.app.get('io');
-    const expense = await expenseService.createExpense({
+    const { replayed, ...expense } = await expenseService.createExpense({
       ...body,
       userId: req.user.id,
       io,
+      requestKey: requestKeyFrom(req),
     });
 
     // Optional receipt file under the same multipart request. The expense has
     // already committed by now, so a failed upload must not turn into an
     // error response — the user would retry and record the expense twice.
     // Report it instead; the receipt can be attached from the expense list.
-    if (req.file) {
+    if (req.file && !replayed) {
       try {
         const saved = await saveExpenseReceipt({
           expenseId: expense.id,
@@ -80,7 +82,9 @@ async function create(req, res, next) {
       }
     }
 
-    return created(res, expense);
+    // A replay returns the first expense as recorded; its receipt (if any)
+    // came with the first request.
+    return replayed ? ok(res, expense) : created(res, expense);
   } catch (err) {
     if (err instanceof z.ZodError) return next(zodFail(err));
     next(err);

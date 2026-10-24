@@ -1,6 +1,7 @@
 const { query, withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce } = require('../utils/operations');
 
 // Tolerance below which a drawer-close discrepancy is allowed without manager
 // approval (the cashier must still leave a note). Anything above this trips
@@ -573,6 +574,7 @@ async function recordManualAdjustment({
   reason,
   employeeId,
   io = null,
+  requestKey = null,
 }) {
   if (!reason || !reason.trim()) {
     throw new AppError(
@@ -581,27 +583,34 @@ async function recordManualAdjustment({
     );
   }
   const type = direction === 'in' ? 'manual_in' : 'manual_out';
-  // The movement and its audit entry commit together.
-  const result = await withTransaction(async (client) => {
-    const posted = await postTransactionWith(client, {
-      transactionType: type,
-      direction,
-      amount,
-      employeeId,
-      notes: reason.trim(),
-    });
-    await logActivity({
-      client,
-      entityType: 'cash_drawer',
-      entityId: posted.drawerId,
-      action: 'cash_drawer.adjusted',
-      performedBy: employeeId,
-      newValue: { direction, amount: money(amount) },
-      notes: reason.trim(),
-    });
-    return posted;
-  });
-  if (io) {
+  // The movement and its audit entry commit together. A retry with the same
+  // request key returns the first adjustment instead of moving the cash twice.
+  const { result, replayed } = await withTransaction((client) =>
+    runOnce(client, {
+      scope: 'cash_adjustment',
+      key: requestKey,
+      userId: employeeId,
+      payload: { amount: money(amount), direction, reason: reason.trim() },
+    }, async () => {
+      const posted = await postTransactionWith(client, {
+        transactionType: type,
+        direction,
+        amount,
+        employeeId,
+        notes: reason.trim(),
+      });
+      await logActivity({
+        client,
+        entityType: 'cash_drawer',
+        entityId: posted.drawerId,
+        action: 'cash_drawer.adjusted',
+        performedBy: employeeId,
+        newValue: { direction, amount: money(amount) },
+        notes: reason.trim(),
+      });
+      return posted;
+    }));
+  if (io && !replayed) {
     const payload = {
       newBalance: result.balanceAfter,
       delta: result.delta,

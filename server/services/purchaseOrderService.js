@@ -5,6 +5,7 @@ const { applyStockMovement } = require('./stockService');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const journalService = require('./journalService');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce } = require('../utils/operations');
 
 // Round to 2 decimals (currency) to avoid floating-point drift.
 function money(n) {
@@ -91,7 +92,7 @@ async function receivedValueOf(client, poId) {
   return money(rows[0].value);
 }
 
-async function receiveItems({ poId, items, employeeId }) {
+async function receiveItems({ poId, items, employeeId, requestKey = null }) {
   if (!Array.isArray(items) || !items.length) {
     throw new AppError(
       ERROR_CODES.VALIDATION_FAILED,
@@ -100,7 +101,7 @@ async function receiveItems({ poId, items, employeeId }) {
     );
   }
 
-  return withTransaction(async (client) => {
+  const receive = async (client) => {
     // Lock the PO so concurrent receives can't race.
     const { rows: poRows } = await client.query(
       `SELECT * FROM purchase_orders WHERE id = $1 FOR UPDATE`,
@@ -312,6 +313,18 @@ async function receiveItems({ poId, items, employeeId }) {
       affectedVariants,
       costChanges,
     };
+  };
+  // A retry with the same request key returns the first receipt instead of
+  // adding the same goods to stock twice (a partial receipt would otherwise
+  // be accepted again while the order still had quantity left).
+  const payload = { poId, items: items.map((it) => ({ id: it.id, quantityReceived: Number(it.quantityReceived) })) };
+  return withTransaction(async (client) => {
+    const { result, replayed } = await runOnce(
+      client,
+      { scope: 'po_receipt', key: requestKey, userId: employeeId, payload },
+      () => receive(client),
+    );
+    return { ...result, replayed };
   });
 }
 

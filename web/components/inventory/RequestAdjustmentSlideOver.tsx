@@ -10,6 +10,7 @@ import StockImpactPreview from '@/components/ui/StockImpactPreview';
 import { createAdjustment } from '@/services/adjustmentService';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const REASON_OPTIONS = [
   { value: 'damaged', label: 'Damaged' },
@@ -36,6 +37,8 @@ export default function RequestAdjustmentSlideOver({
   onSuccess?: () => void;
   initialVariant?: any;
 }) {
+  // One key per opening of the form: a retried submit can't record this twice.
+  const requestKey = useRequestKey(open);
   const permissions = useAuthStore((s) => s.permissions);
   const canDirect = permissions.includes('stock.adjust_direct');
 
@@ -88,7 +91,7 @@ export default function RequestAdjustmentSlideOver({
         note: note.trim(),
         applyDirectly: canDirect && applyDirectly,
       };
-      await createAdjustment(payload);
+      await createAdjustment(payload, requestKey.current());
       toast.success(
         applyDirectly
           ? 'Stock adjusted successfully.'

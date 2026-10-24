@@ -3,6 +3,7 @@ const { query } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { emitCustomerChanged } = require('../utils/customerEvents');
+const { requestKeyFrom } = require('../utils/operations');
 const {
   collectPayment,
   voidPayment,
@@ -116,7 +117,7 @@ async function createForCustomer(req, res, next) {
     const { id: customerId } = req.params;
     const body = createSchema.parse(req.body || {});
 
-    const { payment, customer, treasury } = await collectPayment({
+    const { payment, customer, treasury, replayed } = await collectPayment({
       customerId,
       amount: body.amount,
       method: body.paymentMethod,
@@ -124,9 +125,11 @@ async function createForCustomer(req, res, next) {
       bankAccountId: body.bankAccountId || null,
       notes: body.notes || null,
       employeeId: req.user.id,
+      requestKey: requestKeyFrom(req),
     });
 
-    const io = req.app.get('io');
+    // A replayed retry changed nothing, so there is nothing to announce.
+    const io = replayed ? null : req.app.get('io');
     emitCustomerChanged(io, customerId, 'payment_collected');
     if (io) {
       const payload = {
@@ -173,10 +176,12 @@ async function createForCustomer(req, res, next) {
       payment.id,
     ]);
 
-    return created(res, {
-      payment: shape(rows[0]),
+    const data = {
+      // A replay of a payment voided since then has no live row left.
+      payment: rows[0] ? shape(rows[0]) : payment,
       customer,
-    });
+    };
+    return replayed ? ok(res, data) : created(res, data);
   } catch (err) {
     next(err);
   }

@@ -32,6 +32,7 @@ import { onTreasuryEvent } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
 import { formatCurrency, formatDateTime } from '@/lib/utils/format';
 import ReconciliationSummary, { type ReconciliationData } from './ReconciliationSummary';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 interface DrawerState {
   status?: string;
@@ -548,6 +549,8 @@ function AdjustSlideOver({
   currentBalance: number;
   onDone?: () => void;
 }) {
+  // One key per opening of the form: a retried submit can't record this twice.
+  const requestKey = useRequestKey(open);
   const [direction, setDirection] = useState<'in' | 'out'>('in');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
@@ -561,7 +564,7 @@ function AdjustSlideOver({
         amount: Number(amount) || 0,
         direction,
         reason,
-      });
+      }, requestKey.current());
       toast.success('Adjustment recorded.');
       onDone?.();
       onClose?.();

@@ -39,6 +39,7 @@ const ERROR_CODES = {
   BIZ_INSUFFICIENT_STOCK: 'BIZ_INSUFFICIENT_STOCK',
   BIZ_STOCK_COUNT_IN_PROGRESS: 'BIZ_STOCK_COUNT_IN_PROGRESS',
   BIZ_INVALID_STATE: 'BIZ_INVALID_STATE',
+  IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
   BIZ_PAYMENT_EXCEEDS_BALANCE: 'BIZ_PAYMENT_EXCEEDS_BALANCE',
   BIZ_RECEIVE_EXCEEDS_ORDER: 'BIZ_RECEIVE_EXCEEDS_ORDER',
   BIZ_CREDIT_LIMIT_EXCEEDED: 'BIZ_CREDIT_LIMIT_EXCEEDED',
@@ -267,6 +268,11 @@ const ERROR_DEFS = {
   },
   [ERROR_CODES.BIZ_INVALID_STATE]: {
     message: 'This action is not allowed in the current state.',
+    status: 409,
+    severity: 'warning',
+  },
+  [ERROR_CODES.IDEMPOTENCY_KEY_REUSED]: {
+    message: 'This request was already submitted with different details. Start it again.',
     status: 409,
     severity: 'warning',
   },

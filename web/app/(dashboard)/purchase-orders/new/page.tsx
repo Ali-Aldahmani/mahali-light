@@ -28,6 +28,7 @@ import { useAuthStore } from '@/store/authStore';
 import { formatCurrency, formatQty, storeDate } from '@/lib/utils/format';
 import type { POItem, VariantSearchResult } from '@/components/purchases/types';
 import { newPoSavedMessage } from '@/lib/purchases/newPoMessage';
+import { newRequestKey } from '@/lib/requestKey';
 import type { Supplier } from '@/components/suppliers/types';
 import DateField from '@/components/ui/DateField';
 
@@ -241,7 +242,7 @@ function NewPurchaseOrderPageContent() {
             })
             .filter(Boolean);
           if (receivePayload.length) {
-            await receivePurchaseOrderItems(created.id, receivePayload);
+            await receivePurchaseOrderItems(created.id, receivePayload, newRequestKey());
           }
           if (invoiceFile) {
             try {
@@ -267,7 +268,7 @@ function NewPurchaseOrderPageContent() {
                 paymentMethod: payMethod,
                 paymentDate: todayISO(),
                 notes: null,
-              });
+              }, newRequestKey());
               paymentRecorded = true;
             }
           } catch (_e) {

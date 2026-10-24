@@ -1,11 +1,13 @@
 import http, { apiGet, apiPost, apiDelete } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 export function listPoPayments(poId) {
   return apiGet(`/purchase-orders/${poId}/payments`);
 }
 
-export function addPoPayment(poId, body) {
-  return apiPost(`/purchase-orders/${poId}/payments`, body);
+// requestKey: see lib/requestKey — makes a retried submit safe.
+export function addPoPayment(poId, body, requestKey?: string) {
+  return apiPost(`/purchase-orders/${poId}/payments`, body, withRequestKey(requestKey));
 }
 
 export function deletePayment(paymentId) {

@@ -5,6 +5,7 @@ const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce } = require('../utils/operations');
 
 const VALID_METHODS = new Set(['cash', 'bank_transfer']);
 
@@ -32,6 +33,7 @@ async function collectPayment({
   notes = null,
   employeeId,
   invoiceId = null,
+  requestKey = null,
 }) {
   const amt = money(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
@@ -49,7 +51,7 @@ async function collectPayment({
     );
   }
 
-  return withTransaction(async (client) => {
+  const collect = async (client) => {
     const { rows: customerRows } = await client.query(
       `SELECT id, name, credit_balance, is_active
          FROM customers WHERE id = $1 FOR UPDATE`,
@@ -174,6 +176,20 @@ async function collectPayment({
           }
         : null,
     };
+  };
+  // A retry with the same request key returns the first collection instead
+  // of collecting (and reducing the balance) twice.
+  const payload = {
+    customerId, amount: amt, method, paymentDate: paymentDate || null,
+    bankAccountId: bankAccountId || null, notes: notes || null, invoiceId: invoiceId || null,
+  };
+  return withTransaction(async (client) => {
+    const { result, replayed } = await runOnce(
+      client,
+      { scope: 'customer_payment', key: requestKey, userId: employeeId, payload },
+      () => collect(client),
+    );
+    return { ...result, replayed };
   });
 }
 

@@ -4,6 +4,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { requestKeyFrom } = require('../utils/operations');
 const {
   generatePoNumber,
   recalculatePOTotals,
@@ -532,10 +533,12 @@ async function receive(req, res, next) {
       poId: id,
       items: body.items,
       employeeId: req.user.id,
+      requestKey: requestKeyFrom(req),
     });
 
     // Now that the transaction is committed, emit sockets and re-check reorder.
-    const io = req.app.get('io');
+    // A replayed retry changed nothing, so there is nothing to announce.
+    const io = result.replayed ? null : req.app.get('io');
     if (io) {
       io.emit('stock_updated', {
         productId: null,
@@ -570,7 +573,7 @@ async function receive(req, res, next) {
       // best effort
     }
 
-    if (result.costChanges.length) {
+    if (!result.replayed && result.costChanges.length) {
       for (const change of result.costChanges) {
         await logActivity({
           entityType: 'product_variant',

@@ -5,6 +5,7 @@ import {
   apiPut,
   apiDelete,
 } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 function toParams(obj: Record<string, any>): string {
   const p = new URLSearchParams();
@@ -43,14 +44,15 @@ export function listBankTransactions(id, filters = {}) {
   );
 }
 
-export function bankDeposit(id, body) {
-  return apiPost(`/bank-accounts/${id}/deposit`, body);
+// requestKey: see lib/requestKey — makes a retried submit safe.
+export function bankDeposit(id, body, requestKey?: string) {
+  return apiPost(`/bank-accounts/${id}/deposit`, body, withRequestKey(requestKey));
 }
 
-export function bankWithdrawal(id, body) {
-  return apiPost(`/bank-accounts/${id}/withdrawal`, body);
+export function bankWithdrawal(id, body, requestKey?: string) {
+  return apiPost(`/bank-accounts/${id}/withdrawal`, body, withRequestKey(requestKey));
 }
 
-export function bankTransfer(id, body) {
-  return apiPost(`/bank-accounts/${id}/transfer`, body);
+export function bankTransfer(id, body, requestKey?: string) {
+  return apiPost(`/bank-accounts/${id}/transfer`, body, withRequestKey(requestKey));
 }

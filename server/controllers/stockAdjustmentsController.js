@@ -3,6 +3,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce, requestKeyFrom } = require('../utils/operations');
 const notificationService = require('../services/notificationService');
 const {
   applyStockMovement,
@@ -219,69 +220,80 @@ async function create(req, res, next) {
       // Stock move, approval record and audit entry commit together: if any
       // of them fails, none of them happens. Stock is re-read under the row
       // lock so a sale landing in between can't make the difference stale.
-      const result = await withTransaction(async (client) => {
-        const { rows: lockedRows } = await client.query(
-          `SELECT stock_qty FROM product_variants WHERE id = $1 FOR UPDATE`,
-          [body.variantId],
-        );
-        const lockedQty = Number(lockedRows[0].stock_qty);
-        const targetQty =
-          body.adjustmentType === 'add' ? lockedQty + body.quantity : lockedQty - body.quantity;
-        if (targetQty < 0) {
-          throw new AppError(
-            ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
-            'Resulting stock cannot be negative.',
-            { status: 409 },
+      // A retry with the same request key returns the first adjustment
+      // instead of moving the stock twice.
+      const { result, replayed } = await withTransaction((client) =>
+        runOnce(client, {
+          scope: 'stock_adjustment_direct',
+          key: requestKeyFrom(req),
+          userId: req.user.id,
+          payload: {
+            variantId: body.variantId, adjustmentType: body.adjustmentType,
+            quantity: body.quantity, reason: body.reason, note: body.note,
+          },
+        }, async () => {
+          const { rows: lockedRows } = await client.query(
+            `SELECT stock_qty FROM product_variants WHERE id = $1 FOR UPDATE`,
+            [body.variantId],
           );
-        }
-        const lockedDifference = targetQty - lockedQty;
+          const lockedQty = Number(lockedRows[0].stock_qty);
+          const targetQty =
+            body.adjustmentType === 'add' ? lockedQty + body.quantity : lockedQty - body.quantity;
+          if (targetQty < 0) {
+            throw new AppError(
+              ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
+              'Resulting stock cannot be negative.',
+              { status: 409 },
+            );
+          }
+          const lockedDifference = targetQty - lockedQty;
 
-        const { movement } = await applyStockMovement({
-          client,
-          variantId: body.variantId,
-          productId: variant.product_id,
-          type: 'adjustment',
-          quantity: lockedDifference,
-          referenceType: 'adjustment_direct',
-          employeeId: req.user.id,
-          notes: `${body.reason}: ${body.note}`,
-        });
+          const { movement } = await applyStockMovement({
+            client,
+            variantId: body.variantId,
+            productId: variant.product_id,
+            type: 'adjustment',
+            quantity: lockedDifference,
+            referenceType: 'adjustment_direct',
+            employeeId: req.user.id,
+            notes: `${body.reason}: ${body.note}`,
+          });
 
-        const { rows: inserted } = await client.query(
-          `INSERT INTO stock_adjustment_requests
-             (product_id, variant_id, adjustment_type, current_qty, requested_qty,
-              difference, reason, request_note, requested_by,
-              status, reviewed_by, reviewed_at, applied_movement_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approved',$10,NOW(),$11)
-           RETURNING id`,
-          [
-            variant.product_id,
-            body.variantId,
-            body.adjustmentType,
-            lockedQty,
-            targetQty,
-            lockedDifference,
-            body.reason,
-            body.note,
-            req.user.id,
-            req.user.id,
-            movement.id,
-          ],
-        );
+          const { rows: inserted } = await client.query(
+            `INSERT INTO stock_adjustment_requests
+               (product_id, variant_id, adjustment_type, current_qty, requested_qty,
+                difference, reason, request_note, requested_by,
+                status, reviewed_by, reviewed_at, applied_movement_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approved',$10,NOW(),$11)
+             RETURNING id`,
+            [
+              variant.product_id,
+              body.variantId,
+              body.adjustmentType,
+              lockedQty,
+              targetQty,
+              lockedDifference,
+              body.reason,
+              body.note,
+              req.user.id,
+              req.user.id,
+              movement.id,
+            ],
+          );
 
-        await logActivity({
-          client,
-          entityType: 'stock_adjustment',
-          entityId: inserted[0].id,
-          action: 'stock.adjustment_approved',
-          performedBy: req.user.id,
-          notes: `Direct adjustment on ${variant.product_name}: ${lockedDifference}`,
-        });
+          await logActivity({
+            client,
+            entityType: 'stock_adjustment',
+            entityId: inserted[0].id,
+            action: 'stock.adjustment_approved',
+            performedBy: req.user.id,
+            notes: `Direct adjustment on ${variant.product_name}: ${lockedDifference}`,
+          });
 
-        return { requestId: inserted[0].id, movement };
-      });
+          return { requestId: inserted[0].id, movement };
+        }));
 
-      const io = req.app.get('io');
+      const io = replayed ? null : req.app.get('io');
       if (io) {
         io.emit('stock_updated', {
           productId: variant.product_id,
@@ -295,7 +307,7 @@ async function create(req, res, next) {
       }
 
       const { rows: full } = await query(`${LIST_SQL} WHERE a.id = $1`, [result.requestId]);
-      return created(res, shape(full[0]));
+      return (replayed ? ok : created)(res, shape(full[0]));
     }
 
     const { rows: inserted } = await query(

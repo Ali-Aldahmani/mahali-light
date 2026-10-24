@@ -8,6 +8,7 @@ import { receivePurchaseOrderItems } from '@/services/purchaseOrderService';
 import { formatQty } from '@/lib/utils/format';
 import { fileUrl } from '@/lib/config';
 import type { PurchaseOrder } from './types';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 interface ReceiveRow {
   id?: number;
@@ -36,6 +37,8 @@ export default function ReceiveItemsSlideOver({
   po,
   onReceived,
 }: ReceiveItemsSlideOverProps) {
+  // One key per opening of the form: a retried submit can't record this twice.
+  const requestKey = useRequestKey(open);
   const remaining = useMemo<ReceiveRow[]>(() => {
     if (!po || !po.items) return [];
     return po.items
@@ -78,7 +81,7 @@ export default function ReceiveItemsSlideOver({
     }
     setSaving(true);
     try {
-      const updated = await receivePurchaseOrderItems(po!.id, payload);
+      const updated = await receivePurchaseOrderItems(po!.id, payload, requestKey.current());
       toast.success('Stock updated. Movements logged.');
       onReceived?.(updated);
       onClose?.();

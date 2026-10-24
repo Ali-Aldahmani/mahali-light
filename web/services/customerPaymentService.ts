@@ -4,9 +4,11 @@ import {
   voidPaymentResponseSchema,
 } from '@/lib/schemas/customerPayment';
 import { validateMoneyResponse } from '@/lib/schemas/invoice';
+import { withRequestKey } from '@/lib/requestKey';
 
-export async function collectPayment(customerId, body) {
-  const data = await apiPost(`/customers/${customerId}/payments`, body);
+// requestKey: see lib/requestKey — makes a retried submit safe.
+export async function collectPayment(customerId, body, requestKey?: string) {
+  const data = await apiPost(`/customers/${customerId}/payments`, body, withRequestKey(requestKey));
   validateMoneyResponse(collectPaymentResponseSchema, data, `POST /customers/${customerId}/payments`);
   return data;
 }

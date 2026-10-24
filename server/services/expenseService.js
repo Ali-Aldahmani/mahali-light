@@ -2,6 +2,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce } = require('../utils/operations');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
@@ -65,6 +66,7 @@ async function createExpense({
   notes = null,
   userId,
   io = null,
+  requestKey = null,
 }) {
   if (!description?.trim()) {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Description is required.');
@@ -80,7 +82,7 @@ async function createExpense({
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid payment method.');
   }
 
-  const result = await withTransaction(async (client) => {
+  const record = async (client) => {
     const { rows } = await client.query(
       `INSERT INTO one_time_expenses
          (category_id, description, amount, expense_date,
@@ -157,9 +159,19 @@ async function createExpense({
     });
 
     return { expense, treasury };
-  });
+  };
 
-  if (io) {
+  // A retry with the same request key returns the first expense instead of
+  // recording it (and taking the money out) twice.
+  const payload = {
+    categoryId: categoryId || null, description: description.trim(), amount: amt,
+    expenseDate: expenseDate || null, paymentMethod, bankAccountId: bankAccountId || null,
+    fundingSource, notes: notes || null,
+  };
+  const { result, replayed } = await withTransaction((client) =>
+    runOnce(client, { scope: 'expense', key: requestKey, userId, payload }, () => record(client)));
+
+  if (io && !replayed) {
     const expensePayload = {
       expenseId: result.expense.id,
       category: result.expense.category_id,
@@ -192,7 +204,14 @@ async function createExpense({
   }
 
   // Return a fully-shaped record (re-fetch so we get joined names/icons).
-  return getExpense(result.expense.id);
+  // A replay of an expense deleted since then has no live row left.
+  let shaped;
+  try {
+    shaped = await getExpense(result.expense.id);
+  } catch (_e) {
+    shaped = { id: result.expense.id };
+  }
+  return { ...shaped, replayed };
 }
 
 // =======================================================================

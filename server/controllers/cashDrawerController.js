@@ -4,6 +4,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce, requestKeyFrom } = require('../utils/operations');
 const cashService = require('../services/cashService');
 const { postTransactionWith: postBankWith } = require('../services/bankService');
 
@@ -104,6 +105,7 @@ async function adjust(req, res, next) {
       reason: body.reason,
       employeeId: req.user.id,
       io,
+      requestKey: requestKeyFrom(req),
     });
     const state = await cashService.getDrawerState();
     return ok(res, state);
@@ -223,63 +225,69 @@ async function transferToBank(req, res, next) {
   try {
     const body = transferSchema.parse(req.body || {});
     const io = req.app.get('io');
-    const result = await withTransaction(async (client) => {
-      // Pull out cash first.
-      const out = await cashService.postTransactionWith(client, {
-        transactionType: 'transfer',
-        direction: 'out',
-        amount: body.amount,
-        referenceType: 'bank_account',
-        referenceId: body.toId,
-        employeeId: req.user.id,
-        notes: body.notes || 'Transfer to bank',
-        allowAutoOpen: true,
-      });
-      // Deposit into the chosen bank account.
-      const inn = await postBankWith(client, {
-        bankAccountId: body.toId,
-        transactionType: 'transfer',
-        direction: 'in',
-        amount: body.amount,
-        referenceType: 'cash_drawer',
-        referenceId: out.drawerId,
-        employeeId: req.user.id,
-        transactionDate: body.transferDate || null,
-        description: body.notes || 'Transfer from cash drawer',
-        notes: body.notes || null,
-      });
-      const { rows: transferRows } = await client.query(
-        `INSERT INTO cash_transfers
-           (from_type, from_id, to_type, to_id, amount, transfer_date, employee_id, notes)
-         VALUES ('cash_drawer',$1,'bank_account',$2,$3,$4,$5,$6)
-         RETURNING *`,
-        [
-          out.drawerId,
-          body.toId,
-          body.amount,
-          body.transferDate || todayStoreDate(),
-          req.user.id,
-          body.notes || null,
-        ],
-      );
-      // The transfer's audit entry commits with both legs.
-      await logActivity({
-        client,
-        entityType: 'cash_transfer',
-        entityId: transferRows[0].id,
-        action: 'treasury.transfer',
-        performedBy: req.user.id,
-        newValue: {
-          from: 'cash_drawer',
-          to: 'bank_account',
+    const { result, replayed } = await withTransaction((client) =>
+      runOnce(client, {
+        scope: 'cash_transfer',
+        key: requestKeyFrom(req),
+        userId: req.user.id,
+        payload: body,
+      }, async () => {
+        // Pull out cash first.
+        const out = await cashService.postTransactionWith(client, {
+          transactionType: 'transfer',
+          direction: 'out',
           amount: body.amount,
-          toId: body.toId,
-        },
-        notes: body.notes,
-      });
-      return { out, in: inn, transfer: transferRows[0] };
-    });
-    if (io) {
+          referenceType: 'bank_account',
+          referenceId: body.toId,
+          employeeId: req.user.id,
+          notes: body.notes || 'Transfer to bank',
+          allowAutoOpen: true,
+        });
+        // Deposit into the chosen bank account.
+        const inn = await postBankWith(client, {
+          bankAccountId: body.toId,
+          transactionType: 'transfer',
+          direction: 'in',
+          amount: body.amount,
+          referenceType: 'cash_drawer',
+          referenceId: out.drawerId,
+          employeeId: req.user.id,
+          transactionDate: body.transferDate || null,
+          description: body.notes || 'Transfer from cash drawer',
+          notes: body.notes || null,
+        });
+        const { rows: transferRows } = await client.query(
+          `INSERT INTO cash_transfers
+             (from_type, from_id, to_type, to_id, amount, transfer_date, employee_id, notes)
+           VALUES ('cash_drawer',$1,'bank_account',$2,$3,$4,$5,$6)
+           RETURNING *`,
+          [
+            out.drawerId,
+            body.toId,
+            body.amount,
+            body.transferDate || todayStoreDate(),
+            req.user.id,
+            body.notes || null,
+          ],
+        );
+        // The transfer's audit entry commits with both legs.
+        await logActivity({
+          client,
+          entityType: 'cash_transfer',
+          entityId: transferRows[0].id,
+          action: 'treasury.transfer',
+          performedBy: req.user.id,
+          newValue: {
+            from: 'cash_drawer',
+            to: 'bank_account',
+            amount: body.amount,
+            toId: body.toId,
+          },
+          notes: body.notes,
+        });
+        return { out, in: inn, transfer: transferRows[0] };
+      }));
+    if (io && !replayed) {
       const at = new Date().toISOString();
       io.to('role:Manager').emit('cash_balance_updated', {
         newBalance: result.out.balanceAfter,
@@ -299,7 +307,7 @@ async function transferToBank(req, res, next) {
       });
     }
     const state = await cashService.getDrawerState();
-    return created(res, { state, transferId: result.transfer.id });
+    return (replayed ? ok : created)(res, { state, transferId: result.transfer.id });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return next(

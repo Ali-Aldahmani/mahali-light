@@ -9,6 +9,7 @@ import { toast } from '@/store/toastStore';
 import { collectPayment } from '@/services/customerPaymentService';
 import { formatCurrency, storeDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 interface CollectPaymentCustomer {
   id: number | string;
@@ -38,6 +39,8 @@ export default function CollectPaymentSlideOver({
   customer,
   onCollected,
 }: CollectPaymentSlideOverProps) {
+  // One key per opening of the form: a retried submit can't record this twice.
+  const requestKey = useRequestKey(open);
   const balance = Number(customer?.creditBalance || 0);
   const [amount, setAmount] = useState<number | string>(balance);
   const [method, setMethod] = useState('cash');
@@ -78,7 +81,7 @@ export default function CollectPaymentSlideOver({
         paymentMethod: method,
         paymentDate: date,
         notes: notes || null,
-      });
+      }, requestKey.current());
       toast.success('Payment recorded.');
       onCollected?.(result);
       onClose?.();

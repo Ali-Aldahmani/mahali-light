@@ -2,6 +2,7 @@ const { z } = require('zod');
 const { query } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { requestKeyFrom } = require('../utils/operations');
 const {
   addPayment,
   deletePayment,
@@ -66,7 +67,7 @@ async function createForPo(req, res, next) {
     const { id: poId } = req.params;
     const body = createSchema.parse(req.body || {});
 
-    const { payment, po, treasury } = await addPayment({
+    const { payment, po, treasury, replayed } = await addPayment({
       poId,
       amount: body.amount,
       method: body.paymentMethod,
@@ -74,9 +75,11 @@ async function createForPo(req, res, next) {
       bankAccountId: body.bankAccountId || null,
       notes: body.notes || null,
       employeeId: req.user.id,
+      requestKey: requestKeyFrom(req),
     });
 
-    const io = req.app.get('io');
+    // A replayed retry changed nothing, so there is nothing to announce.
+    const io = replayed ? null : req.app.get('io');
     if (io) {
       const payload = {
         paymentId: payment.id,
@@ -120,8 +123,10 @@ async function createForPo(req, res, next) {
     }
 
     const { rows } = await query(`${PAYMENT_SELECT} WHERE p.id = $1`, [payment.id]);
-    return created(res, {
-      payment: shape(rows[0]),
+    const respond = replayed ? ok : created;
+    return respond(res, {
+      // A replay of a payment deleted since then has no live row left.
+      payment: rows[0] ? shape(rows[0]) : payment,
       purchaseOrder: {
         id: po.id,
         amountPaid: Number(po.amount_paid),

@@ -24,6 +24,15 @@ export function uploadConfig(opts: UploadOptions = {}) {
   };
 }
 
+// True when sending this request again can't apply a change twice.
+export function canRetrySafely(config: { method?: string; headers?: any } = {}) {
+  const method = (config.method || 'get').toUpperCase();
+  if (method === 'GET' || method === 'HEAD') return true;
+  const headers = config.headers || {};
+  const key = typeof headers.get === 'function' ? headers.get('Idempotency-Key') : headers['Idempotency-Key'];
+  return Boolean(key);
+}
+
 const http = axios.create({
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
@@ -62,10 +71,17 @@ http.interceptors.response.use(
 
     if (!err.response) {
       if (err.code === 'ECONNABORTED') {
-        toast.error('Request timed out. Please try again.', {
-          actionLabel: 'Retry',
-          onAction: () => http.request(config),
-        });
+        // A timeout doesn't mean the change failed — the server may have
+        // saved it. Offer Retry only where repeating it can't do anything
+        // twice: reads, and commands that carry a request key.
+        if (canRetrySafely(config)) {
+          toast.error('Request timed out. Please try again.', {
+            actionLabel: 'Retry',
+            onAction: () => http.request(config),
+          });
+        } else {
+          toast.error('The server did not answer in time. Your change may already be saved — check before trying again.');
+        }
         addBreadcrumb('api_timeout', { method, url });
         return Promise.reject({
           code: 'NETWORK_TIMEOUT',

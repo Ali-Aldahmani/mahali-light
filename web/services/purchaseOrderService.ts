@@ -1,4 +1,5 @@
 import http, { apiGet, apiGetWithMeta, apiPost, apiPut, apiDelete, uploadConfig, type UploadOptions } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 function toParams(o: Record<string, any>): string {
   const p = new URLSearchParams();
@@ -65,8 +66,9 @@ export function confirmPurchaseOrder(id) {
   return apiPost(`/purchase-orders/${id}/confirm`, {});
 }
 
-export function receivePurchaseOrderItems(id, items) {
-  return apiPost(`/purchase-orders/${id}/receive`, { items });
+// requestKey: see lib/requestKey — a retried partial receipt can't add the goods twice.
+export function receivePurchaseOrderItems(id, items, requestKey?: string) {
+  return apiPost(`/purchase-orders/${id}/receive`, { items }, withRequestKey(requestKey));
 }
 
 export async function uploadPurchaseOrderAttachment(id, file, opts?: UploadOptions) {

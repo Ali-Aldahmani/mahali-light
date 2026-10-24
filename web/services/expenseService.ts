@@ -39,7 +39,8 @@ export async function createExpense({
   bankAccountId,
   notes,
   receipt,
-}) {
+  requestKey,
+}: any) {
   const fd = new FormData();
   if (categoryId) fd.append('categoryId', categoryId);
   fd.append('description', description);
@@ -49,8 +50,12 @@ export async function createExpense({
   if (bankAccountId) fd.append('bankAccountId', bankAccountId);
   if (notes) fd.append('notes', notes);
   if (receipt) fd.append('receipt', receipt);
+  // requestKey: see lib/requestKey — a retried submit can't record the expense twice.
   const res = await http.post('/expenses', fd, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...(requestKey ? { 'Idempotency-Key': requestKey } : {}),
+    },
   });
   return res.data?.data;
 }

@@ -4,6 +4,7 @@ const { withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce, requestKeyFrom } = require('../utils/operations');
 const bankService = require('../services/bankService');
 const cashService = require('../services/cashService');
 
@@ -120,32 +121,38 @@ async function deposit(req, res, next) {
     const body = depositSchema.parse(req.body || {});
     const io = req.app.get('io');
     // The deposit and its audit entry commit together.
-    const result = await withTransaction(async (client) => {
-      const posted = await bankService.recordBankIn({
-        client,
-        bankAccountId: req.params.id,
-        transactionType: 'manual_deposit',
-        amount: body.amount,
-        employeeId: req.user.id,
-        transactionDate: body.transactionDate || null,
-        description: body.description || null,
-        referenceType: body.referenceType || null,
-        referenceId: body.referenceId || null,
-        notes: body.notes || null,
-      });
-      await logActivity({
-        client,
-        entityType: 'bank_account',
-        entityId: req.params.id,
-        action: 'bank_account.deposit',
-        performedBy: req.user.id,
-        newValue: { amount: body.amount },
-        notes: body.description,
-      });
-      return posted;
-    });
-    bankService.emitBankBalance(io, result, { transactionType: 'manual_deposit', employeeId: req.user.id });
-    return created(res, bankService.shapeTransaction(result.transaction));
+    const { result, replayed } = await withTransaction((client) =>
+      runOnce(client, {
+        scope: 'bank_deposit',
+        key: requestKeyFrom(req),
+        userId: req.user.id,
+        payload: { accountId: req.params.id, ...body },
+      }, async () => {
+        const posted = await bankService.recordBankIn({
+          client,
+          bankAccountId: req.params.id,
+          transactionType: 'manual_deposit',
+          amount: body.amount,
+          employeeId: req.user.id,
+          transactionDate: body.transactionDate || null,
+          description: body.description || null,
+          referenceType: body.referenceType || null,
+          referenceId: body.referenceId || null,
+          notes: body.notes || null,
+        });
+        await logActivity({
+          client,
+          entityType: 'bank_account',
+          entityId: req.params.id,
+          action: 'bank_account.deposit',
+          performedBy: req.user.id,
+          newValue: { amount: body.amount },
+          notes: body.description,
+        });
+        return posted;
+      }));
+    if (!replayed) bankService.emitBankBalance(io, result, { transactionType: 'manual_deposit', employeeId: req.user.id });
+    return (replayed ? ok : created)(res, bankService.shapeTransaction(result.transaction));
   } catch (err) {
     if (err instanceof z.ZodError) {
       return next(
@@ -169,33 +176,39 @@ async function withdrawal(req, res, next) {
     const body = withdrawalSchema.parse(req.body || {});
     const io = req.app.get('io');
     // The withdrawal and its audit entry commit together.
-    const result = await withTransaction(async (client) => {
-      const posted = await bankService.recordBankOut({
-        client,
-        bankAccountId: req.params.id,
-        transactionType: 'manual_withdrawal',
-        amount: body.amount,
-        employeeId: req.user.id,
-        transactionDate: body.transactionDate || null,
-        description: body.description || null,
-        referenceType: body.referenceType || null,
-        referenceId: body.referenceId || null,
-        notes: body.notes || null,
-        allowOverdraft: body.allowOverdraft,
-      });
-      await logActivity({
-        client,
-        entityType: 'bank_account',
-        entityId: req.params.id,
-        action: 'bank_account.withdrawal',
-        performedBy: req.user.id,
-        newValue: { amount: body.amount },
-        notes: body.description,
-      });
-      return posted;
-    });
-    bankService.emitBankBalance(io, result, { transactionType: 'manual_withdrawal', employeeId: req.user.id });
-    return created(res, bankService.shapeTransaction(result.transaction));
+    const { result, replayed } = await withTransaction((client) =>
+      runOnce(client, {
+        scope: 'bank_withdrawal',
+        key: requestKeyFrom(req),
+        userId: req.user.id,
+        payload: { accountId: req.params.id, ...body },
+      }, async () => {
+        const posted = await bankService.recordBankOut({
+          client,
+          bankAccountId: req.params.id,
+          transactionType: 'manual_withdrawal',
+          amount: body.amount,
+          employeeId: req.user.id,
+          transactionDate: body.transactionDate || null,
+          description: body.description || null,
+          referenceType: body.referenceType || null,
+          referenceId: body.referenceId || null,
+          notes: body.notes || null,
+          allowOverdraft: body.allowOverdraft,
+        });
+        await logActivity({
+          client,
+          entityType: 'bank_account',
+          entityId: req.params.id,
+          action: 'bank_account.withdrawal',
+          performedBy: req.user.id,
+          newValue: { amount: body.amount },
+          notes: body.description,
+        });
+        return posted;
+      }));
+    if (!replayed) bankService.emitBankBalance(io, result, { transactionType: 'manual_withdrawal', employeeId: req.user.id });
+    return (replayed ? ok : created)(res, bankService.shapeTransaction(result.transaction));
   } catch (err) {
     if (err instanceof z.ZodError) {
       return next(
@@ -229,83 +242,89 @@ async function transfer(req, res, next) {
         status: 409,
       });
     }
-    const result = await withTransaction(async (client) => {
-      const out = await bankService.postTransactionWith(client, {
-        bankAccountId: fromId,
-        transactionType: 'transfer',
-        direction: 'out',
-        amount: body.amount,
-        referenceType: body.toType,
-        referenceId: body.toId || null,
-        employeeId: req.user.id,
-        transactionDate: body.transferDate || null,
-        description: 'Outgoing transfer',
-        notes: body.notes || null,
-        allowOverdraft: body.allowOverdraft,
-      });
-      let inn = null;
-      let drawerId = null;
-      if (body.toType === 'bank_account') {
-        inn = await bankService.postTransactionWith(client, {
-          bankAccountId: body.toId,
+    const { result, replayed } = await withTransaction((client) =>
+      runOnce(client, {
+        scope: 'treasury_transfer',
+        key: requestKeyFrom(req),
+        userId: req.user.id,
+        payload: { fromId, ...body },
+      }, async () => {
+        const out = await bankService.postTransactionWith(client, {
+          bankAccountId: fromId,
           transactionType: 'transfer',
-          direction: 'in',
+          direction: 'out',
           amount: body.amount,
-          referenceType: 'bank_account',
-          referenceId: fromId,
+          referenceType: body.toType,
+          referenceId: body.toId || null,
           employeeId: req.user.id,
           transactionDate: body.transferDate || null,
-          description: 'Incoming transfer',
+          description: 'Outgoing transfer',
           notes: body.notes || null,
+          allowOverdraft: body.allowOverdraft,
         });
-      } else {
-        const drwState = await cashService.postTransactionWith(client, {
-          transactionType: 'transfer',
-          direction: 'in',
-          amount: body.amount,
-          referenceType: 'bank_account',
-          referenceId: fromId,
-          employeeId: req.user.id,
-          notes: body.notes || 'Transfer from bank',
-          allowAutoOpen: true,
+        let inn = null;
+        let drawerId = null;
+        if (body.toType === 'bank_account') {
+          inn = await bankService.postTransactionWith(client, {
+            bankAccountId: body.toId,
+            transactionType: 'transfer',
+            direction: 'in',
+            amount: body.amount,
+            referenceType: 'bank_account',
+            referenceId: fromId,
+            employeeId: req.user.id,
+            transactionDate: body.transferDate || null,
+            description: 'Incoming transfer',
+            notes: body.notes || null,
+          });
+        } else {
+          const drwState = await cashService.postTransactionWith(client, {
+            transactionType: 'transfer',
+            direction: 'in',
+            amount: body.amount,
+            referenceType: 'bank_account',
+            referenceId: fromId,
+            employeeId: req.user.id,
+            notes: body.notes || 'Transfer from bank',
+            allowAutoOpen: true,
+          });
+          drawerId = drwState.drawerId;
+          inn = drwState;
+        }
+        const { rows: trRows } = await client.query(
+          `INSERT INTO cash_transfers
+             (from_type, from_id, to_type, to_id, amount, transfer_date, employee_id, notes)
+           VALUES ('bank_account',$1,$2,$3,$4,$5,$6,$7)
+           RETURNING *`,
+          [
+            fromId,
+            body.toType,
+            body.toType === 'cash_drawer' ? drawerId : body.toId,
+            body.amount,
+            body.transferDate || todayStoreDate(),
+            req.user.id,
+            body.notes || null,
+          ],
+        );
+        // The transfer's audit entry commits with both legs.
+        await logActivity({
+          client,
+          entityType: 'cash_transfer',
+          entityId: trRows[0].id,
+          action: 'treasury.transfer',
+          performedBy: req.user.id,
+          newValue: {
+            from: 'bank_account',
+            to: body.toType,
+            amount: body.amount,
+            fromId,
+            toId: body.toId || null,
+          },
+          notes: body.notes,
         });
-        drawerId = drwState.drawerId;
-        inn = drwState;
-      }
-      const { rows: trRows } = await client.query(
-        `INSERT INTO cash_transfers
-           (from_type, from_id, to_type, to_id, amount, transfer_date, employee_id, notes)
-         VALUES ('bank_account',$1,$2,$3,$4,$5,$6,$7)
-         RETURNING *`,
-        [
-          fromId,
-          body.toType,
-          body.toType === 'cash_drawer' ? drawerId : body.toId,
-          body.amount,
-          body.transferDate || todayStoreDate(),
-          req.user.id,
-          body.notes || null,
-        ],
-      );
-      // The transfer's audit entry commits with both legs.
-      await logActivity({
-        client,
-        entityType: 'cash_transfer',
-        entityId: trRows[0].id,
-        action: 'treasury.transfer',
-        performedBy: req.user.id,
-        newValue: {
-          from: 'bank_account',
-          to: body.toType,
-          amount: body.amount,
-          fromId,
-          toId: body.toId || null,
-        },
-        notes: body.notes,
-      });
-      return { out, in: inn, transfer: trRows[0] };
-    });
-    if (io) {
+        return { out, in: inn, transfer: trRows[0] };
+      }));
+    if (io && !replayed) {
       const at = new Date().toISOString();
       io.to('role:Manager').emit('bank_balance_updated', {
         bankAccountId: result.out.accountId,
@@ -337,7 +356,7 @@ async function transfer(req, res, next) {
       }
     }
 
-    return created(res, { transferId: result.transfer.id });
+    return (replayed ? ok : created)(res, { transferId: result.transfer.id });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return next(

@@ -5,6 +5,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce } = require('../utils/operations');
 
 const VALID_METHODS = new Set(['cash', 'bank_transfer', 'cheque']);
 
@@ -36,6 +37,7 @@ async function addPayment({
   receiptAttachment = null,
   notes = null,
   employeeId,
+  requestKey = null,
 }) {
   const amt = money(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
@@ -52,7 +54,7 @@ async function addPayment({
   // One business date for the payment row, the bank movement and the journal.
   const businessDate = paymentDate || todayStoreDate();
 
-  return withTransaction(async (client) => {
+  const pay = async (client) => {
     const { rows: poRows } = await client.query(
       `SELECT * FROM purchase_orders WHERE id = $1 FOR UPDATE`,
       [poId],
@@ -198,6 +200,20 @@ async function addPayment({
           }
         : null,
     };
+  };
+  // A retry with the same request key returns the first payment instead of
+  // paying the supplier (and emptying the drawer or bank) twice.
+  const payload = {
+    poId, amount: amt, method, paymentDate: businessDate,
+    bankAccountId: bankAccountId || null, notes: notes || null,
+  };
+  return withTransaction(async (client) => {
+    const { result, replayed } = await runOnce(
+      client,
+      { scope: 'supplier_payment', key: requestKey, userId: employeeId, payload },
+      () => pay(client),
+    );
+    return { ...result, replayed };
   });
 }
 

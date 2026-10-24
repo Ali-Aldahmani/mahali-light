@@ -10,6 +10,7 @@ import { listBankAccounts } from '@/services/bankAccountService';
 import { toast } from '@/store/toastStore';
 import { storeDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const METHOD_OPTIONS = [
   { value: 'cash', label: 'Cash' },
@@ -21,6 +22,8 @@ function todayIso() {
 }
 
 export default function AddExpenseSlideOver({ open, onClose, onSaved }) {
+  // One key per opening of the form: a retried submit can't record this twice.
+  const requestKey = useRequestKey(open);
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -92,6 +95,7 @@ export default function AddExpenseSlideOver({ open, onClose, onSaved }) {
         bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
         notes: notes.trim() || null,
         receipt,
+        requestKey: requestKey.current(),
       });
       if (saved?.receiptUploadFailed) {
         toast.warning('Expense recorded, but the receipt did not upload. Attach it from the expense list.');

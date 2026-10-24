@@ -11,6 +11,7 @@ import { addPoPayment, uploadPaymentReceipt } from '@/services/supplierPaymentSe
 import { formatCurrency, storeDate } from '@/lib/utils/format';
 import type { PurchaseOrder } from './types';
 import DateField from '@/components/ui/DateField';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
@@ -39,6 +40,8 @@ export default function AddPaymentSlideOver({
   po,
   onAdded,
 }: AddPaymentSlideOverProps) {
+  // One key per opening of the form: a retried submit can't record this twice.
+  const requestKey = useRequestKey(open);
   const balance = Number(po?.balanceDue || 0);
   const [amount, setAmount] = useState<number | string>(balance);
   const [payKind, setPayKind] = useState<'full' | 'half' | 'custom'>('full');
@@ -80,7 +83,7 @@ export default function AddPaymentSlideOver({
         paymentMethod: method,
         paymentDate: date,
         notes: notes || null,
-      });
+      }, requestKey.current());
       if (file && created?.payment?.id) {
         try {
           await uploadPaymentReceipt(created.payment.id, file);

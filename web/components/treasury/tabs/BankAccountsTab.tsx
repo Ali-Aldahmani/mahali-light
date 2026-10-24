@@ -31,6 +31,7 @@ import { toast } from '@/store/toastStore';
 import { formatCurrency, formatDateTime, storeDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
 import Skeleton from '@/components/ui/skeleton';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 export interface BankAccount {
   id: string;
@@ -438,6 +439,8 @@ function BankMovementSlideOver({
   onDone?: () => void;
   mode: 'deposit' | 'withdraw';
 }) {
+  // One key per opening of the form: a retried submit can't record this twice.
+  const requestKey = useRequestKey(open);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(() => storeDate());
   const [description, setDescription] = useState('');
@@ -471,7 +474,7 @@ function BankMovementSlideOver({
           transactionDate: date,
           description: description || null,
           notes: notes || null,
-        });
+        }, requestKey.current());
       } else {
         await bankWithdrawal(account.id, {
           amount: amt,
@@ -479,7 +482,7 @@ function BankMovementSlideOver({
           description: description || null,
           notes: notes || null,
           allowOverdraft,
-        });
+        }, requestKey.current());
       }
       toast.success(mode === 'deposit' ? 'Deposit recorded.' : 'Withdrawal recorded.');
       onDone?.();
