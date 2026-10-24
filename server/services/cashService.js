@@ -382,6 +382,7 @@ async function openDrawer({ openingBalance, employeeId, notes = null, io = null 
     );
 
     await logActivity({
+      client,
       entityType: 'cash_drawer',
       entityId: drawer.id,
       action: 'cash_drawer.opened',
@@ -511,6 +512,7 @@ async function closeDrawer({
     );
 
     await logActivity({
+      client,
       entityType: 'cash_drawer',
       entityId: drawer.id,
       action: Math.abs(discrepancy) > 0.0001
@@ -579,22 +581,37 @@ async function recordManualAdjustment({
     );
   }
   const type = direction === 'in' ? 'manual_in' : 'manual_out';
-  const result = await recordCash({
-    transactionType: type,
-    direction,
-    amount,
-    employeeId,
-    notes: reason.trim(),
-    io,
+  // The movement and its audit entry commit together.
+  const result = await withTransaction(async (client) => {
+    const posted = await postTransactionWith(client, {
+      transactionType: type,
+      direction,
+      amount,
+      employeeId,
+      notes: reason.trim(),
+    });
+    await logActivity({
+      client,
+      entityType: 'cash_drawer',
+      entityId: posted.drawerId,
+      action: 'cash_drawer.adjusted',
+      performedBy: employeeId,
+      newValue: { direction, amount: money(amount) },
+      notes: reason.trim(),
+    });
+    return posted;
   });
-  await logActivity({
-    entityType: 'cash_drawer',
-    entityId: result.drawerId,
-    action: 'cash_drawer.adjusted',
-    performedBy: employeeId,
-    newValue: { direction, amount: money(amount) },
-    notes: reason.trim(),
-  });
+  if (io) {
+    const payload = {
+      newBalance: result.balanceAfter,
+      delta: result.delta,
+      transactionType: type,
+      changedBy: employeeId || null,
+      at: nowIso(),
+    };
+    io.to('role:Manager').emit('cash_balance_updated', payload);
+    io.to('role:Admin').emit('cash_balance_updated', payload);
+  }
   return result;
 }
 

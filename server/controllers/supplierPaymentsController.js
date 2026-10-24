@@ -2,7 +2,6 @@ const { z } = require('zod');
 const { query } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
-const { logActivity } = require('../utils/activityLog');
 const {
   addPayment,
   deletePayment,
@@ -75,14 +74,6 @@ async function createForPo(req, res, next) {
       bankAccountId: body.bankAccountId || null,
       notes: body.notes || null,
       employeeId: req.user.id,
-    });
-
-    await logActivity({
-      entityType: 'supplier_payment',
-      entityId: payment.id,
-      action: 'purchase_order.payment_added',
-      performedBy: req.user.id,
-      notes: `${Number(payment.amount).toFixed(2)} via ${payment.payment_method} on ${po.po_number}`,
     });
 
     const io = req.app.get('io');
@@ -160,14 +151,6 @@ async function remove(req, res, next) {
     if (existing[0].receipt_attachment) {
       deleteAttachmentFile(existing[0].receipt_attachment);
     }
-
-    await logActivity({
-      entityType: 'supplier_payment',
-      entityId: id,
-      action: 'purchase_order.payment_deleted',
-      performedBy: req.user.id,
-      notes: `Reversed ${Number(payment.amount).toFixed(2)} on PO ${po.po_number}`,
-    });
 
     const io = req.app.get('io');
     if (io && treasury) {

@@ -116,6 +116,8 @@ const ALL_PERMISSIONS = [
   ['bug.manage', 'Manage Bug Reports', 'bug'],
   ['warranty.view', 'View Warranties', 'warranty'],
   ['warranty.create', 'Create Warranty', 'warranty'],
+  ['warranty.edit', 'Edit Warranty', 'warranty'],
+  ['warranty.void', 'Void Warranty', 'warranty'],
   ['warranty.claim', 'Process Warranty Claim', 'warranty'],
   ['report.employee_performance_own', 'View Own Performance', 'report'],
   ['report.employee_performance_all', 'View All Performance', 'report'],

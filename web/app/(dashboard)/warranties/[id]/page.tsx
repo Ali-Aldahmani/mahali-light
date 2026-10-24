@@ -139,7 +139,7 @@ function WarrantyDetailPageContent() {
               </PermissionGate>
             )}
             {warranty.status === 'active' && (
-              <PermissionGate permission="warranty.create">
+              <PermissionGate permission="warranty.void">
                 <Button
                   variant="secondary"
                   onClick={() => setVoidConfirm(true)}

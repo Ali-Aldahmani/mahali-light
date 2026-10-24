@@ -62,14 +62,22 @@ async function create(req, res, next) {
       io,
     });
 
-    // Optional receipt file under the same multipart request.
+    // Optional receipt file under the same multipart request. The expense has
+    // already committed by now, so a failed upload must not turn into an
+    // error response — the user would retry and record the expense twice.
+    // Report it instead; the receipt can be attached from the expense list.
     if (req.file) {
-      const saved = await saveExpenseReceipt({
-        expenseId: expense.id,
-        file: req.file,
-      });
-      await expenseService.setExpenseReceipt(expense.id, saved.relativePath);
-      expense.receiptAttachment = saved.relativePath;
+      try {
+        const saved = await saveExpenseReceipt({
+          expenseId: expense.id,
+          file: req.file,
+        });
+        await expenseService.setExpenseReceipt(expense.id, saved.relativePath);
+        expense.receiptAttachment = saved.relativePath;
+      } catch (err) {
+        console.warn('[expenses] receipt upload failed after the expense was recorded:', err.message);
+        expense.receiptUploadFailed = true;
+      }
     }
 
     return created(res, expense);

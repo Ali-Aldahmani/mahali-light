@@ -98,8 +98,11 @@ async function assertSerialUnique(
 // Designed to be called inside an existing transaction (or stand-alone with
 // query()). To keep the confirmInvoice() flow simple we accept either a
 // connected client or query directly.
-async function createWarrantiesFromInvoice(invoiceId, { actorId = null, io = null } = {}) {
-  return withTransaction(async (client) => {
+// Pass `client` to run inside the caller's transaction (sale confirmation):
+// the warranties then commit or roll back with the sale, and the caller sends
+// the live event after its commit.
+async function createWarrantiesFromInvoice(invoiceId, { actorId = null, io = null, client: outer = null } = {}) {
+  const work = async (client) => {
     const { rows: invRows } = await client.query(
       `SELECT id, invoice_number, customer_id, created_by, confirmed_at,
               created_at, pc_identifier
@@ -189,6 +192,7 @@ async function createWarrantiesFromInvoice(invoiceId, { actorId = null, io = nul
       created.push(ins[0]);
 
       await logActivity({
+        client,
         entityType: 'warranty',
         entityId: ins[0].id,
         action: 'warranty.created',
@@ -198,17 +202,21 @@ async function createWarrantiesFromInvoice(invoiceId, { actorId = null, io = nul
       });
     }
 
-    if (io && created.length) {
-      io.emit('warranty_created_batch', {
-        invoiceId,
-        invoiceNumber: invoice.invoice_number,
-        count: created.length,
-        at: new Date().toISOString(),
-      });
-    }
+    return { created, invoiceNumber: invoice.invoice_number };
+  };
 
-    return created;
-  });
+  if (outer) return (await work(outer)).created;
+
+  const { created, invoiceNumber } = await withTransaction(work);
+  if (io && created.length) {
+    io.emit('warranty_created_batch', {
+      invoiceId,
+      invoiceNumber,
+      count: created.length,
+      at: new Date().toISOString(),
+    });
+  }
+  return created;
 }
 
 // Create a manual warranty (typically for supplier-issued items or post-sale
@@ -244,7 +252,9 @@ async function createManualWarranty({
 
   const endDate = addMonthsDate(startDate, Number(durationMonths));
 
-  return withTransaction(async (client) => {
+  // Live events wait for the commit, so nobody sees a warranty that rolled back.
+  const afterCommit = [];
+  const created = await withTransaction(async (client) => {
     await assertSerialUnique(client, { productId, serialNumber });
     const warrantyNumber = await generateWarrantyNumber(client);
     const { rows } = await client.query(
@@ -275,6 +285,7 @@ async function createManualWarranty({
     const warranty = rows[0];
 
     await logActivity({
+      client,
       entityType: 'warranty',
       entityId: warranty.id,
       action: 'warranty.created',
@@ -284,23 +295,28 @@ async function createManualWarranty({
     });
 
     if (io) {
-      io.emit('warranty_created', {
+      afterCommit.push(() => io.emit('warranty_created', {
         warrantyId: warranty.id,
         warrantyNumber: warranty.warranty_number,
         productId,
         customerId,
         at: new Date().toISOString(),
-      });
+      }));
     }
     return warranty;
   });
+  afterCommit.forEach((send) => send());
+  return created;
 }
 
 // Void all customer-warranties that came from a cancelled invoice. Supplier
 // warranties (purchased stock) stay alive — only the customer-facing
 // warranties tied to the cancelled sale are affected.
-async function voidWarrantiesForInvoice(invoiceId, { actorId = null, reason = null, io = null }) {
-  const { rows } = await query(
+// Pass `client` to run inside the caller's transaction (invoice
+// cancellation); the caller then sends the live event after its commit.
+async function voidWarrantiesForInvoice(invoiceId, { actorId = null, reason = null, io = null, client = null }) {
+  const run = client ? (sql, params) => client.query(sql, params) : query;
+  const { rows } = await run(
     `UPDATE warranties
         SET status = 'void',
             voided_at = NOW(),
@@ -315,6 +331,7 @@ async function voidWarrantiesForInvoice(invoiceId, { actorId = null, reason = nu
   );
   for (const w of rows) {
     await logActivity({
+      client,
       entityType: 'warranty',
       entityId: w.id,
       action: 'warranty.voided',
@@ -322,7 +339,7 @@ async function voidWarrantiesForInvoice(invoiceId, { actorId = null, reason = nu
       notes: reason || 'Invoice cancelled',
     });
   }
-  if (io && rows.length) {
+  if (io && rows.length && !client) {
     io.emit('warranty_voided_batch', {
       invoiceId,
       count: rows.length,
@@ -333,7 +350,8 @@ async function voidWarrantiesForInvoice(invoiceId, { actorId = null, reason = nu
 }
 
 async function voidWarranty({ warrantyId, actorId, reason = null, io = null }) {
-  return withTransaction(async (client) => {
+  const afterCommit = [];
+  const voided = await withTransaction(async (client) => {
     const { rows } = await client.query(
       `SELECT * FROM warranties WHERE id = $1 FOR UPDATE`,
       [warrantyId],
@@ -363,6 +381,7 @@ async function voidWarranty({ warrantyId, actorId, reason = null, io = null }) {
     );
 
     await logActivity({
+      client,
       entityType: 'warranty',
       entityId: warrantyId,
       action: 'warranty.voided',
@@ -371,15 +390,17 @@ async function voidWarranty({ warrantyId, actorId, reason = null, io = null }) {
     });
 
     if (io) {
-      io.emit('warranty_voided', {
+      afterCommit.push(() => io.emit('warranty_voided', {
         warrantyId,
         warrantyNumber: w.warranty_number,
         voidedBy: actorId,
         at: new Date().toISOString(),
-      });
+      }));
     }
     return { warrantyId, warrantyNumber: w.warranty_number };
   });
+  afterCommit.forEach((send) => send());
+  return voided;
 }
 
 async function createClaim({
@@ -396,7 +417,8 @@ async function createClaim({
       'Issue description is required.',
     );
   }
-  return withTransaction(async (client) => {
+  const afterCommit = [];
+  const created = await withTransaction(async (client) => {
     const { rows } = await client.query(
       `SELECT w.*, p.name AS product_name
          FROM warranties w
@@ -449,6 +471,7 @@ async function createClaim({
     const claim = ins[0];
 
     await logActivity({
+      client,
       entityType: 'warranty_claim',
       entityId: claim.id,
       action: 'warranty_claim.created',
@@ -457,37 +480,42 @@ async function createClaim({
       notes: issueDescription,
     });
 
-    if (io) {
-      const payload = {
-        claimId: claim.id,
-        claimNumber,
-        warrantyId,
-        warrantyNumber: w.warranty_number,
-        productId: w.product_id,
-        productName: w.product_name,
-        customerId: customer,
-        createdBy,
-        at: new Date().toISOString(),
-      };
-      io.to('role:Manager').emit('warranty_claim_created', payload);
-      io.to('role:Admin').emit('warranty_claim_created', payload);
-    }
-    try {
-      await notificationService.notifyManagersAndAdmins({
-        type: 'warranty.claim_created',
-        category: 'warranty',
-        severity: 'info',
-        title: `Warranty claim: ${claimNumber}`,
-        message: `${w.product_name || 'Product'} — claim filed against warranty ${w.warranty_number}.`,
-        referenceType: 'warranty_claim',
-        referenceId: claim.id,
-        actionUrl: `/warranty-claims`,
-        createdBy,
-        skipForUserId: createdBy,
-      });
-    } catch (_e) { /* best-effort */ }
+    // Managers are told only once the claim has committed.
+    afterCommit.push(async () => {
+      if (io) {
+        const payload = {
+          claimId: claim.id,
+          claimNumber,
+          warrantyId,
+          warrantyNumber: w.warranty_number,
+          productId: w.product_id,
+          productName: w.product_name,
+          customerId: customer,
+          createdBy,
+          at: new Date().toISOString(),
+        };
+        io.to('role:Manager').emit('warranty_claim_created', payload);
+        io.to('role:Admin').emit('warranty_claim_created', payload);
+      }
+      try {
+        await notificationService.notifyManagersAndAdmins({
+          type: 'warranty.claim_created',
+          category: 'warranty',
+          severity: 'info',
+          title: `Warranty claim: ${claimNumber}`,
+          message: `${w.product_name || 'Product'} — claim filed against warranty ${w.warranty_number}.`,
+          referenceType: 'warranty_claim',
+          referenceId: claim.id,
+          actionUrl: `/warranty-claims`,
+          createdBy,
+          skipForUserId: createdBy,
+        });
+      } catch (_e) { /* best-effort */ }
+    });
     return claim;
   });
+  for (const send of afterCommit) await send();
+  return created;
 }
 
 // Build the zero-value replacement invoice that records the swap. We reuse
@@ -740,6 +768,7 @@ async function resolveWarrantyClaim({
       newWarrantyId = newRows[0].id;
 
       await logActivity({
+        client,
         entityType: 'warranty',
         entityId: newWarrantyId,
         action: 'warranty.created',
@@ -788,6 +817,7 @@ async function resolveWarrantyClaim({
     );
 
     await logActivity({
+      client,
       entityType: 'warranty_claim',
       entityId: claimId,
       action: 'warranty_claim.resolved',

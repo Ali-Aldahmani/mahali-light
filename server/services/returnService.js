@@ -582,7 +582,7 @@ async function createReturnRequest({
     throw new AppError(ERROR_CODES.BIZ_NO_INVOICE_NEEDS_APPROVAL);
   }
 
-  return withTransaction(async (client) => {
+  const result = await withTransaction(async (client) => {
     let invoice = null;
     let invoiceItems = [];
     if (referenceType === 'invoice' && referenceId) {
@@ -671,6 +671,7 @@ async function createReturnRequest({
     );
 
     await logActivity({
+      client,
       entityType: 'return_request',
       entityId: request.id,
       action: 'return_request.created',
@@ -679,49 +680,54 @@ async function createReturnRequest({
       notes: requestNote.trim(),
     });
 
-    if (io) {
-      const payload = {
-        requestId: request.id,
-        requestNumber: request.request_number,
-        returnType,
-        requestedBy,
-        isNoInvoice: !!noInvoiceReturn,
-        at: new Date().toISOString(),
-      };
-      io.to('role:Manager').emit('return_request_created', payload);
-      io.to('role:Admin').emit('return_request_created', payload);
-    }
+    return { request, totalValue, itemCount: resolvedItems.length };
+  });
 
-    try {
+  // Managers hear about the request only once it is committed, so they can
+  // never open a request that a failed commit rolled back.
+  const { request, totalValue } = result;
+  if (io) {
+    const payload = {
+      requestId: request.id,
+      requestNumber: request.request_number,
+      returnType,
+      requestedBy,
+      isNoInvoice: !!noInvoiceReturn,
+      at: new Date().toISOString(),
+    };
+    io.to('role:Manager').emit('return_request_created', payload);
+    io.to('role:Admin').emit('return_request_created', payload);
+  }
+
+  try {
+    await notificationService.notifyManagersAndAdmins({
+      type: 'approval.return_pending',
+      category: 'approval',
+      severity: noInvoiceReturn ? 'warning' : 'info',
+      title: `Return request ${request.request_number}${noInvoiceReturn ? ' (no invoice)' : ''}`,
+      message: `Pending approval. Total value AED ${Number(totalValue || 0).toFixed(2)}.`,
+      referenceType: 'return_request',
+      referenceId: request.id,
+      actionUrl: `/returns/requests/${request.id}`,
+      createdBy: requestedBy,
+      skipForUserId: requestedBy,
+    });
+    if (noInvoiceReturn) {
       await notificationService.notifyManagersAndAdmins({
-        type: 'approval.return_pending',
-        category: 'approval',
-        severity: noInvoiceReturn ? 'warning' : 'info',
-        title: `Return request ${request.request_number}${noInvoiceReturn ? ' (no invoice)' : ''}`,
-        message: `Pending approval. Total value AED ${Number(totalValue || 0).toFixed(2)}.`,
+        type: 'return.no_invoice_flagged',
+        category: 'return',
+        severity: 'critical',
+        title: `No-invoice return flagged: ${request.request_number}`,
+        message: `Manual scrutiny required — return submitted without an original invoice.`,
         referenceType: 'return_request',
         referenceId: request.id,
         actionUrl: `/returns/requests/${request.id}`,
         createdBy: requestedBy,
-        skipForUserId: requestedBy,
       });
-      if (noInvoiceReturn) {
-        await notificationService.notifyManagersAndAdmins({
-          type: 'return.no_invoice_flagged',
-          category: 'return',
-          severity: 'critical',
-          title: `No-invoice return flagged: ${request.request_number}`,
-          message: `Manual scrutiny required — return submitted without an original invoice.`,
-          referenceType: 'return_request',
-          referenceId: request.id,
-          actionUrl: `/returns/requests/${request.id}`,
-          createdBy: requestedBy,
-        });
-      }
-    } catch (_e) { /* best-effort */ }
+    }
+  } catch (_e) { /* best-effort */ }
 
-    return { request, totalValue, itemCount: resolvedItems.length };
-  });
+  return result;
 }
 
 // =======================================================================
@@ -970,9 +976,12 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
         ],
       );
 
-      // Void the warranty tied to this invoice item (if any) — the customer
-      // has handed the product back and cannot claim against it any longer.
-      if (it.invoice_item_id) {
+      // Void warranty cover for what came back. A return naming one warranty
+      // (a serial-numbered unit) voids just that one. Otherwise a warranty
+      // covers the whole sale line, so it is voided only once every unit on
+      // the line has been returned — a partial return keeps cover for the
+      // units the customer still has.
+      if (it.warranty_id) {
         await client.query(
           `UPDATE warranties
               SET status = 'void',
@@ -980,10 +989,33 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
                   voided_by = $1,
                   void_reason = COALESCE(void_reason, 'Returned via ' || $2),
                   updated_at = NOW()
-            WHERE invoice_item_id = $3
+            WHERE id = $3
               AND status = 'active'`,
-          [managerId, orderNumber, it.invoice_item_id],
+          [managerId, orderNumber, it.warranty_id],
         );
+      } else if (it.invoice_item_id) {
+        const original = originalItems.find((line) => line.id === it.invoice_item_id);
+        const { rows: returnedRows } = await client.query(
+          `SELECT COALESCE(SUM(rri.quantity), 0)::numeric AS qty
+             FROM return_request_items rri JOIN return_requests rr ON rr.id = rri.return_request_id
+            WHERE rri.invoice_item_id = $1 AND rr.status = 'approved'`,
+          [it.invoice_item_id],
+        );
+        const returnedAfterThis = money(Number(returnedRows[0].qty) + Number(it.quantity));
+        const lineFullyReturned = !original || returnedAfterThis >= Number(original.quantity) - 0.0001;
+        if (lineFullyReturned) {
+          await client.query(
+            `UPDATE warranties
+                SET status = 'void',
+                    voided_at = NOW(),
+                    voided_by = $1,
+                    void_reason = COALESCE(void_reason, 'Returned via ' || $2),
+                    updated_at = NOW()
+              WHERE invoice_item_id = $3
+                AND status = 'active'`,
+            [managerId, orderNumber, it.invoice_item_id],
+          );
+        }
       }
     }
 
@@ -1197,6 +1229,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
     }
 
     await logActivity({
+      client,
       entityType: 'return_request',
       entityId: request.id,
       action: 'return_request.approved',
@@ -1204,6 +1237,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       notes,
     });
     await logActivity({
+      client,
       entityType: 'return_order',
       entityId: orderId,
       action: 'return_order.executed',
@@ -1489,6 +1523,7 @@ async function rejectReturnRequest({
       [requestId, managerId, rejectionReason.trim()],
     );
     await logActivity({
+      client,
       entityType: 'return_request',
       entityId: requestId,
       action: 'return_request.rejected',
@@ -1568,6 +1603,7 @@ async function cancelReturnRequest({ requestId, userId, io = null }) {
       [requestId, userId],
     );
     await logActivity({
+      client,
       entityType: 'return_request',
       entityId: requestId,
       action: 'return_request.cancelled',

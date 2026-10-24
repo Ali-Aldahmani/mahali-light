@@ -4,6 +4,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { applyStockMovement } = require('./stockService');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const journalService = require('./journalService');
+const { logActivity } = require('../utils/activityLog');
 
 // Round to 2 decimals (currency) to avoid floating-point drift.
 function money(n) {
@@ -295,6 +296,16 @@ async function receiveItems({ poId, items, employeeId }) {
         userId: employeeId,
       });
     }
+
+    // The receipt's audit entry commits with the stock and journal it records.
+    await logActivity({
+      client,
+      entityType: 'purchase_order',
+      entityId: poId,
+      action: 'purchase_order.received',
+      performedBy: employeeId,
+      notes: `Received ${items.length} line${items.length === 1 ? '' : 's'}`,
+    });
 
     return {
       po: updatedPo[0],

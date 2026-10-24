@@ -216,51 +216,85 @@ async function create(req, res, next) {
       (req.user.permissions || []).includes('stock.adjust_direct');
 
     if (directlyAllowed) {
+      // Stock move, approval record and audit entry commit together: if any
+      // of them fails, none of them happens. Stock is re-read under the row
+      // lock so a sale landing in between can't make the difference stale.
+      const result = await withTransaction(async (client) => {
+        const { rows: lockedRows } = await client.query(
+          `SELECT stock_qty FROM product_variants WHERE id = $1 FOR UPDATE`,
+          [body.variantId],
+        );
+        const lockedQty = Number(lockedRows[0].stock_qty);
+        const targetQty =
+          body.adjustmentType === 'add' ? lockedQty + body.quantity : lockedQty - body.quantity;
+        if (targetQty < 0) {
+          throw new AppError(
+            ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
+            'Resulting stock cannot be negative.',
+            { status: 409 },
+          );
+        }
+        const lockedDifference = targetQty - lockedQty;
+
+        const { movement } = await applyStockMovement({
+          client,
+          variantId: body.variantId,
+          productId: variant.product_id,
+          type: 'adjustment',
+          quantity: lockedDifference,
+          referenceType: 'adjustment_direct',
+          employeeId: req.user.id,
+          notes: `${body.reason}: ${body.note}`,
+        });
+
+        const { rows: inserted } = await client.query(
+          `INSERT INTO stock_adjustment_requests
+             (product_id, variant_id, adjustment_type, current_qty, requested_qty,
+              difference, reason, request_note, requested_by,
+              status, reviewed_by, reviewed_at, applied_movement_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approved',$10,NOW(),$11)
+           RETURNING id`,
+          [
+            variant.product_id,
+            body.variantId,
+            body.adjustmentType,
+            lockedQty,
+            targetQty,
+            lockedDifference,
+            body.reason,
+            body.note,
+            req.user.id,
+            req.user.id,
+            movement.id,
+          ],
+        );
+
+        await logActivity({
+          client,
+          entityType: 'stock_adjustment',
+          entityId: inserted[0].id,
+          action: 'stock.adjustment_approved',
+          performedBy: req.user.id,
+          notes: `Direct adjustment on ${variant.product_name}: ${lockedDifference}`,
+        });
+
+        return { requestId: inserted[0].id, movement };
+      });
+
       const io = req.app.get('io');
-      const { movement } = await applyStockMovement({
-        variantId: body.variantId,
-        productId: variant.product_id,
-        type: 'adjustment',
-        quantity: difference,
-        referenceType: 'adjustment_direct',
-        employeeId: req.user.id,
-        notes: `${body.reason}: ${body.note}`,
-        io,
-      });
+      if (io) {
+        io.emit('stock_updated', {
+          productId: variant.product_id,
+          variantId: body.variantId,
+          newQty: Number(result.movement.qty_after),
+          movementType: 'adjustment',
+          delta: Number(result.movement.quantity),
+          changedBy: req.user.id,
+          timestamp: result.movement.timestamp,
+        });
+      }
 
-      const { rows: inserted } = await query(
-        `INSERT INTO stock_adjustment_requests
-           (product_id, variant_id, adjustment_type, current_qty, requested_qty,
-            difference, reason, request_note, requested_by,
-            status, reviewed_by, reviewed_at, applied_movement_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approved',$10,NOW(),$11)
-         RETURNING id`,
-        [
-          variant.product_id,
-          body.variantId,
-          body.adjustmentType,
-          currentQty,
-          requestedQty,
-          difference,
-          body.reason,
-          body.note,
-          req.user.id,
-          req.user.id,
-          movement.id,
-        ],
-      );
-
-      await logActivity({
-        entityType: 'stock_adjustment',
-        entityId: inserted[0].id,
-        action: 'stock.adjustment_approved',
-        performedBy: req.user.id,
-        notes: `Direct adjustment on ${variant.product_name}: ${difference}`,
-      });
-
-      const { rows: full } = await query(`${LIST_SQL} WHERE a.id = $1`, [
-        inserted[0].id,
-      ]);
+      const { rows: full } = await query(`${LIST_SQL} WHERE a.id = $1`, [result.requestId]);
       return created(res, shape(full[0]));
     }
 

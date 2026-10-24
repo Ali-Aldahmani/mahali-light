@@ -534,14 +534,6 @@ async function receive(req, res, next) {
       employeeId: req.user.id,
     });
 
-    await logActivity({
-      entityType: 'purchase_order',
-      entityId: id,
-      action: 'purchase_order.received',
-      performedBy: req.user.id,
-      notes: `Received ${body.items.length} line${body.items.length === 1 ? '' : 's'}`,
-    });
-
     // Now that the transaction is committed, emit sockets and re-check reorder.
     const io = req.app.get('io');
     if (io) {

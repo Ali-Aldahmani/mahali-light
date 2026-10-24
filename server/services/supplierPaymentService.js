@@ -4,6 +4,7 @@ const journalService = require('./journalService');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
+const { logActivity } = require('../utils/activityLog');
 
 const VALID_METHODS = new Set(['cash', 'bank_transfer', 'cheque']);
 
@@ -134,6 +135,9 @@ async function addPayment({
         referenceId: poId,
         employeeId,
         notes: `Payment to supplier on ${po.po_number || po.id}`,
+        // Paying a supplier from the drawer needs a drawer someone opened and
+        // counted; a closed drawer is refused rather than silently opened.
+        allowAutoOpen: false,
       });
     } else if (method === 'bank_transfer') {
       treasury = await bankService.recordBankOut({
@@ -171,6 +175,15 @@ async function addPayment({
         userId: employeeId,
       });
     }
+
+    await logActivity({
+      client,
+      entityType: 'supplier_payment',
+      entityId: payment.id,
+      action: 'purchase_order.payment_added',
+      performedBy: employeeId,
+      notes: `${amt.toFixed(2)} via ${method} on ${po.po_number}`,
+    });
 
     return {
       payment,
@@ -288,6 +301,15 @@ async function deletePayment({ paymentId, userId = null }) {
         });
       }
     }
+
+    await logActivity({
+      client,
+      entityType: 'supplier_payment',
+      entityId: paymentId,
+      action: 'purchase_order.payment_deleted',
+      performedBy: reversedBy,
+      notes: `Reversed ${amount.toFixed(2)} on PO ${po.po_number}`,
+    });
 
     return {
       payment: pm,

@@ -195,6 +195,7 @@ async function createBill(input, userId) {
     );
 
     await logActivity({
+      client,
       entityType: 'bill',
       entityId: bill.id,
       action: 'bill.created',
@@ -304,6 +305,7 @@ async function updateBill(id, input, userId) {
     );
 
     await logActivity({
+      client,
       entityType: 'bill',
       entityId: id,
       action: 'bill.updated',
@@ -359,6 +361,7 @@ async function setStatus({ id, status, userId }) {
       }
     }
     await logActivity({
+      client,
       entityType: 'bill',
       entityId: id,
       action:
@@ -413,6 +416,7 @@ async function generateNextCycleWith(client, billId, userId) {
   );
 
   await logActivity({
+    client,
     entityType: 'bill',
     entityId: bill.id,
     action: 'bill.next_cycle',
@@ -564,6 +568,7 @@ async function payBillPayment({
     const nextPayment = await generateNextCycleWith(client, payment.bill_id, userId);
 
     await logActivity({
+      client,
       entityType: 'bill_payment',
       entityId: billPaymentId,
       action: 'bill.paid',

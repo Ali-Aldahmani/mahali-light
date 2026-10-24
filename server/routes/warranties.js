@@ -16,9 +16,10 @@ router.get(
 router.get('/', requirePermission('warranty.view'), ctrl.list);
 router.post('/', requirePermission('warranty.create'), ctrl.create);
 router.get('/:id', requirePermission('warranty.view'), ctrl.getOne);
-router.put('/:id', requirePermission('warranty.create'), ctrl.update);
-// Voiding a warranty is a destructive operation — require the create
-// permission (managers/admins by default).
-router.post('/:id/void', requirePermission('warranty.create'), ctrl.voidOne);
+// Editing and voiding are separate from creating: cashiers create the
+// warranties on their sales, but changing or cancelling one is a manager's
+// call (warranty.edit / warranty.void, Manager and Admin by default).
+router.put('/:id', requirePermission('warranty.edit'), ctrl.update);
+router.post('/:id/void', requirePermission('warranty.void'), ctrl.voidOne);
 
 module.exports = router;

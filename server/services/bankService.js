@@ -216,25 +216,29 @@ async function postTransactionWith(client, params) {
   };
 }
 
+// Tells managers a bank balance changed. Call only after the commit.
+function emitBankBalance(io, result, { transactionType, employeeId = null }) {
+  if (!io) return;
+  const payload = {
+    bankAccountId: result.accountId,
+    bankName: result.bankName,
+    newBalance: result.balanceAfter,
+    delta: result.delta,
+    transactionType,
+    changedBy: employeeId || null,
+    at: new Date().toISOString(),
+  };
+  io.to('role:Manager').emit('bank_balance_updated', payload);
+  io.to('role:Admin').emit('bank_balance_updated', payload);
+}
+
 async function recordBank(params) {
   const { client, io = null, ...rest } = params;
   if (client) {
     return postTransactionWith(client, rest);
   }
   const result = await withTransaction((c) => postTransactionWith(c, rest));
-  if (io) {
-    const payload = {
-      bankAccountId: result.accountId,
-      bankName: result.bankName,
-      newBalance: result.balanceAfter,
-      delta: result.delta,
-      transactionType: rest.transactionType,
-      changedBy: rest.employeeId || null,
-      at: new Date().toISOString(),
-    };
-    io.to('role:Manager').emit('bank_balance_updated', payload);
-    io.to('role:Admin').emit('bank_balance_updated', payload);
-  }
+  emitBankBalance(io, result, rest);
   return result;
 }
 
@@ -479,6 +483,7 @@ module.exports = {
   recordBankIn,
   recordBankOut,
   postTransactionWith,
+  emitBankBalance,
   // CRUD
   listAccounts,
   getAccount,

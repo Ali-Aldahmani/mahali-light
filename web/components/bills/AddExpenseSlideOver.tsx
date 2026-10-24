@@ -93,7 +93,11 @@ export default function AddExpenseSlideOver({ open, onClose, onSaved }) {
         notes: notes.trim() || null,
         receipt,
       });
-      toast.success('Expense recorded.');
+      if (saved?.receiptUploadFailed) {
+        toast.warning('Expense recorded, but the receipt did not upload. Attach it from the expense list.');
+      } else {
+        toast.success('Expense recorded.');
+      }
       onSaved?.(saved);
       onClose();
     } catch (err) {

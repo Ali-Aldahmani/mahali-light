@@ -20,9 +20,19 @@ function flatten(obj, acc = []) {
 describe('permission catalog contract', () => {
   const keys = flatten(PERMISSIONS);
 
-  it('exposes 108 unique permission keys', () => {
-    expect(keys).toHaveLength(108);
-    expect(new Set(keys).size).toBe(108);
+  it('exposes 110 unique permission keys', () => {
+    expect(keys).toHaveLength(110);
+    expect(new Set(keys).size).toBe(110);
+  });
+
+  it('lets Cashier create warranties but not edit or void them', () => {
+    const c = new Set(ROLE_DEFAULTS.Cashier);
+    expect(c.has('warranty.create')).toBe(true);
+    expect(c.has('warranty.edit')).toBe(false);
+    expect(c.has('warranty.void')).toBe(false);
+    const m = new Set(ROLE_DEFAULTS.Manager);
+    expect(m.has('warranty.edit')).toBe(true);
+    expect(m.has('warranty.void')).toBe(true);
   });
 
   it('keeps backup archive downloads off the Manager role', () => {

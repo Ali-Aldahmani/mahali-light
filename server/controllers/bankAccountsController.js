@@ -119,26 +119,32 @@ async function deposit(req, res, next) {
   try {
     const body = depositSchema.parse(req.body || {});
     const io = req.app.get('io');
-    const result = await bankService.recordBankIn({
-      bankAccountId: req.params.id,
-      transactionType: 'manual_deposit',
-      amount: body.amount,
-      employeeId: req.user.id,
-      transactionDate: body.transactionDate || null,
-      description: body.description || null,
-      referenceType: body.referenceType || null,
-      referenceId: body.referenceId || null,
-      notes: body.notes || null,
-      io,
+    // The deposit and its audit entry commit together.
+    const result = await withTransaction(async (client) => {
+      const posted = await bankService.recordBankIn({
+        client,
+        bankAccountId: req.params.id,
+        transactionType: 'manual_deposit',
+        amount: body.amount,
+        employeeId: req.user.id,
+        transactionDate: body.transactionDate || null,
+        description: body.description || null,
+        referenceType: body.referenceType || null,
+        referenceId: body.referenceId || null,
+        notes: body.notes || null,
+      });
+      await logActivity({
+        client,
+        entityType: 'bank_account',
+        entityId: req.params.id,
+        action: 'bank_account.deposit',
+        performedBy: req.user.id,
+        newValue: { amount: body.amount },
+        notes: body.description,
+      });
+      return posted;
     });
-    await logActivity({
-      entityType: 'bank_account',
-      entityId: req.params.id,
-      action: 'bank_account.deposit',
-      performedBy: req.user.id,
-      newValue: { amount: body.amount },
-      notes: body.description,
-    });
+    bankService.emitBankBalance(io, result, { transactionType: 'manual_deposit', employeeId: req.user.id });
     return created(res, bankService.shapeTransaction(result.transaction));
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -162,27 +168,33 @@ async function withdrawal(req, res, next) {
   try {
     const body = withdrawalSchema.parse(req.body || {});
     const io = req.app.get('io');
-    const result = await bankService.recordBankOut({
-      bankAccountId: req.params.id,
-      transactionType: 'manual_withdrawal',
-      amount: body.amount,
-      employeeId: req.user.id,
-      transactionDate: body.transactionDate || null,
-      description: body.description || null,
-      referenceType: body.referenceType || null,
-      referenceId: body.referenceId || null,
-      notes: body.notes || null,
-      allowOverdraft: body.allowOverdraft,
-      io,
+    // The withdrawal and its audit entry commit together.
+    const result = await withTransaction(async (client) => {
+      const posted = await bankService.recordBankOut({
+        client,
+        bankAccountId: req.params.id,
+        transactionType: 'manual_withdrawal',
+        amount: body.amount,
+        employeeId: req.user.id,
+        transactionDate: body.transactionDate || null,
+        description: body.description || null,
+        referenceType: body.referenceType || null,
+        referenceId: body.referenceId || null,
+        notes: body.notes || null,
+        allowOverdraft: body.allowOverdraft,
+      });
+      await logActivity({
+        client,
+        entityType: 'bank_account',
+        entityId: req.params.id,
+        action: 'bank_account.withdrawal',
+        performedBy: req.user.id,
+        newValue: { amount: body.amount },
+        notes: body.description,
+      });
+      return posted;
     });
-    await logActivity({
-      entityType: 'bank_account',
-      entityId: req.params.id,
-      action: 'bank_account.withdrawal',
-      performedBy: req.user.id,
-      newValue: { amount: body.amount },
-      notes: body.description,
-    });
+    bankService.emitBankBalance(io, result, { transactionType: 'manual_withdrawal', employeeId: req.user.id });
     return created(res, bankService.shapeTransaction(result.transaction));
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -275,22 +287,23 @@ async function transfer(req, res, next) {
           body.notes || null,
         ],
       );
+      // The transfer's audit entry commits with both legs.
+      await logActivity({
+        client,
+        entityType: 'cash_transfer',
+        entityId: trRows[0].id,
+        action: 'treasury.transfer',
+        performedBy: req.user.id,
+        newValue: {
+          from: 'bank_account',
+          to: body.toType,
+          amount: body.amount,
+          fromId,
+          toId: body.toId || null,
+        },
+        notes: body.notes,
+      });
       return { out, in: inn, transfer: trRows[0] };
-    });
-
-    await logActivity({
-      entityType: 'cash_transfer',
-      entityId: result.transfer.id,
-      action: 'treasury.transfer',
-      performedBy: req.user.id,
-      newValue: {
-        from: 'bank_account',
-        to: body.toType,
-        amount: body.amount,
-        fromId,
-        toId: body.toId || null,
-      },
-      notes: body.notes,
     });
     if (io) {
       const at = new Date().toISOString();

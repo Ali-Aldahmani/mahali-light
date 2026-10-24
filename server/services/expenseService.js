@@ -148,6 +148,7 @@ async function createExpense({
     });
 
     await logActivity({
+      client,
       entityType: 'expense',
       entityId: expense.id,
       action: 'expense.created',
@@ -327,7 +328,8 @@ async function summary({ month, year }) {
 // Delete (same calendar day only)
 // =======================================================================
 async function deleteExpense({ id, userId }) {
-  return withTransaction(async (client) => {
+  let receiptToRemove = null;
+  const result = await withTransaction(async (client) => {
     const { rows } = await client.query(
       `SELECT * FROM one_time_expenses WHERE id = $1 FOR UPDATE`,
       [id],
@@ -381,17 +383,11 @@ async function deleteExpense({ id, userId }) {
       userId,
     });
 
-    if (expense.receipt_attachment) {
-      try {
-        deleteAttachmentFile(expense.receipt_attachment);
-      } catch (_e) {
-        // ignore
-      }
-    }
-
     await client.query(`DELETE FROM one_time_expenses WHERE id = $1`, [id]);
+    receiptToRemove = expense.receipt_attachment || null;
 
     await logActivity({
+      client,
       entityType: 'expense',
       entityId: id,
       action: 'expense.deleted',
@@ -403,6 +399,18 @@ async function deleteExpense({ id, userId }) {
     });
     return { deleted: true };
   });
+
+  // The receipt file goes only after the row is gone for good. Removing it
+  // inside the transaction left a live expense pointing at a missing file
+  // whenever the delete then rolled back.
+  if (receiptToRemove) {
+    try {
+      deleteAttachmentFile(receiptToRemove);
+    } catch (_e) {
+      // A leftover file is harmless; a missing one is not.
+    }
+  }
+  return result;
 }
 
 // Update the receipt attachment field on an expense.

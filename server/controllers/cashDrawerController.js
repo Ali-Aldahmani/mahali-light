@@ -262,20 +262,22 @@ async function transferToBank(req, res, next) {
           body.notes || null,
         ],
       );
+      // The transfer's audit entry commits with both legs.
+      await logActivity({
+        client,
+        entityType: 'cash_transfer',
+        entityId: transferRows[0].id,
+        action: 'treasury.transfer',
+        performedBy: req.user.id,
+        newValue: {
+          from: 'cash_drawer',
+          to: 'bank_account',
+          amount: body.amount,
+          toId: body.toId,
+        },
+        notes: body.notes,
+      });
       return { out, in: inn, transfer: transferRows[0] };
-    });
-    await logActivity({
-      entityType: 'cash_transfer',
-      entityId: result.transfer.id,
-      action: 'treasury.transfer',
-      performedBy: req.user.id,
-      newValue: {
-        from: 'cash_drawer',
-        to: 'bank_account',
-        amount: body.amount,
-        toId: body.toId,
-      },
-      notes: body.notes,
     });
     if (io) {
       const at = new Date().toISOString();

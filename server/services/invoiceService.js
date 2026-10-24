@@ -712,6 +712,23 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       [invoiceId],
     );
 
+    // Warranties for products with a default warranty are part of the sale:
+    // they commit with it, so a confirmed sale never lacks its warranties.
+    const warranties = await createWarrantiesFromInvoice(invoiceId, {
+      actorId: employeeId,
+      client,
+    });
+
+    await logActivity({
+      client,
+      entityType: 'invoice',
+      entityId: invoiceId,
+      action: 'invoice.confirmed',
+      performedBy: employeeId,
+      newValue: { total: totals.total },
+      notes: `Invoice ${finalRows[0].invoice_number} confirmed`,
+    });
+
     return {
       invoice: finalRows[0],
       items,
@@ -720,16 +737,8 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       creditUsed,
       stockEmits,
       treasuryPostings,
+      warranties,
     };
-  });
-
-  await logActivity({
-    entityType: 'invoice',
-    entityId: invoiceId,
-    action: 'invoice.confirmed',
-    performedBy: employeeId,
-    newValue: { total: result.totals.total },
-    notes: `Invoice ${result.invoice.invoice_number} confirmed`,
   });
 
   // Deferred socket emits. Stock first, then invoice_confirmed, then credit
@@ -805,23 +814,14 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     }
   }
 
-  // Create customer warranties for items whose product has a default
-  // warranty duration. Runs *after* commit so a warranty error never blocks
-  // the sale; if it fails we log and move on — staff can create the
-  // warranties manually from the warranty page.
-  let createdWarranties = [];
-  try {
-    createdWarranties = await createWarrantiesFromInvoice(invoiceId, {
-      actorId: employeeId,
-      io,
+  if (io && result.warranties.length) {
+    io.emit('warranty_created_batch', {
+      invoiceId,
+      invoiceNumber: result.invoice.invoice_number,
+      count: result.warranties.length,
+      at: new Date().toISOString(),
     });
-  } catch (err) {
-    console.warn(
-      '[invoiceService] auto-warranty creation failed:',
-      err.code || err.message,
-    );
   }
-  result.warranties = createdWarranties;
 
   // Kick off a background PDF generation. Non-blocking — caller doesn't wait.
   const pdf = safeLoadPdfService();
@@ -1018,15 +1018,23 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
       [invoiceId, employeeId, reason || 'Cancelled.'],
     );
 
-    return { invoice, stockEmits, treasuryPostings };
-  });
+    // The sale's warranties are voided with the cancellation, not after it.
+    const voidedWarranties = await voidWarrantiesForInvoice(invoiceId, {
+      actorId: employeeId,
+      reason: reason || 'Invoice cancelled',
+      client,
+    });
 
-  await logActivity({
-    entityType: 'invoice',
-    entityId: invoiceId,
-    action: 'invoice.cancelled',
-    performedBy: employeeId,
-    notes: reason || null,
+    await logActivity({
+      client,
+      entityType: 'invoice',
+      entityId: invoiceId,
+      action: 'invoice.cancelled',
+      performedBy: employeeId,
+      notes: reason || null,
+    });
+
+    return { invoice, stockEmits, treasuryPostings, voidedWarranties };
   });
 
   if (io) {
@@ -1067,15 +1075,12 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     });
   } catch (_e) { /* best-effort */ }
 
-  // Void any warranties tied to this invoice.
-  try {
-    await voidWarrantiesForInvoice(invoiceId, {
-      actorId: employeeId,
-      reason: reason || 'Invoice cancelled',
-      io,
+  if (io && result.voidedWarranties.length) {
+    io.emit('warranty_voided_batch', {
+      invoiceId,
+      count: result.voidedWarranties.length,
+      at: new Date().toISOString(),
     });
-  } catch (err) {
-    console.warn('[invoiceService] voiding warranties failed:', err.message);
   }
 
   // Regenerate PDF so the CANCELLED watermark appears. Best-effort, async.

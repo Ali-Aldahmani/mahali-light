@@ -133,6 +133,8 @@ const PERMISSIONS = {
   warranty: {
     view: 'warranty.view',
     create: 'warranty.create',
+    edit: 'warranty.edit',
+    void: 'warranty.void',
     claim: 'warranty.claim',
   },
   notification: {
@@ -171,7 +173,7 @@ const ROLE_DEFAULTS = {
     'analytics.export_forecast',
     'backup.view', 'backup.run_manual',
     'settings.view',
-    'warranty.view', 'warranty.create', 'warranty.claim',
+    'warranty.view', 'warranty.create', 'warranty.edit', 'warranty.void', 'warranty.claim',
     'user.force_logout',
     'notification.broadcast',
   ],
