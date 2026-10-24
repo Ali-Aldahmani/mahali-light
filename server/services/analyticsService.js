@@ -120,7 +120,10 @@ async function getNetProfitTrends({ groupBy = 'month', startDate, endDate } = {}
          ) all_exp
         GROUP BY 1
      )
-     SELECT b.bucket,
+     -- Bucket goes out as YYYY-MM-DD text: a DATE parsed into a JS Date lands
+     -- on local midnight, and toISOString() then reads it as the day before
+     -- in any timezone east of UTC (e.g. Asia/Dubai).
+     SELECT to_char(b.bucket, 'YYYY-MM-DD') AS bucket,
             COALESCE(s.revenue, 0)::float8 AS revenue,
             COALESCE(s.cogs, 0)::float8 AS cogs,
             COALESCE(e.expenses, 0)::float8 AS expenses
@@ -142,7 +145,7 @@ async function getNetProfitTrends({ groupBy = 'month', startDate, endDate } = {}
     const vsPrevPct = prevNet == null ? null : percentChange(netProfit, prevNet);
     prevNet = netProfit;
     return {
-      bucket: r.bucket?.toISOString?.().slice(0, 10) || r.bucket,
+      bucket: r.bucket,
       revenue,
       cogs,
       gross_profit: grossProfit,
@@ -1206,6 +1209,34 @@ async function getExpenseCategoryMonthly({ year } = {}) {
   };
 }
 
+// Confirmed invoices per day, for the Overview tab's brush chart. Runs from
+// the first confirmed invoice (at most `days` back) to today, with a zero
+// for every day without sales so the line has no gaps.
+async function getDailyInvoiceCounts({ days = 730 } = {}) {
+  const span = Math.min(Math.max(Number(days) || 730, 7), 3650);
+  const { rows } = await query(
+    `WITH bounds AS (
+       SELECT GREATEST(
+                COALESCE(MIN(confirmed_at)::date, CURRENT_DATE),
+                CURRENT_DATE - ($1::int - 1)
+              ) AS start_date
+         FROM invoices
+        WHERE status = 'confirmed'
+     ),
+     days AS (
+       SELECT generate_series((SELECT start_date FROM bounds), CURRENT_DATE, '1 day'::interval)::date AS d
+     )
+     SELECT to_char(days.d, 'YYYY-MM-DD') AS date,
+            COUNT(i.id)::int AS invoices
+       FROM days
+       LEFT JOIN invoices i ON i.status = 'confirmed' AND i.confirmed_at::date = days.d
+      GROUP BY days.d
+      ORDER BY days.d`,
+    [span],
+  );
+  return rows;
+}
+
 // Per-day series behind the dashboard's sparkline cards, for one period.
 // Days run from the period start up to the period end or today, whichever
 // comes first (no flat tail of future days).
@@ -1319,6 +1350,7 @@ module.exports = {
   getSalesTimeline,
   getCategoryBreakdown,
   getExpenseCategoryMonthly,
+  getDailyInvoiceCounts,
   parseDateRange,
   previousRange,
   percentChange,

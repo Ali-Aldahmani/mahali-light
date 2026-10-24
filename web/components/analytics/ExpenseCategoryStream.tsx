@@ -53,8 +53,8 @@ export default function ExpenseCategoryStream() {
   }, [result, thisYear]);
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+    <div className="flex h-full flex-col">
+      <div className="flex min-h-[32px] flex-wrap items-center justify-between gap-3 mb-2">
         <h3 className="text-sm font-semibold text-ink">Bills &amp; expenses by category</h3>
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Year">
           {years.map((y) => (
@@ -70,7 +70,7 @@ export default function ExpenseCategoryStream() {
           ))}
         </div>
       </div>
-      <div className="rounded-card border border-border bg-surface p-4">
+      <div className="flex-1 rounded-card border border-border bg-surface p-4">
         <Streamgraph
           data={data}
           series={series}

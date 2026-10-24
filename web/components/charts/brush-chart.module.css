@@ -1,0 +1,102 @@
+/* Accessible brush chart — layout, paint and interaction states.
+   Matches the other charts: the Arc foundation tokens are scoped to the
+   figure and mapped onto the app's Tailwind theme. The series draws in the
+   brand accent; the overview strip below picks the window. */
+
+.figure {
+  --space-4: 1rem;
+  --font-body: var(--font-inter, Inter), ui-sans-serif, system-ui, sans-serif;
+  --tracking-body: -0.01em;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --leading-body: 1.4;
+  --radius-pill: 9999px;
+  --foreground: theme('colors.ink.DEFAULT');
+  --text-secondary: theme('colors.ink.muted');
+  --text-muted: color-mix(in oklab, theme('colors.ink.muted') 70%, theme('colors.surface'));
+  --surface: theme('colors.surface');
+  --surface-raised: theme('colors.surface');
+  --border: color-mix(in oklab, theme('colors.border') 75%, theme('colors.surface'));
+  --border-strong: color-mix(in oklab, theme('colors.ink.muted') 35%, theme('colors.surface'));
+  --accent: theme('colors.accent.DEFAULT');
+  --series: var(--accent);
+  --event: #2563eb;
+  --shadow-floating: 0 20px 48px rgb(0 0 0 / 0.105), 0 3px 10px rgb(0 0 0 / 0.045);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-instant: 120ms;
+  --duration-fast: 160ms;
+
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* Plot with its value axis on the right, the date axis, then the overview strip. */
+.chart { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 40px; grid-template-rows: auto 26px auto; row-gap: 0; min-width: 0; }
+.plot { position: relative; grid-area: 1 / 1; min-width: 0; outline: none; cursor: crosshair; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.plot:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.svg { display: block; overflow: visible; }
+.grid { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+.baseline { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; }
+
+.line { fill: none; stroke: var(--series); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.area { fill: color-mix(in oklab, var(--series) 10%, transparent); stroke: none; }
+.trend { fill: none; stroke: var(--series); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.band { fill: color-mix(in oklab, var(--series) 14%, transparent); stroke: none; }
+
+.crosshair { stroke: var(--border-strong); stroke-width: 1; opacity: 0; shape-rendering: crispEdges; pointer-events: none; transition: opacity var(--duration-instant) var(--ease-standard); }
+.dot { fill: var(--series); stroke: var(--surface); stroke-width: 2; opacity: 0; pointer-events: none; transition: opacity var(--duration-instant) var(--ease-standard); }
+.chart[data-active] .crosshair, .chart[data-active] .dot { opacity: 1; }
+
+/* Event markers: a dashed rule through the plot and a dot with an optional label at the top. */
+.eventRule { stroke: color-mix(in oklab, var(--event) 45%, transparent); stroke-width: 1; stroke-dasharray: 2 3; shape-rendering: crispEdges; }
+.eventRule[data-active] { stroke: var(--event); }
+.event { position: absolute; top: 8px; display: inline-flex; align-items: center; gap: 6px; transform: translateX(-5px); cursor: default; }
+.event[data-flip] { flex-direction: row-reverse; transform: translateX(calc(-100% + 5px)); }
+.eventDot { width: 10px; height: 10px; flex: none; border: 2px solid var(--surface); border-radius: var(--radius-pill); background: var(--event); }
+.eventLabel { display: none; color: var(--text-secondary); font-size: var(--text-xs); line-height: 1; white-space: nowrap; }
+.event[data-labelled] .eventLabel { display: inline; }
+.event[data-active] .eventLabel { color: var(--foreground); }
+
+/* The tooltip floats over the plot, so it is the one layer here with a shadow. */
+.tooltip { position: absolute; top: 0; left: 0; z-index: 1; display: grid; min-width: 140px; max-width: min(240px, 100%); gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-raised); box-shadow: var(--shadow-floating); opacity: 0; pointer-events: none; scale: 0.96; transition: opacity var(--duration-fast) var(--ease-standard), scale var(--duration-fast) var(--ease-standard); }
+.chart[data-active] .tooltip { opacity: 1; scale: 1; }
+.tipTitle { margin: 0 0 2px; color: var(--text-secondary); font-size: var(--text-xs); line-height: var(--leading-body); white-space: nowrap; }
+.tipValue { margin: 0; color: var(--foreground); font-size: 1rem; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.tipNote { margin: 0; color: var(--text-muted); font-size: var(--text-xs); line-height: var(--leading-body); font-variant-numeric: tabular-nums; }
+.tipEvent { display: flex; align-items: center; gap: 6px; margin: 4px 0 0; color: var(--foreground); font-size: var(--text-xs); }
+.tipEventDot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--event); }
+
+.message { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--text-muted); font-size: var(--text-sm); pointer-events: none; }
+
+.gutter { position: relative; grid-area: 1 / 2; min-width: 0; }
+.tick { position: absolute; left: 8px; transform: translateY(-50%); color: var(--text-muted); font-size: var(--text-xs); line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
+
+.axis { position: relative; grid-area: 2 / 1; min-width: 0; }
+.axisLabel { position: absolute; top: 8px; color: var(--text-muted); font-size: var(--text-xs); line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Overview strip: the whole history, quiet outside the window and in full colour inside it. */
+.strip { position: relative; grid-area: 3 / 1; min-width: 0; margin-top: 10px; border-radius: 8px; background: color-mix(in oklab, var(--foreground) 3%, transparent); cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.overviewArea { fill: color-mix(in oklab, var(--foreground) 8%, transparent); }
+.overviewLine { fill: none; stroke: color-mix(in oklab, var(--foreground) 30%, transparent); stroke-width: 1.25; }
+.overviewAreaIn { fill: color-mix(in oklab, var(--series) 16%, transparent); }
+.overviewLineIn { fill: none; stroke: var(--series); stroke-width: 1.5; }
+.overviewEvent { fill: var(--event); stroke: var(--surface); stroke-width: 1.5; }
+.shade { position: absolute; top: 0; bottom: 0; background: color-mix(in oklab, var(--surface) 45%, transparent); pointer-events: none; }
+.shade[data-edge="start"] { border-radius: 8px 0 0 8px; }
+.shade[data-edge="end"] { border-radius: 0 8px 8px 0; }
+.window { position: absolute; top: 0; bottom: 0; border: 1px solid color-mix(in oklab, var(--series) 55%, transparent); border-radius: 6px; cursor: grab; outline: none; }
+.window:active { cursor: grabbing; }
+.window:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.handle { position: absolute; top: 50%; display: grid; width: 12px; height: 28px; place-items: center; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); cursor: ew-resize; outline: none; transform: translate(-50%, -50%); }
+.handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grip { width: 2px; height: 12px; border-radius: 1px; background: var(--border-strong); }
+
+.srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .crosshair, .dot, .tooltip { transition: none; }
+}

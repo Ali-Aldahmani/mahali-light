@@ -39,6 +39,9 @@ export function getNetProfitTrends(params) {
 export function getExpenseCategoryMonthly(params) {
   return apiGet(`/analytics/expense-categories-monthly${qs(params)}`);
 }
+export function getDailyInvoiceCounts(params) {
+  return apiGet(`/analytics/daily-invoices${qs(params)}`);
+}
 export function getTopProducts(params) {
   return apiGet(`/analytics/top-products${qs(params)}`);
 }

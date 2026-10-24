@@ -304,6 +304,17 @@ async function expenseCategoryMonthly(req, res, next) {
   }
 }
 
+async function dailyInvoiceCounts(req, res, next) {
+  try {
+    const parsed = z
+      .object({ days: z.coerce.number().int().min(7).max(3650).optional() })
+      .parse(req.query);
+    ok(res, await analyticsService.getDailyInvoiceCounts(parsed));
+  } catch (err) {
+    next(err.errors ? zodFail(err) : err);
+  }
+}
+
 async function categoryBreakdown(req, res, next) {
   try {
     const parsed = rangeSchema
@@ -526,6 +537,7 @@ module.exports = {
   salesTimeline,
   categoryBreakdown,
   expenseCategoryMonthly,
+  dailyInvoiceCounts,
   listReorder,
   getReorder,
   listAnnualPlan,
