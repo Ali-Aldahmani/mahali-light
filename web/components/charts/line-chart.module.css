@@ -1,6 +1,7 @@
 /* Accessible line chart — layout, paint and interaction states.
    Styling matches the Arc UI line chart. The Arc foundation tokens are scoped
-   to the figure so the chart carries its own palette inside any card. */
+   to the figure and mapped onto the app's Tailwind theme, so the chart picks
+   up the same ink / surface / border / accent colours as the cards around it. */
 
 .figure {
   --space-4: 1rem;
@@ -10,14 +11,14 @@
   --text-sm: 0.875rem;
   --leading-body: 1.4;
   --radius-pill: 9999px;
-  --foreground: #111827;
-  --text-secondary: #6b7280;
-  --text-muted: #9ca3af;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --accent: #f97316;
+  --foreground: theme('colors.ink.DEFAULT');
+  --text-secondary: theme('colors.ink.muted');
+  --text-muted: color-mix(in oklab, theme('colors.ink.muted') 70%, theme('colors.surface'));
+  --surface: theme('colors.surface');
+  --surface-raised: theme('colors.surface');
+  --border: color-mix(in oklab, theme('colors.border') 75%, theme('colors.surface'));
+  --border-strong: color-mix(in oklab, theme('colors.ink.muted') 35%, theme('colors.surface'));
+  --accent: theme('colors.accent.DEFAULT');
   --shadow-floating: 0 20px 48px rgb(0 0 0 / 0.105), 0 3px 10px rgb(0 0 0 / 0.045);
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);

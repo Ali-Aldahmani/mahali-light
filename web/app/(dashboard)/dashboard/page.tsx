@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
@@ -182,23 +182,15 @@ export default function DashboardPage() {
           {/* Row 2 — sales chart + employee leaderboard */}
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-4">
             <div className="lg:col-span-3">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-ink">Revenue over time</h3>
-                <span className="text-xs text-ink-muted">
-                  This period vs previous · {kpis?.revenue_growth_pct >= 0 ? (
-                    <span className="text-success inline-flex items-center gap-1">
-                      <TrendingUp className="h-3 w-3" />
-                      {Math.abs(kpis?.revenue_growth_pct || 0).toFixed(1)}%
-                    </span>
-                  ) : (
-                    <span className="text-error inline-flex items-center gap-1">
-                      <TrendingDown className="h-3 w-3" />
-                      {Math.abs(kpis?.revenue_growth_pct || 0).toFixed(1)}%
-                    </span>
-                  )}
-                </span>
-              </div>
-              <SalesTimelineChart rows={timeline} />
+              <SalesTimelineChart
+                rows={timeline}
+                total={kpis?.revenue}
+                growthPct={kpis ? Number(kpis.revenue_growth_pct || 0) : null}
+                ranges={RANGES}
+                range={rangeKey}
+                onRangeChange={setRangeKey}
+                loading={busy}
+              />
             </div>
             <div className="lg:col-span-2">
               <div className="flex items-center justify-between mb-2">
