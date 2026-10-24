@@ -985,6 +985,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
           transactionType: 'refund', amount: posting.amount,
           referenceType: 'invoice_cancel', referenceId: invoiceId, employeeId,
           description: `Cancellation of ${invoice.invoice_number}`, allowOverdraft: true,
+          allowInactiveAccount: true,
         });
         treasuryPostings.push({ method: 'bank', ...posted });
       }

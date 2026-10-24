@@ -44,6 +44,11 @@ function buildListFilters(req) {
     parts.push(`w.customer_id = $${i++}`);
     params.push(req.query.customer_id);
   }
+  // The invoice detail page lists only that invoice's warranties.
+  if (req.query.invoice_id) {
+    parts.push(`w.invoice_id = $${i++}`);
+    params.push(req.query.invoice_id);
+  }
   if (req.query.product_id) {
     parts.push(`w.product_id = $${i++}`);
     params.push(req.query.product_id);

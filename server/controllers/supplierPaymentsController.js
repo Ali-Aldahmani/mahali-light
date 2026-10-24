@@ -155,7 +155,7 @@ async function remove(req, res, next) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
 
-    const { payment, po, treasury } = await deletePayment({ paymentId: id });
+    const { payment, po, treasury } = await deletePayment({ paymentId: id, userId: req.user.id });
 
     if (existing[0].receipt_attachment) {
       deleteAttachmentFile(existing[0].receipt_attachment);

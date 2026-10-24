@@ -528,7 +528,7 @@ async function getEmployeePerformance({
               COUNT(i.id)::int AS invoices_created,
               COALESCE(SUM(i.total), 0)::float8 AS revenue_generated,
               COALESCE(AVG(i.total), 0)::float8 AS avg_invoice_value,
-              COALESCE(SUM(i.discount_amount + i.invoice_discount), 0)::float8 AS discounts_given
+              COALESCE(SUM(i.discount_amount), 0)::float8 AS discounts_given
          FROM invoices i
          JOIN users u ON u.id = i.confirmed_by
          LEFT JOIN employees e ON e.id = u.employee_id

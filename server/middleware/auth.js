@@ -14,9 +14,13 @@ function getJwtSecret() {
   return secret;
 }
 
+// Every token gets a random ID (jti). Without it two logins by the same user
+// in the same second produced identical tokens, whose identical hashes then
+// collided on user_sessions.token_hash.
 function signToken(payload, opts = {}) {
   return jwt.sign(payload, getJwtSecret(), {
     expiresIn: process.env.JWT_EXPIRES_IN || '8h',
+    jwtid: crypto.randomUUID(),
     ...opts,
   });
 }

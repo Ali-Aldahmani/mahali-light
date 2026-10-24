@@ -279,6 +279,7 @@ async function voidPayment({ paymentId, voidedBy = null }) {
           employeeId: pm.employee_id,
           description: 'Reversal of customer payment',
           allowOverdraft: true,
+          allowInactiveAccount: true,
         });
       }
 

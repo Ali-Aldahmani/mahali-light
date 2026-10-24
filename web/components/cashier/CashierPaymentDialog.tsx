@@ -86,7 +86,9 @@ export default function CashierPaymentDialog({
   };
 
   const guestBalance = !registered && summary.remaining > 0.001;
-  const blocked = guestBalance || total <= 0;
+  // A fully discounted sale (total 0) is valid: zero-amount payments are
+  // skipped and the server confirms it as paid. Only a negative total blocks.
+  const blocked = guestBalance || total < 0;
 
   return (
     <Modal

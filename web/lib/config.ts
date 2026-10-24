@@ -78,9 +78,31 @@ export function fileUrl(relPath?: string | null): string | null {
   return `${getFilesBase()}/${clean}`;
 }
 
+const BROWSER_PC_ID_KEY = 'mahali.browserPcId';
+
+// One identifier per browser, kept in localStorage. It used to be the page's
+// hostname — the server's name, identical on every PC — so two PCs signed in
+// as the same user replaced each other's session.
+export function browserPcIdentifier(storage: Pick<Storage, 'getItem' | 'setItem'> | null): string {
+  try {
+    const existing = storage?.getItem(BROWSER_PC_ID_KEY);
+    if (existing) return existing;
+    // crypto.randomUUID is missing on plain-HTTP LAN pages (not a secure context).
+    const random =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    const id = `web-${random}`;
+    storage?.setItem(BROWSER_PC_ID_KEY, id);
+    return id;
+  } catch (_e) {
+    return typeof window !== 'undefined' ? `${window.location.hostname}-web` : 'web-client';
+  }
+}
+
 export const PC_IDENTIFIER =
   (typeof window !== 'undefined' && (window as any).electron?.pcIdentifier) ||
-  (typeof window !== 'undefined' ? `${window.location.hostname}-web` : 'web-client');
+  (typeof window !== 'undefined' ? browserPcIdentifier(window.localStorage) : 'web-client');
 
 export const TIMEZONE = 'Asia/Dubai';
 

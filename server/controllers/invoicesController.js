@@ -521,9 +521,11 @@ async function updateItems(req, res, next) {
         );
       }
 
+      // An omitted customerId keeps the current customer; an explicit null
+      // removes it (the cashier screen always sends the field).
       await client.query(
         `UPDATE invoices
-            SET customer_id = $1,
+            SET customer_id = CASE WHEN $6 THEN $1::uuid ELSE customer_id END,
                 invoice_discount = COALESCE($2, invoice_discount),
                 notes = COALESCE($3, notes),
                 updated_by = $4,
@@ -535,6 +537,7 @@ async function updateItems(req, res, next) {
           body.notes,
           req.user.id,
           id,
+          body.customerId !== undefined,
         ],
       );
 

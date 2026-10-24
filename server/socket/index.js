@@ -36,10 +36,12 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       const payload = verifyToken(token);
 
       const { rows } = await query(
-        `SELECT s.id AS session_id, s.pc_identifier, u.username, r.name AS role_name
+        `SELECT s.id AS session_id, s.pc_identifier, u.username, r.name AS role_name,
+                e.name AS employee_name
            FROM user_sessions s
            JOIN users u ON u.id = s.user_id
            LEFT JOIN roles r ON r.id = u.role_id
+           LEFT JOIN employees e ON e.id = u.employee_id
           WHERE s.token_hash = $1 AND s.logout_at IS NULL
           ORDER BY s.login_at DESC LIMIT 1`,
         [hashToken(token)],
@@ -48,6 +50,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
 
       socket.data.userId = payload.sub;
       socket.data.username = rows[0].username;
+      socket.data.employeeName = rows[0].employee_name || null;
       socket.data.role = rows[0].role_name;
       socket.data.sessionId = rows[0].session_id;
       socket.data.pcIdentifier = rows[0].pc_identifier;
@@ -59,7 +62,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
   });
 
   io.on('connection', (socket) => {
-    const { userId, username, role, pcIdentifier, sessionId } = socket.data;
+    const { userId, username, employeeName, role, pcIdentifier, sessionId } = socket.data;
 
     socket.join(`user:${userId}`);
     // Per-session room used for targeted force-logout. Named after the
@@ -69,7 +72,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
     if (role) socket.join(`role:${role}`);
 
     socket.emit('connected', { userId, username, role });
-    socket.broadcast.emit('user_online', { userId, username, role, pcIdentifier });
+    socket.broadcast.emit('user_online', { userId, username, employeeName, role, pcIdentifier });
 
     socket.on('heartbeat', async () => {
       try {

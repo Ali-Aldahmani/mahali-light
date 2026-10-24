@@ -368,6 +368,7 @@ async function deleteExpense({ id, userId }) {
           referenceId: expense.id,
           employeeId: userId,
           description: 'Reversal of deleted expense',
+          allowInactiveAccount: true,
         });
       }
     }

@@ -24,6 +24,7 @@ export default function PresenceWidget() {
         const mapped = (rows || []).map((r) => ({
           userId: r.userId,
           username: r.username,
+          employeeName: r.employeeName,
           role: r.role,
           pcIdentifier: r.pcIdentifier,
           status: r.status,
@@ -38,6 +39,9 @@ export default function PresenceWidget() {
   }, [canSeeAll, setOnlineUsers]);
 
   if (!canSeeAll) return null;
+
+  // Staff know each other by name; the username is shown underneath.
+  const displayName = (u: { employeeName?: string | null; username?: string; [key: string]: any }) => u.employeeName || u.username || 'Unknown';
 
   const visible = onlineUsers.slice(0, 5);
   const overflow = Math.max(0, onlineUsers.length - visible.length);
@@ -58,7 +62,7 @@ export default function PresenceWidget() {
               {visible.map((u) => (
                 <Avatar
                   key={`${u.userId}-${u.pcIdentifier}`}
-                  name={u.username}
+                  name={displayName(u)}
                   size="xs"
                   online
                   status={u.status}
@@ -92,12 +96,13 @@ export default function PresenceWidget() {
                     key={`${u.userId}-${u.pcIdentifier}`}
                     className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2"
                   >
-                    <Avatar name={u.username} size="sm" online status={u.status} />
+                    <Avatar name={displayName(u)} size="sm" online status={u.status} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink truncate">
-                        {u.username}
+                        {displayName(u)}
                       </p>
                       <p className="text-xs text-ink-muted truncate">
+                        {u.employeeName ? `${u.username} · ` : ''}
                         {u.role || '—'} · {u.pcIdentifier}
                       </p>
                     </div>

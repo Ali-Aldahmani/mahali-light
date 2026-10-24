@@ -73,7 +73,10 @@ function shapeTransaction(row) {
 // =======================================================================
 // Resolution helpers
 // =======================================================================
-async function resolveAccount(client, bankAccountId) {
+// A named account must be active. `allowInactive` is only for reversals,
+// which return money to the account the original movement used even if that
+// account has since been closed.
+async function resolveAccount(client, bankAccountId, { allowInactive = false } = {}) {
   if (bankAccountId) {
     const { rows } = await client.query(
       `SELECT * FROM bank_accounts WHERE id = $1 FOR UPDATE`,
@@ -84,6 +87,13 @@ async function resolveAccount(client, bankAccountId) {
         ERROR_CODES.RESOURCE_NOT_FOUND,
         'Bank account not found.',
         { status: 404 },
+      );
+    }
+    if (!rows[0].is_active && !allowInactive) {
+      throw new AppError(
+        ERROR_CODES.BIZ_INVALID_STATE,
+        `Bank account "${rows[0].bank_name}" is inactive. Choose an active account.`,
+        { status: 409 },
       );
     }
     return rows[0];
@@ -122,6 +132,7 @@ async function postTransactionWith(client, params) {
     receiptAttachment = null,
     notes = null,
     allowOverdraft = false,
+    allowInactiveAccount = false,
   } = params;
 
   if (!ALLOWED_TX_TYPES.has(transactionType)) {
@@ -144,7 +155,7 @@ async function postTransactionWith(client, params) {
     );
   }
 
-  const account = await resolveAccount(client, bankAccountId);
+  const account = await resolveAccount(client, bankAccountId, { allowInactive: allowInactiveAccount });
   const before = money(account.current_balance);
   const delta = direction === 'in' ? amt : -amt;
   const after = money(before + delta);

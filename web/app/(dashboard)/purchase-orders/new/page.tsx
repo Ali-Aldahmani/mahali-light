@@ -27,6 +27,7 @@ import { getSupplier } from '@/services/supplierService';
 import { useAuthStore } from '@/store/authStore';
 import { formatCurrency, formatQty, storeDate } from '@/lib/utils/format';
 import type { POItem, VariantSearchResult } from '@/components/purchases/types';
+import { newPoSavedMessage } from '@/lib/purchases/newPoMessage';
 import type { Supplier } from '@/components/suppliers/types';
 import DateField from '@/components/ui/DateField';
 
@@ -202,6 +203,8 @@ function NewPurchaseOrderPageContent() {
       }
     }
     setSaving(true);
+    // Set only once the payment call has actually succeeded.
+    let paymentRecorded = false;
     try {
       const created = await createPurchaseOrder({
         supplierId: supplier.id,
@@ -265,6 +268,7 @@ function NewPurchaseOrderPageContent() {
                 paymentDate: todayISO(),
                 notes: null,
               });
+              paymentRecorded = true;
             }
           } catch (_e) {
             toast.warning('Order saved, but the payment could not be recorded.');
@@ -273,15 +277,12 @@ function NewPurchaseOrderPageContent() {
       }
 
       toast.success(
-        asDraft
-          ? 'PO saved as draft.'
-          : recordPayment && markReceived
-            ? `PO ${created.poNumber} confirmed, received, and payment recorded.`
-            : recordPayment
-              ? `PO ${created.poNumber} confirmed and payment recorded.`
-              : markReceived
-                ? `PO ${created.poNumber} confirmed and received.`
-                : `PO ${created.poNumber} confirmed.`,
+        newPoSavedMessage({
+          asDraft,
+          poNumber: created.poNumber,
+          received: markReceived,
+          paymentRecorded,
+        }),
       );
       router.push(`/purchase-orders/${created.id}`);
     } catch (err: any) {

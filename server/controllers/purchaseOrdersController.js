@@ -383,13 +383,15 @@ async function update(req, res, next) {
         );
       }
 
+      // Dates and notes change only when sent; sending an empty value clears
+      // them. Before, any update that left them out wiped them.
       await client.query(
         `UPDATE purchase_orders
             SET supplier_id = COALESCE($1, supplier_id),
                 order_date = COALESCE($2, order_date),
-                expected_date = $3,
-                due_date = $4,
-                notes = $5,
+                expected_date = CASE WHEN $7 THEN $3::date ELSE expected_date END,
+                due_date = CASE WHEN $8 THEN $4::date ELSE due_date END,
+                notes = CASE WHEN $9 THEN $5 ELSE notes END,
                 updated_at = NOW()
           WHERE id = $6`,
         [
@@ -399,6 +401,9 @@ async function update(req, res, next) {
           body.dueDate || null,
           body.notes || null,
           id,
+          body.expectedDate !== undefined,
+          body.dueDate !== undefined,
+          body.notes !== undefined,
         ],
       );
 

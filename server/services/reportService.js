@@ -61,7 +61,8 @@ async function salesSummary(params) {
      SELECT
        (SELECT COUNT(*)::int FROM inv) AS invoice_count,
        (SELECT COALESCE(SUM(subtotal),0)::float8 FROM inv) AS gross_sales,
-       (SELECT COALESCE(SUM(discount_amount + invoice_discount),0)::float8 FROM inv) AS discounts,
+       -- discount_amount already includes invoice_discount (see computeTotals).
+       (SELECT COALESCE(SUM(discount_amount),0)::float8 FROM inv) AS discounts,
        (SELECT COALESCE(SUM(taxable_amount),0)::float8 FROM inv) AS net_sales,
        (SELECT COALESCE(SUM(tax_amount),0)::float8 FROM inv) AS vat,
        (SELECT COALESCE(SUM(ro.refund_total),0)::float8
@@ -286,7 +287,7 @@ async function salesByEmployee(params) {
     `SELECT u.id AS employee_id, u.username, e.name AS employee_name,
             COUNT(i.id)::int AS invoice_count,
             COALESCE(SUM(i.total),0)::float8 AS revenue,
-            COALESCE(SUM(i.discount_amount + i.invoice_discount),0)::float8 AS discounts,
+            COALESCE(SUM(i.discount_amount),0)::float8 AS discounts,
             COALESCE(AVG(i.total),0)::float8 AS avg_invoice
        FROM invoices i
        LEFT JOIN users u ON u.id = i.confirmed_by
@@ -1142,7 +1143,7 @@ async function employeePerformance(params) {
             COUNT(i.id)::int AS invoice_count,
             COALESCE(SUM(i.total),0)::float8 AS revenue,
             COALESCE(AVG(i.total),0)::float8 AS avg_invoice,
-            COALESCE(SUM(i.discount_amount + i.invoice_discount),0)::float8 AS discounts,
+            COALESCE(SUM(i.discount_amount),0)::float8 AS discounts,
             (SELECT COUNT(*)::int FROM return_orders ro
               WHERE ro.employee_id = u.id
                 AND ro.created_at::date BETWEEN $2::date AND $3::date) AS returns,

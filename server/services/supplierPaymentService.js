@@ -48,6 +48,9 @@ async function addPayment({
     });
   }
 
+  // One business date for the payment row, the bank movement and the journal.
+  const businessDate = paymentDate || todayStoreDate();
+
   return withTransaction(async (client) => {
     const { rows: poRows } = await client.query(
       `SELECT * FROM purchase_orders WHERE id = $1 FOR UPDATE`,
@@ -92,7 +95,7 @@ async function addPayment({
         amt,
         method,
         bankAccountId,
-        paymentDate || todayStoreDate(),
+        businessDate,
         employeeId,
         receiptAttachment,
         notes,
@@ -141,9 +144,19 @@ async function addPayment({
         referenceType: 'purchase_order',
         referenceId: poId,
         employeeId,
+        transactionDate: businessDate,
         description: `Payment to supplier on ${po.po_number || po.id}`,
         allowOverdraft: true,
       });
+      // Keep the account the money actually left from, so a reversal goes
+      // back to it even if the default bank changes later.
+      if (!payment.bank_account_id && treasury.accountId) {
+        await client.query(
+          `UPDATE supplier_payments SET bank_account_id = $1 WHERE id = $2`,
+          [treasury.accountId, payment.id],
+        );
+        payment.bank_account_id = treasury.accountId;
+      }
     }
 
     // Cheques are tracked but don't move money until cleared, so no journal
@@ -154,7 +167,7 @@ async function addPayment({
         amount: amt,
         method: method === 'cash' ? 'cash' : 'bank',
         poNumber: po.po_number,
-        date: payment.payment_date,
+        date: businessDate,
         userId: employeeId,
       });
     }
@@ -176,7 +189,9 @@ async function addPayment({
 }
 
 // Delete a payment but only if it was created today. Reverses the PO totals.
-async function deletePayment({ paymentId }) {
+// `userId` is the person reversing it; the reversal entries are theirs, not
+// the original payer's.
+async function deletePayment({ paymentId, userId = null }) {
   return withTransaction(async (client) => {
     const { rows: pmRows } = await client.query(
       `SELECT * FROM supplier_payments WHERE id = $1 FOR UPDATE`,
@@ -186,6 +201,7 @@ async function deletePayment({ paymentId }) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
     const pm = pmRows[0];
+    const reversedBy = userId || pm.employee_id;
 
     const today = todayStoreDate();
     const createdDay = storeDate(new Date(pm.created_at));
@@ -240,7 +256,7 @@ async function deletePayment({ paymentId }) {
     if (pm.payment_method === 'cash' || pm.payment_method === 'bank_transfer') {
       await journalService.reverseSupplierPaymentEntries(client, paymentId, {
         date: todayStoreDate(),
-        userId: pm.employee_id,
+        userId: reversedBy,
       });
     }
 
@@ -255,7 +271,7 @@ async function deletePayment({ paymentId }) {
           amount,
           referenceType: 'purchase_order',
           referenceId: po.id,
-          employeeId: pm.employee_id,
+          employeeId: reversedBy,
           notes: `Reversal of supplier payment ${paymentId}`,
         });
       } else if (pm.payment_method === 'bank_transfer') {
@@ -266,8 +282,9 @@ async function deletePayment({ paymentId }) {
           amount,
           referenceType: 'purchase_order',
           referenceId: po.id,
-          employeeId: pm.employee_id,
+          employeeId: reversedBy,
           description: `Reversal of supplier payment`,
+          allowInactiveAccount: true,
         });
       }
     }
