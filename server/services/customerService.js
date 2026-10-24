@@ -4,6 +4,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
+const { logActivity } = require('../utils/activityLog');
 
 const VALID_METHODS = new Set(['cash', 'bank_transfer']);
 
@@ -20,7 +21,8 @@ function money(n) {
 // Collect a payment from a customer. Reduces their credit_balance and records
 // a customer_payments row. Atomic — uses SELECT ... FOR UPDATE on the
 // customer row to prevent two concurrent collections from over-draining the
-// balance below zero.
+// balance below zero. The audit entry is written in the same transaction,
+// so a collection is never saved without its record.
 async function collectPayment({
   customerId,
   amount,
@@ -144,6 +146,17 @@ async function collectPayment({
       userId: employeeId,
     });
 
+    await logActivity({
+      client,
+      entityType: 'customer',
+      entityId: customerId,
+      action: 'customer.payment_collected',
+      performedBy: employeeId,
+      notes: `${amt.toFixed(2)} AED via ${method}`,
+      oldValue: { creditBalance: balance },
+      newValue: { creditBalance: newBalance, paymentId: payment.id },
+    });
+
     return {
       payment,
       customer: {
@@ -166,8 +179,10 @@ async function collectPayment({
 
 // Same-day reversal of a customer payment. Restores credit_balance to its
 // pre-payment value. Throws BIZ_INVALID_STATE when the payment is older than
-// today.
-async function voidPayment({ paymentId }) {
+// today. The payment row is copied to customer_payment_voids before it is
+// removed, so the collection and its reversal both stay on record.
+// voidedBy is the user reversing it.
+async function voidPayment({ paymentId, voidedBy = null }) {
   return withTransaction(async (client) => {
     const { rows: pmRows } = await client.query(
       `SELECT * FROM customer_payments WHERE id = $1 FOR UPDATE`,
@@ -203,11 +218,31 @@ async function voidPayment({ paymentId }) {
     }
     const customer = customerRows[0];
 
+    await client.query(
+      `INSERT INTO customer_payment_voids
+         (id, customer_id, invoice_id, amount, payment_method, bank_account_id,
+          payment_date, employee_id, notes, created_at, voided_by)
+       SELECT id, customer_id, invoice_id, amount, payment_method, bank_account_id,
+              payment_date, employee_id, notes, created_at, $2
+         FROM customer_payments WHERE id = $1`,
+      [paymentId, voidedBy],
+    );
     await client.query(`DELETE FROM customer_payments WHERE id = $1`, [
       paymentId,
     ]);
 
     const newBalance = money(money(customer.credit_balance) + money(pm.amount));
+
+    await logActivity({
+      client,
+      entityType: 'customer',
+      entityId: customer.id,
+      action: 'customer.payment_voided',
+      performedBy: voidedBy,
+      notes: `Reversed ${money(pm.amount).toFixed(2)} AED`,
+      oldValue: { creditBalance: money(customer.credit_balance), paymentId },
+      newValue: { creditBalance: newBalance },
+    });
 
     await client.query(
       `UPDATE customers
@@ -276,16 +311,25 @@ async function voidPayment({ paymentId }) {
 
 // Helper used by Phase 6 invoicing — tests whether adding `addedCredit` to
 // the customer's balance would exceed their credit_limit (0 means unlimited).
-// Caller is responsible for the actual balance mutation.
+// Caller is responsible for the actual balance mutation. The row lock also
+// serialises with deactivation, and an inactive customer cannot take on new
+// debt.
 async function assertWithinCreditLimit(client, customerId, addedCredit) {
   if (!customerId || !addedCredit || Number(addedCredit) <= 0) return;
   const { rows } = await client.query(
-    `SELECT credit_balance, credit_limit, name
+    `SELECT credit_balance, credit_limit, name, is_active
        FROM customers WHERE id = $1 FOR UPDATE`,
     [customerId],
   );
   if (!rows.length) {
     throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Customer not found.', { status: 404 });
+  }
+  if (rows[0].is_active === false) {
+    throw new AppError(
+      ERROR_CODES.BIZ_INVALID_STATE,
+      `${rows[0].name} is inactive and cannot buy on credit.`,
+      { status: 409 },
+    );
   }
   const limit = money(rows[0].credit_limit);
   if (limit <= 0) return; // unlimited

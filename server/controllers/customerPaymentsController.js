@@ -2,7 +2,7 @@ const { z } = require('zod');
 const { query } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
-const { logActivity } = require('../utils/activityLog');
+const { emitCustomerChanged } = require('../utils/customerEvents');
 const {
   collectPayment,
   voidPayment,
@@ -38,18 +38,74 @@ const PAYMENT_SELECT = `
     LEFT JOIN users u ON u.id = p.employee_id
 `;
 
+// Default: live balance collections (the list the Void action works on).
+// ?include=all adds voided collections and the money taken at checkout on
+// this customer's invoices (credit excluded: that is debt, not payment), so
+// the profile shows every payment the customer made. Each row says where it
+// came from in `source`.
 async function listForCustomer(req, res, next) {
   try {
+    const customerId = req.params.id;
     const { rows } = await query(
       `${PAYMENT_SELECT}
         WHERE p.customer_id = $1
         ORDER BY p.payment_date DESC, p.created_at DESC`,
-      [req.params.id],
+      [customerId],
     );
     const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
-    return ok(res, rows.map(shape), {
-      totals: { totalCollected: Math.round(total * 100) / 100 },
-    });
+    const totals = { totalCollected: Math.round(total * 100) / 100 };
+    let data = rows.map((r) => ({ ...shape(r), source: 'balance' }));
+
+    if (req.query.include === 'all') {
+      const { rows: voided } = await query(
+        `SELECT v.*, u.username AS employee_username, vu.username AS voided_by_username
+           FROM customer_payment_voids v
+           LEFT JOIN users u ON u.id = v.employee_id
+           LEFT JOIN users vu ON vu.id = v.voided_by
+          WHERE v.customer_id = $1`,
+        [customerId],
+      );
+      const { rows: checkout } = await query(
+        `SELECT ip.id, ip.invoice_id, ip.amount, ip.method, ip.bank_account_id,
+                ip.timestamp, ip.employee_id, ip.notes, i.invoice_number,
+                u.username AS employee_username
+           FROM invoice_payments ip
+           JOIN invoices i ON i.id = ip.invoice_id
+           LEFT JOIN users u ON u.id = ip.employee_id
+          WHERE i.customer_id = $1
+            AND i.status NOT IN ('cancelled', 'draft')
+            AND ip.method <> 'credit'`,
+        [customerId],
+      );
+      const checkoutTotal = checkout.reduce((s, r) => s + Number(r.amount || 0), 0);
+      totals.totalCheckout = Math.round(checkoutTotal * 100) / 100;
+      data = [
+        ...data,
+        ...voided.map((r) => ({
+          ...shape(r),
+          source: 'balance',
+          voidedAt: r.voided_at,
+          voidedByUsername: r.voided_by_username || null,
+        })),
+        ...checkout.map((r) => ({
+          id: r.id,
+          customerId,
+          invoiceId: r.invoice_id,
+          invoiceNumber: r.invoice_number,
+          amount: Number(r.amount),
+          paymentMethod: r.method,
+          paymentDate: r.timestamp,
+          bankAccountId: r.bank_account_id,
+          employeeId: r.employee_id,
+          employeeUsername: r.employee_username,
+          notes: r.notes,
+          createdAt: r.timestamp,
+          source: 'invoice',
+        })),
+      ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    return ok(res, data, { totals });
   } catch (err) {
     next(err);
   }
@@ -70,16 +126,8 @@ async function createForCustomer(req, res, next) {
       employeeId: req.user.id,
     });
 
-    await logActivity({
-      entityType: 'customer',
-      entityId: customerId,
-      action: 'customer.payment_collected',
-      performedBy: req.user.id,
-      notes: `${Number(payment.amount).toFixed(2)} AED via ${payment.payment_method}`,
-      newValue: { creditBalance: customer.creditBalance },
-    });
-
     const io = req.app.get('io');
+    emitCustomerChanged(io, customerId, 'payment_collected');
     if (io) {
       const payload = {
         customerId: customer.id,
@@ -148,18 +196,13 @@ async function remove(req, res, next) {
       });
     }
 
-    const { payment, customer, treasury } = await voidPayment({ paymentId: id });
-
-    await logActivity({
-      entityType: 'customer',
-      entityId: customer.id,
-      action: 'customer.payment_voided',
-      performedBy: req.user.id,
-      notes: `Reversed ${Number(payment.amount).toFixed(2)} AED`,
-      newValue: { creditBalance: customer.creditBalance },
+    const { payment, customer, treasury } = await voidPayment({
+      paymentId: id,
+      voidedBy: req.user.id,
     });
 
     const io = req.app.get('io');
+    emitCustomerChanged(io, customer.id, 'payment_voided');
     if (io) {
       const payload = {
         customerId: customer.id,

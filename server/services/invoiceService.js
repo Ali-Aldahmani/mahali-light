@@ -4,6 +4,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
 const { assertWithinCreditLimit } = require('./customerService');
+const { emitCustomerChanged } = require('../utils/customerEvents');
 const { logActivity } = require('../utils/activityLog');
 const { getStoreSettings } = require('../config/storeSettings');
 const {
@@ -749,6 +750,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
     };
     io.to('role:Manager').emit('invoice_confirmed', payload);
     io.to('role:Admin').emit('invoice_confirmed', payload);
+    emitCustomerChanged(io, result.invoice.customer_id, 'invoice_confirmed');
     // Broadcast to all clients so the cashier's own success screen knows the
     // PDF will be ready shortly.
     io.emit('invoice_pdf_pending', { invoiceId });
@@ -1046,6 +1048,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     };
     io.to('role:Manager').emit('invoice_cancelled', payload);
     io.to('role:Admin').emit('invoice_cancelled', payload);
+    emitCustomerChanged(io, result.invoice.customer_id, 'invoice_cancelled');
   }
 
   try {
@@ -1399,6 +1402,16 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
         actionUrl: `/invoices/${result.request.invoice_id}`,
         createdBy: managerId,
       });
+    } catch (_e) { /* best-effort */ }
+  }
+
+  if (io) {
+    try {
+      const { rows: cust } = await query(
+        `SELECT customer_id FROM invoices WHERE id = $1`,
+        [result.request.invoice_id],
+      );
+      emitCustomerChanged(io, cust[0]?.customer_id, 'invoice_edited');
     } catch (_e) { /* best-effort */ }
   }
 

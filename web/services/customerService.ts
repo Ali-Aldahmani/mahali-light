@@ -63,8 +63,9 @@ export function getCustomerInvoices(id) {
   return apiGet(`/customers/${id}/invoices`);
 }
 
+/** Balance collections, voided ones and checkout payments; each row has a `source`. */
 export async function getCustomerPayments(id) {
-  const result = await apiGetWithMeta(`/customers/${id}/payments`);
+  const result = await apiGetWithMeta(`/customers/${id}/payments?include=all`);
   validateMoneyResponse(customerPaymentListSchema, result.data, `GET /customers/${id}/payments`);
   return result;
 }
@@ -77,6 +78,7 @@ export function getCustomerWarranties(id) {
   return apiGet(`/customers/${id}/warranties`);
 }
 
-export function getCustomerTimeline(id) {
-  return apiGet(`/customers/${id}/timeline`);
+/** One page of the timeline; pass the previous page's `meta.nextCursor` as `before`. */
+export function getCustomerTimeline(id, { before, limit = 50 }: { before?: string | null; limit?: number } = {}) {
+  return apiGetWithMeta(`/customers/${id}/timeline?${toParams({ before, limit })}`);
 }

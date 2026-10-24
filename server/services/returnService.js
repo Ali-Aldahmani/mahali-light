@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { emitCustomerChanged } = require('../utils/customerEvents');
 const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
@@ -1245,6 +1246,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
           })
           .catch(() => {});
       }
+      emitCustomerChanged(io, result.order.customer_id, 'return_executed');
       io.emit('return_executed', {
         returnOrderId: result.order.id,
         returnOrderNumber: result.order.return_order_number,

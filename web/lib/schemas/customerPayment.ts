@@ -13,6 +13,11 @@ export const customerPaymentSchema = z.object({
   employeeUsername: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   createdAt: z.string().optional(),
+  // Only on the profile's full history (?include=all).
+  source: z.enum(['balance', 'invoice']).optional(),
+  invoiceNumber: z.string().nullable().optional(),
+  voidedAt: z.string().nullable().optional(),
+  voidedByUsername: z.string().nullable().optional(),
 });
 
 export const customerPaymentCustomerSchema = z.object({

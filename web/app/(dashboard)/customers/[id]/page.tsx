@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -35,6 +35,7 @@ import CustomerAvatar from '@/components/ui/CustomerAvatar';
 import OutstandingBalanceCard from '@/components/ui/OutstandingBalanceCard';
 import PaymentMethodIcon from '@/components/ui/PaymentMethodIcon';
 import PaymentStatusBadge from '@/components/ui/PaymentStatusBadge';
+import InvoiceStatusBadge from '@/components/ui/InvoiceStatusBadge';
 import WarrantyCard from '@/components/ui/WarrantyCard';
 import RequirePermission from '@/components/guards/RequirePermission';
 import CustomerFormSlideOver, {
@@ -53,24 +54,32 @@ import {
 } from '@/services/customerService';
 import { voidPayment } from '@/services/customerPaymentService';
 import { formatCurrency, formatDate, formatDateTime, storeDate } from '@/lib/utils/format';
-import { onCustomerBalanceUpdate } from '@/store/socketStore';
+import { onCustomerBalanceUpdate, onCustomerChanged } from '@/store/socketStore';
 import RowActions from '@/components/ui/RowActions';
 import { viewColumn } from '@/components/ui/viewColumn';
 
 interface CustomerProfile extends CustomerRecord {
+  /** Net: grossSpent - refundedTotal. */
   totalSpent?: number;
+  grossSpent?: number;
+  refundedTotal?: number;
   creditBalance?: number;
   lastPurchaseDate?: string | null;
+  lastPurchaseAt?: string | null;
   lastPaymentDate?: string | null;
+  lastPaymentAt?: string | null;
   invoiceCount?: number;
   avgOrderValue?: number;
   createdAt?: string;
+  createdByUsername?: string | null;
 }
 
 interface InvoiceRow {
   id: number | string;
   invoiceNumber: string;
   createdAt: string;
+  confirmedAt?: string | null;
+  status: string;
   itemCount: number;
   total: number;
   amountPaid: number;
@@ -86,6 +95,12 @@ interface PaymentRow {
   paymentMethod: string;
   employeeUsername?: string;
   notes?: string;
+  /** balance = collection against the outstanding balance; invoice = paid at checkout. */
+  source?: 'balance' | 'invoice';
+  invoiceId?: string | null;
+  invoiceNumber?: string | null;
+  voidedAt?: string | null;
+  voidedByUsername?: string | null;
 }
 
 interface ReturnRequestRow {
@@ -98,6 +113,7 @@ interface ReturnRequestRow {
   noInvoiceReturn?: boolean;
   status: string;
   requestedAt: string;
+  refundTotal?: number | null;
 }
 
 interface ReturnsData {
@@ -105,6 +121,7 @@ interface ReturnsData {
   stats?: {
     totalSpent?: number;
     totalReturned?: number;
+    totalRefunded?: number;
     returnRate?: number;
   };
 }
@@ -122,6 +139,8 @@ interface TimelineEvent {
   amount?: number | null;
   employeeUsername?: string;
   status?: string;
+  oldValue?: Record<string, unknown> | null;
+  newValue?: Record<string, unknown> | null;
 }
 
 const TABS = [
@@ -152,29 +171,56 @@ function CustomerProfilePageContent() {
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  // Bumped whenever the customer changes anywhere, so open tabs refetch too.
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  async function loadCustomer() {
-    setLoading(true);
+  // The first load shows the skeleton; later refreshes (live updates, after
+  // a save) swap the data in place so an open form and the scroll position
+  // survive.
+  async function loadCustomer({ silent = false }: { silent?: boolean } = {}) {
+    if (!silent) setLoading(true);
     try {
       setCustomer(await getCustomer(id));
     } catch (err: any) {
+      if (silent) return;
       toast.error(err?.message || 'Customer not found.');
       router.push('/customers');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
+
+  function refreshAll() {
+    loadCustomer({ silent: true });
+    setRefreshKey((k) => k + 1);
+  }
+  const refreshRef = useRef(refreshAll);
+  refreshRef.current = refreshAll;
 
   useEffect(() => {
     loadCustomer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Changes made on other terminals: profile edits, payments, invoices,
+  // returns. After a reconnect, or when the window comes back into view,
+  // refetch in case events were missed meanwhile.
   useEffect(() => {
-    return onCustomerBalanceUpdate((evt: any) => {
-      if (evt?.customerId === id) loadCustomer();
+    const offBalance = onCustomerBalanceUpdate((evt: any) => {
+      if (evt?.customerId === id) refreshRef.current();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const offChanged = onCustomerChanged((evt: any) => {
+      if (evt?.reconnected || evt?.customerId === id) refreshRef.current();
+    });
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshRef.current();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      offBalance();
+      offChanged();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [id]);
 
   if (loading || !customer) {
@@ -257,21 +303,27 @@ function CustomerProfilePageContent() {
           icon={<TrendingUp className="h-4 w-4" />}
           label="Total spent"
           value={formatCurrency(customer.totalSpent || 0)}
+          hint={
+            Number(customer.refundedTotal || 0) > 0
+              ? `${formatCurrency(customer.grossSpent || 0)} sales − ${formatCurrency(customer.refundedTotal || 0)} refunds`
+              : 'Confirmed sales, net of refunds'
+          }
         />
         <StatCard
           icon={<Wallet className="h-4 w-4" />}
-          label="Credit balance"
+          label="Outstanding balance"
           value={
             canSeeBalance ? formatCurrency(customer.creditBalance || 0) : '—'
           }
           tone={(customer.creditBalance || 0) > 0 ? 'warning' : 'default'}
+          hint="Owed by the customer"
         />
         <StatCard
           icon={<Calendar className="h-4 w-4" />}
           label="Last purchase"
           value={
-            customer.lastPurchaseDate
-              ? formatDate(customer.lastPurchaseDate)
+            customer.lastPurchaseAt || customer.lastPurchaseDate
+              ? formatDateTime(customer.lastPurchaseAt || customer.lastPurchaseDate)
               : '—'
           }
         />
@@ -279,8 +331,8 @@ function CustomerProfilePageContent() {
           icon={<CalendarDays className="h-4 w-4" />}
           label="Last payment"
           value={
-            customer.lastPaymentDate
-              ? formatDate(customer.lastPaymentDate)
+            customer.lastPaymentAt || customer.lastPaymentDate
+              ? formatDateTime(customer.lastPaymentAt || customer.lastPaymentDate)
               : '—'
           }
         />
@@ -288,42 +340,45 @@ function CustomerProfilePageContent() {
           icon={<Receipt className="h-4 w-4" />}
           label="Invoices"
           value={customer.invoiceCount || 0}
+          hint="Confirmed sales"
         />
         <StatCard
           icon={<FileText className="h-4 w-4" />}
           label="Avg order value"
           value={formatCurrency(customer.avgOrderValue || 0)}
+          hint="Net spent ÷ invoices"
         />
       </div>
 
       <Tabs items={TABS} value={tab} onChange={setTab} />
 
-      {tab === 'invoices' && <InvoicesTab customerId={id} />}
+      {tab === 'invoices' && <InvoicesTab customerId={id} refreshKey={refreshKey} />}
       {tab === 'payments' && (
         <PaymentsTab
           customerId={id}
           canCollect={canCollect}
           customer={customer}
-          onChanged={loadCustomer}
+          onChanged={refreshAll}
           openPay={() => setPayOpen(true)}
+          refreshKey={refreshKey}
         />
       )}
-      {tab === 'returns' && <ReturnsTab customerId={id} />}
-      {tab === 'warranties' && <WarrantiesTab customerId={id} />}
-      {tab === 'timeline' && <TimelineTab customerId={id} />}
+      {tab === 'returns' && <ReturnsTab customerId={id} refreshKey={refreshKey} />}
+      {tab === 'warranties' && <WarrantiesTab customerId={id} refreshKey={refreshKey} />}
+      {tab === 'timeline' && <TimelineTab customerId={id} refreshKey={refreshKey} />}
 
       <CustomerFormSlideOver
         open={editOpen}
         onClose={() => setEditOpen(false)}
         customer={customer}
-        onSaved={loadCustomer}
+        onSaved={refreshAll}
       />
 
       <CollectPaymentSlideOver
         open={payOpen}
         onClose={() => setPayOpen(false)}
         customer={customer}
-        onCollected={loadCustomer}
+        onCollected={refreshAll}
       />
     </div>
   );
@@ -388,6 +443,10 @@ function CreditCardInfo({ customer }: { customer: CustomerProfile }) {
           <span className="text-ink-muted">Customer since</span>
           <span>{formatDate(customer.createdAt)}</span>
         </div>
+        <div className="flex items-center justify-between">
+          <span className="text-ink-muted">Created by</span>
+          <span>{customer.createdByUsername || '—'}</span>
+        </div>
       </div>
       {customer.notes && (
         <div className="mt-3 pt-3 border-t border-border">
@@ -405,11 +464,14 @@ function StatCard({
   icon,
   label,
   value,
+  hint,
   tone = 'default',
 }: {
   icon: React.ReactNode;
   label: string;
   value: React.ReactNode;
+  /** What the number means, shown small under it. */
+  hint?: string;
   tone?: 'default' | 'warning' | 'success';
 }) {
   const TONES: Record<string, string> = {
@@ -428,13 +490,18 @@ function StatCard({
       <div className="text-base font-semibold text-ink mt-1.5 truncate">
         {value}
       </div>
+      {hint && (
+        <div className="text-[11px] text-ink-muted mt-0.5 truncate" title={hint}>
+          {hint}
+        </div>
+      )}
     </div>
   );
 }
 
 // Tabs --------------------------------------------------------------------
 
-function InvoicesTab({ customerId }: { customerId: string }) {
+function InvoicesTab({ customerId, refreshKey }: { customerId: string; refreshKey: number }) {
   const router = useRouter();
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -453,7 +520,7 @@ function InvoicesTab({ customerId }: { customerId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [customerId]);
+  }, [customerId, refreshKey]);
 
   const columns: TableColumn[] = [
     {
@@ -511,7 +578,12 @@ function InvoicesTab({ customerId }: { customerId: string }) {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: 'Invoice',
+      render: (r: InvoiceRow) => <InvoiceStatusBadge status={r.status} size="sm" />,
+    },
+    {
+      key: 'paymentStatus',
+      header: 'Payment',
       render: (r: InvoiceRow) => (
         <PaymentStatusBadge status={r.paymentStatus} size="sm" />
       ),
@@ -548,16 +620,19 @@ function PaymentsTab({
   customer,
   onChanged,
   openPay,
+  refreshKey,
 }: {
   customerId: string;
   canCollect: boolean;
   customer: CustomerProfile;
   onChanged?: () => void;
   openPay: () => void;
+  refreshKey: number;
 }) {
-  const [data, setData] = useState<{ rows: PaymentRow[]; total: number }>({
+  const [data, setData] = useState<{ rows: PaymentRow[]; total: number; checkout: number }>({
     rows: [],
     total: 0,
+    checkout: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -568,6 +643,7 @@ function PaymentsTab({
       setData({
         rows: res?.data || [],
         total: res?.meta?.totals?.totalCollected || 0,
+        checkout: res?.meta?.totals?.totalCheckout || 0,
       });
     } finally {
       setLoading(false);
@@ -577,7 +653,7 @@ function PaymentsTab({
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId]);
+  }, [customerId, refreshKey]);
 
   // Returns whether the payment was voided (drives the row action's confirmation).
   async function handleVoid(p: PaymentRow): Promise<boolean> {
@@ -599,10 +675,14 @@ function PaymentsTab({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-sm text-ink-muted">
-          Total collected:{' '}
-          <span className="font-medium text-ink">
-            {formatCurrency(data.total)}
+        <div className="text-sm text-ink-muted flex flex-wrap gap-x-4">
+          <span>
+            Paid at checkout:{' '}
+            <span className="font-medium text-ink">{formatCurrency(data.checkout)}</span>
+          </span>
+          <span>
+            Collected on balance:{' '}
+            <span className="font-medium text-ink">{formatCurrency(data.total)}</span>
           </span>
         </div>
         {canCollect && Number(customer.creditBalance || 0) > 0 && (
@@ -620,17 +700,53 @@ function PaymentsTab({
           {
             key: 'date',
             header: 'Date',
-            render: (r: PaymentRow) => formatDate(r.paymentDate || r.createdAt),
+            render: (r: PaymentRow) => (
+              <div>
+                <div>{formatDate(r.paymentDate || r.createdAt)}</div>
+                {/* Business date above; when it was actually recorded below. */}
+                <div className="text-xs text-ink-muted">{formatDateTime(r.createdAt)}</div>
+              </div>
+            ),
+          },
+          {
+            key: 'source',
+            header: 'Type',
+            render: (r: PaymentRow) =>
+              r.source === 'invoice' && r.invoiceId ? (
+                <Link
+                  href={`/invoices/${r.invoiceId}`}
+                  className="text-sm text-accent hover:underline"
+                >
+                  Checkout · <span className="font-mono text-xs">{r.invoiceNumber}</span>
+                </Link>
+              ) : (
+                <span className="text-sm">Balance payment</span>
+              ),
           },
           {
             key: 'amount',
             header: 'Amount',
             align: 'right' as const,
             render: (r: PaymentRow) => (
-              <span className="font-medium text-ink">
+              <span className={r.voidedAt ? 'text-ink-muted line-through' : 'font-medium text-ink'}>
                 {formatCurrency(r.amount)}
               </span>
             ),
+          },
+          {
+            key: 'state',
+            header: 'Status',
+            render: (r: PaymentRow) =>
+              r.voidedAt ? (
+                <Badge size="sm" tone="error">
+                  Voided {formatDateTime(r.voidedAt)}
+                  {r.voidedByUsername ? ` by ${r.voidedByUsername}` : ''}
+                </Badge>
+              ) : (
+                <Badge size="sm" tone="success">
+                  Received
+                </Badge>
+              ),
           },
           {
             key: 'method',
@@ -664,8 +780,13 @@ function PaymentsTab({
                     icon: <Undo2 />,
                     tone: 'danger',
                     doneLabel: 'Voided',
-                    // Same-day payments only.
-                    hidden: !canCollect || storeDate(r.createdAt) !== today,
+                    // Same-day balance payments only; checkout payments are
+                    // reversed by cancelling the invoice.
+                    hidden:
+                      !canCollect ||
+                      r.source === 'invoice' ||
+                      !!r.voidedAt ||
+                      storeDate(r.createdAt) !== today,
                     onClick: () => handleVoid(r),
                   },
                 ]}
@@ -674,12 +795,12 @@ function PaymentsTab({
           },
         ]}
         rows={data.rows}
-        rowKey={(r: PaymentRow) => r.id}
+        rowKey={(r: PaymentRow) => `${r.source || 'balance'}:${r.id}`}
         loading={loading}
         empty={
           <EmptyState
             title="No payments yet"
-            description="Once you collect a payment from this customer, it will appear here."
+            description="Checkout payments and balance collections from this customer will appear here."
             icon={<Banknote className="h-6 w-6" />}
           />
         }
@@ -688,7 +809,7 @@ function PaymentsTab({
   );
 }
 
-function ReturnsTab({ customerId }: { customerId: string }) {
+function ReturnsTab({ customerId, refreshKey }: { customerId: string; refreshKey: number }) {
   const [data, setData] = useState<ReturnsData>({ items: [], stats: undefined });
   const [loading, setLoading] = useState(true);
 
@@ -698,7 +819,7 @@ function ReturnsTab({ customerId }: { customerId: string }) {
       .then((r: ReturnsData) => setData(r || { items: [], stats: undefined }))
       .catch(() => setData({ items: [], stats: undefined }))
       .finally(() => setLoading(false));
-  }, [customerId]);
+  }, [customerId, refreshKey]);
 
   if (loading) {
     return (
@@ -724,15 +845,18 @@ function ReturnsTab({ customerId }: { customerId: string }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card p-4">
-          <div className="text-xs uppercase tracking-wider text-ink-muted">Total spent</div>
+          <div className="text-xs uppercase tracking-wider text-ink-muted">Confirmed sales</div>
           <div className="text-xl font-semibold text-ink mt-1">
-            AED {Number(stats.totalSpent || 0).toFixed(2)}
+            {formatCurrency(stats.totalSpent || 0)}
           </div>
         </div>
         <div className="card p-4">
           <div className="text-xs uppercase tracking-wider text-ink-muted">Returned value</div>
           <div className="text-xl font-semibold text-warning mt-1">
-            AED {Number(stats.totalReturned || 0).toFixed(2)}
+            {formatCurrency(stats.totalReturned || 0)}
+          </div>
+          <div className="text-xs text-ink-muted mt-0.5">
+            {formatCurrency(stats.totalRefunded || 0)} refunded
           </div>
         </div>
         <div className="card p-4">
@@ -751,6 +875,7 @@ function ReturnsTab({ customerId }: { customerId: string }) {
               <th className="px-4 py-2">Type</th>
               <th className="px-4 py-2">Items</th>
               <th className="px-4 py-2">Value</th>
+              <th className="px-4 py-2">Refunded</th>
               <th className="px-4 py-2">Invoice</th>
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">Date</th>
@@ -771,17 +896,16 @@ function ReturnsTab({ customerId }: { customerId: string }) {
                   {(r.returnType || '').replace(/_/g, ' ')}
                 </td>
                 <td className="px-4 py-2">{r.itemCount}</td>
-                <td className="px-4 py-2">AED {Number(r.totalValue).toFixed(2)}</td>
+                <td className="px-4 py-2">{formatCurrency(r.totalValue)}</td>
+                <td className="px-4 py-2">
+                  {r.refundTotal != null ? formatCurrency(r.refundTotal) : '—'}
+                </td>
                 <td className="px-4 py-2 font-mono text-xs">
                   {r.invoiceNumber || (r.noInvoiceReturn ? '— (no invoice)' : '—')}
                 </td>
                 <td className="px-4 py-2 capitalize">{r.status}</td>
                 <td className="px-4 py-2 text-xs text-ink-muted">
-                  {new Date(r.requestedAt).toLocaleDateString('en-GB', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
+                  {formatDateTime(r.requestedAt)}
                 </td>
               </tr>
             ))}
@@ -792,7 +916,7 @@ function ReturnsTab({ customerId }: { customerId: string }) {
   );
 }
 
-function WarrantiesTab({ customerId }: { customerId: string }) {
+function WarrantiesTab({ customerId, refreshKey }: { customerId: string; refreshKey: number }) {
   const [rows, setRows] = useState<WarrantyRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -802,7 +926,7 @@ function WarrantiesTab({ customerId }: { customerId: string }) {
       .then((r: WarrantyRow[]) => setRows(r || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [customerId]);
+  }, [customerId, refreshKey]);
 
   if (loading) {
     return (
@@ -831,14 +955,29 @@ function WarrantiesTab({ customerId }: { customerId: string }) {
 
 const EVENT_META: Record<string, { label: string; Icon: any; tone: string }> = {
   invoice_created: {
-    label: 'Invoice created',
+    label: 'Draft invoice created',
+    Icon: Receipt,
+    tone: 'text-ink-muted bg-surface-2',
+  },
+  invoice_confirmed: {
+    label: 'Sale confirmed',
     Icon: Receipt,
     tone: 'text-accent bg-accent-light',
+  },
+  invoice_cancelled: {
+    label: 'Invoice cancelled',
+    Icon: Receipt,
+    tone: 'text-error bg-error-light',
   },
   payment_collected: {
     label: 'Payment collected',
     Icon: Banknote,
     tone: 'text-success bg-success-light',
+  },
+  payment_voided: {
+    label: 'Payment voided',
+    Icon: Undo2,
+    tone: 'text-error bg-error-light',
   },
   return_processed: {
     label: 'Return processed',
@@ -857,26 +996,101 @@ const EVENT_META: Record<string, { label: string; Icon: any; tone: string }> = {
   },
 };
 
-function TimelineTab({ customerId }: { customerId: string }) {
+// Audit action -> heading for profile events.
+const PROFILE_ACTION_LABELS: Record<string, string> = {
+  'customer.created': 'Customer created',
+  'customer.updated': 'Profile updated',
+  'customer.credit_limit_updated': 'Credit limit changed',
+  'customer.status_changed': 'Status changed',
+  'customer.deleted': 'Customer deactivated',
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  phone: 'Phone',
+  email: 'Email',
+  address: 'Address',
+  companyName: 'Company',
+  trnNumber: 'TRN',
+  creditLimit: 'Credit limit',
+  notes: 'Notes',
+  isActive: 'Status',
+};
+
+function showValue(key: string, v: unknown) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (key === 'isActive') return v ? 'Active' : 'Inactive';
+  if (key === 'creditLimit') return Number(v) > 0 ? formatCurrency(Number(v)) : 'No limit';
+  return String(v);
+}
+
+// "Phone: 050… → 055…" lines for an audit entry that carries old/new values.
+function ChangeList({ evt }: { evt: TimelineEvent }) {
+  const before = evt.oldValue || {};
+  const after = evt.newValue || {};
+  const keys = Object.keys(after).filter((k) => k in FIELD_LABELS);
+  if (!keys.length) return null;
+  const created = evt.status === 'customer.created';
+  return (
+    <ul className="mt-1 space-y-0.5 text-xs text-ink-muted">
+      {keys.map((k) => (
+        <li key={k} className="truncate">
+          <span className="text-ink">{FIELD_LABELS[k]}:</span>{' '}
+          {created ? (
+            showValue(k, after[k])
+          ) : (
+            <>
+              {showValue(k, before[k])} → <span className="text-ink">{showValue(k, after[k])}</span>
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function TimelineTab({ customerId, refreshKey }: { customerId: string; refreshKey: number }) {
   const [items, setItems] = useState<TimelineEvent[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [limit, setLimit] = useState(50);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     getCustomerTimeline(customerId)
-      .then((data: TimelineEvent[]) => {
-        if (!cancelled) setItems(data || []);
+      .then((res) => {
+        if (cancelled) return;
+        setItems(res?.data || []);
+        setCursor(res?.meta?.nextCursor || null);
       })
-      .catch(() => {})
+      .catch((err: any) => {
+        if (!cancelled) setError(err?.message || 'Could not load the timeline.');
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [customerId]);
+  }, [customerId, refreshKey, attempt]);
+
+  async function loadMore() {
+    if (!cursor) return;
+    setLoadingMore(true);
+    try {
+      const res = await getCustomerTimeline(customerId, { before: cursor });
+      setItems((prev) => [...prev, ...(res?.data || [])]);
+      setCursor(res?.meta?.nextCursor || null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not load more activity.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -886,27 +1100,47 @@ function TimelineTab({ customerId }: { customerId: string }) {
     );
   }
 
+  // A failed load must not look like an empty history.
+  if (error) {
+    return (
+      <EmptyState
+        title="Timeline didn't load"
+        description={error}
+        icon={<History className="h-6 w-6" />}
+        action={
+          <Button variant="secondary" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </Button>
+        }
+      />
+    );
+  }
+
   if (items.length === 0) {
     return (
       <EmptyState
         title="No activity yet"
-        description="Invoices, payments, and profile changes will be listed here as they happen."
+        description="Invoices, payments, returns and profile changes will be listed here as they happen."
         icon={<History className="h-6 w-6" />}
       />
     );
   }
 
-  const visible = items.slice(0, limit);
-
   return (
     <div className="space-y-3">
       <ul className="space-y-2">
-        {visible.map((evt, i) => {
+        {items.map((evt, i) => {
           const meta = EVENT_META[evt.event] || EVENT_META.profile_updated;
           const Icon = meta.Icon;
+          const isProfile = evt.event === 'profile_updated';
+          const title = isProfile
+            ? PROFILE_ACTION_LABELS[evt.status || ''] || meta.label
+            : meta.label;
+          // Profile events carry the audit action in status; it's already the title.
+          const badge = isProfile ? null : evt.status;
           return (
             <li
-              key={`${evt.referenceId || i}-${evt.at}`}
+              key={`${evt.event}-${evt.referenceId || i}-${evt.at}`}
               className="rounded-card border border-border bg-surface p-3 flex items-start gap-3"
             >
               <div
@@ -917,8 +1151,8 @@ function TimelineTab({ customerId }: { customerId: string }) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-medium text-ink truncate">
-                    {meta.label}
-                    {evt.label && (
+                    {title}
+                    {evt.label && !isProfile && (
                       <span className="text-ink-muted font-normal">
                         {' '}
                         · {evt.label}
@@ -938,23 +1172,21 @@ function TimelineTab({ customerId }: { customerId: string }) {
                   {evt.employeeUsername && (
                     <span>by {evt.employeeUsername}</span>
                   )}
-                  {evt.status && (
+                  {badge && (
                     <Badge size="sm" tone="muted">
-                      {evt.status}
+                      {badge.replace(/_/g, ' ')}
                     </Badge>
                   )}
                 </div>
+                {isProfile && <ChangeList evt={evt} />}
               </div>
             </li>
           );
         })}
       </ul>
-      {items.length > limit && (
+      {cursor && (
         <div className="flex justify-center">
-          <Button
-            variant="ghost"
-            onClick={() => setLimit((n) => n + 50)}
-          >
+          <Button variant="ghost" onClick={loadMore} loading={loadingMore}>
             Load more
           </Button>
         </div>

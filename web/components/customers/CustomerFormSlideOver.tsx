@@ -24,6 +24,7 @@ export interface CustomerRecord {
   creditLimit?: number | null;
   notes?: string | null;
   isActive?: boolean;
+  updatedAt?: string;
 }
 
 interface CustomerFormSlideOverProps {
@@ -57,6 +58,14 @@ const EMPTY: FormState = {
   isActive: true,
 };
 
+// crypto.randomUUID only exists on secure origins; LAN terminals over plain
+// http fall back to a random string, which is all a retry key needs.
+function newRequestKey() {
+  const c = typeof crypto !== 'undefined' ? crypto : undefined;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+}
+
 function isValidTrn(trn: string) {
   if (!trn) return true;
   return /^\d{15}$/.test(trn.trim());
@@ -75,11 +84,20 @@ export default function CustomerFormSlideOver({
   const lastCheckedPhone = useRef('');
   // Set while the typed number is too short or too long for its country.
   const phoneIncomplete = useRef(false);
+  // Version of the customer the form was opened on; the server rejects the
+  // save if someone else changed the customer since.
+  const loadedUpdatedAt = useRef<string | undefined>(undefined);
+  // One key per opened create form, so a retried submit can't create twice.
+  const requestKey = useRef('');
 
+  // Fill the form when it opens (or switches customer) — not on every
+  // refresh of the customer prop, which would wipe what is being typed.
   useEffect(() => {
     if (open) {
       setErrors({});
       lastCheckedPhone.current = '';
+      loadedUpdatedAt.current = customer?.updatedAt;
+      requestKey.current = newRequestKey();
       if (customer) {
         setForm({
           name: customer.name || '',
@@ -96,7 +114,8 @@ export default function CustomerFormSlideOver({
         setForm(EMPTY);
       }
     }
-  }, [open, customer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, customer?.id]);
 
   function setField<K extends keyof FormState>(k: K, v: FormState[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -154,7 +173,12 @@ export default function CustomerFormSlideOver({
         creditLimit: Number(form.creditLimit) || 0,
         notes: form.notes || null,
       };
-      if (isEdit) payload.isActive = !!form.isActive;
+      if (isEdit) {
+        payload.isActive = !!form.isActive;
+        if (loadedUpdatedAt.current) payload.expectedUpdatedAt = loadedUpdatedAt.current;
+      } else {
+        payload.requestKey = requestKey.current;
+      }
       const saved = isEdit
         ? await updateCustomer(customer!.id, payload)
         : await createCustomer(payload);
@@ -166,6 +190,11 @@ export default function CustomerFormSlideOver({
         setErrors((e) => ({ ...e, phone: err.message }));
       } else if (err?.code === 'VAL_INVALID_TRN') {
         setErrors((e) => ({ ...e, trnNumber: err.message }));
+      } else if (err?.code === 'RESOURCE_CONFLICT') {
+        toast.error(
+          'Someone else changed this customer while you were editing. Close the form to load their changes, then edit again.',
+        );
+        return;
       }
       toast.error(err?.message || 'Failed to save customer.');
     } finally {

@@ -1,12 +1,13 @@
 const { z } = require('zod');
-const { query } = require('../db/postgres');
+const { query, withTransaction } = require('../db/postgres');
 const { phoneKey, phoneSearchCore, digitsSql } = require('../utils/phone');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { emitCustomerChanged } = require('../utils/customerEvents');
 
-// Schema for create/update. The phone field is optional but unique when set.
-const createSchema = z.object({
+// Editable fields. Phone is optional but unique when set.
+const fieldSchemas = {
   name: z.string().trim().min(1).max(200),
   phone: z
     .string()
@@ -32,13 +33,48 @@ const createSchema = z.object({
     .optional()
     .nullable()
     .transform((v) => (v === '' ? null : v)),
-  creditLimit: z.number().nonnegative().optional().default(0),
+  creditLimit: z.number().nonnegative().optional(),
   notes: z.string().max(4000).optional().nullable(),
+};
+
+const createSchema = z.object({
+  ...fieldSchemas,
+  creditLimit: fieldSchemas.creditLimit.default(0),
+  // Client-generated per form; a retried create returns the first customer.
+  requestKey: z.string().trim().min(8).max(128).optional(),
 });
 
-const updateSchema = createSchema.extend({
+// Updates are partial: a field left out keeps its stored value.
+// expectedUpdatedAt is the updatedAt the editor loaded; a mismatch means
+// someone else saved in between and the request is rejected with 409.
+const updateSchema = z.object({
+  ...fieldSchemas,
+  name: fieldSchemas.name.optional(),
   isActive: z.boolean().optional(),
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
 });
+
+// API field -> column, with the normalisation used on write and for
+// comparing against the stored row.
+const blankToNull = (v) => (v === '' || v === undefined ? null : v);
+const EDITABLE = [
+  ['name', 'name', (v) => v],
+  ['phone', 'phone', blankToNull],
+  ['email', 'email', blankToNull],
+  ['address', 'address', blankToNull],
+  ['companyName', 'company_name', blankToNull],
+  ['trnNumber', 'trn_number', blankToNull],
+  ['creditLimit', 'credit_limit', (v) => Number(v || 0)],
+  ['notes', 'notes', blankToNull],
+  ['isActive', 'is_active', (v) => v !== false],
+];
+
+function storedValue(row, key, column, normalize) {
+  const v = row[column];
+  if (key === 'creditLimit') return Number(v || 0);
+  if (key === 'isActive') return v !== false;
+  return normalize(v);
+}
 
 function canSeeBalance(req) {
   const perms = req.user?.permissions || [];
@@ -60,13 +96,20 @@ function shapeCustomer(row, opts = {}) {
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    // Stats joined in list/getOne SQL.
+    createdBy: row.created_by || null,
+    createdByUsername: row.created_by_username || null,
+    // Stats joined in list/getOne SQL. totalSpent is net: confirmed invoice
+    // totals minus refunds paid on customer returns (grossSpent - refundedTotal).
     totalSpent: row.total_spent != null ? Number(row.total_spent) : 0,
+    grossSpent: row.gross_spent != null ? Number(row.gross_spent) : 0,
+    refundedTotal: row.refunded_total != null ? Number(row.refunded_total) : 0,
     invoiceCount: row.invoice_count != null ? Number(row.invoice_count) : 0,
     avgOrderValue:
       row.avg_order_value != null ? Number(row.avg_order_value) : 0,
     lastPurchaseDate: row.last_purchase_date,
+    lastPurchaseAt: row.last_purchase_at || null,
     lastPaymentDate: row.last_payment_date,
+    lastPaymentAt: row.last_payment_at || null,
     daysSinceLastPurchase:
       row.days_since_last_purchase != null
         ? Number(row.days_since_last_purchase)
@@ -97,29 +140,76 @@ async function detectInvoicesTable() {
   return invoicesTableExists;
 }
 
+// Card definitions (kept in line with the customer reports):
+//   gross_spent       confirmed invoices only (drafts and cancellations never
+//                     count), tax included
+//   refunded_total    refunds paid out on this customer's returns
+//   total_spent       gross_spent - refunded_total (net spend)
+//   invoice_count     confirmed sales, excluding the zero/difference-value
+//                     replacement invoices a return creates
+//   avg_order_value   total_spent / invoice_count
+//   last_purchase_at  latest confirmation time
+//   last_payment_at   latest money actually received: balance collections or
+//                     non-credit checkout payments
 function statsJoin(hasInvoices) {
   const invoiceJoin = hasInvoices
     ? `LEFT JOIN LATERAL (
-         SELECT COALESCE(SUM(total), 0) AS total_spent,
-                COUNT(*) AS invoice_count,
-                MAX(created_at)::date AS last_purchase_date,
-                CASE WHEN COUNT(*) > 0
-                  THEN COALESCE(SUM(total), 0) / COUNT(*)
+         SELECT COALESCE(SUM(i.total), 0) AS gross_spent,
+                COUNT(*) FILTER (
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM return_orders rr WHERE rr.replacement_invoice_id = i.id
+                  )
+                ) AS invoice_count,
+                MAX(i.confirmed_at) AS last_purchase_at
+           FROM invoices i
+          WHERE i.customer_id = c.id AND i.status = 'confirmed'
+       ) inv_raw ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(ro.refund_total), 0) AS refunded_total
+           FROM return_orders ro
+          WHERE ro.customer_id = c.id
+            AND ro.return_type IN ('customer_refund', 'customer_replace')
+       ) ret_stats ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT inv_raw.gross_spent,
+                ret_stats.refunded_total,
+                inv_raw.gross_spent - ret_stats.refunded_total AS total_spent,
+                inv_raw.invoice_count,
+                inv_raw.last_purchase_at,
+                inv_raw.last_purchase_at::date AS last_purchase_date,
+                CASE WHEN inv_raw.invoice_count > 0
+                  THEN (inv_raw.gross_spent - ret_stats.refunded_total) / inv_raw.invoice_count
                   ELSE 0
                 END AS avg_order_value
-           FROM invoices WHERE customer_id = c.id AND status NOT IN ('cancelled','draft')
        ) inv_stats ON TRUE`
     : `LEFT JOIN LATERAL (
-         SELECT 0::numeric AS total_spent, 0::int AS invoice_count,
+         SELECT 0::numeric AS gross_spent, 0::numeric AS refunded_total,
+                0::numeric AS total_spent, 0::int AS invoice_count,
+                NULL::timestamptz AS last_purchase_at,
                 NULL::date AS last_purchase_date,
                 0::numeric AS avg_order_value
        ) inv_stats ON TRUE`;
 
+  const checkoutPayments = hasInvoices
+    ? `UNION ALL
+         SELECT MAX(ip.timestamp)
+           FROM invoice_payments ip
+           JOIN invoices i ON i.id = ip.invoice_id
+          WHERE i.customer_id = c.id
+            AND i.status NOT IN ('cancelled', 'draft')
+            AND ip.method <> 'credit'`
+    : '';
+
   return `
     ${invoiceJoin}
     LEFT JOIN LATERAL (
-      SELECT MAX(payment_date) AS last_payment_date
-        FROM customer_payments WHERE customer_id = c.id
+      SELECT MAX(paid_at) AS last_payment_at,
+             MAX(paid_at)::date AS last_payment_date
+        FROM (
+          SELECT MAX(GREATEST(p.created_at, p.payment_date::timestamptz)) AS paid_at
+            FROM customer_payments p WHERE p.customer_id = c.id
+          ${checkoutPayments}
+        ) paid
     ) pm_stats ON TRUE
     LEFT JOIN LATERAL (
       SELECT
@@ -137,14 +227,20 @@ async function baseSelectAndJoin() {
   const hasInvoices = await detectInvoicesTable();
   return `
     SELECT c.*,
+           cu.username AS created_by_username,
            inv_stats.total_spent,
+           inv_stats.gross_spent,
+           inv_stats.refunded_total,
            inv_stats.invoice_count,
            inv_stats.last_purchase_date,
+           inv_stats.last_purchase_at,
            inv_stats.avg_order_value,
            pm_stats.last_payment_date,
+           pm_stats.last_payment_at,
            der.days_since_last_purchase,
            der.days_since_last_payment
       FROM customers c
+      LEFT JOIN users cu ON cu.id = c.created_by
       ${statsJoin(hasInvoices)}
   `;
 }
@@ -157,11 +253,17 @@ function trnIsValid(trn) {
 // Same number in any spelling counts: "+971501234567", "0501234567" and
 // "00971 50 123 4567" are one customer. Candidates share the last 9 digits;
 // the full international key then decides.
-async function ensurePhoneUnique(phone, ignoreId = null) {
+// Inside a transaction, an advisory lock on the phone key makes two
+// concurrent saves of the same number (in any spelling) run one at a time,
+// so the second one sees the first and is rejected.
+async function ensurePhoneUnique(client, phone, ignoreId = null) {
   if (!phone) return;
   const key = phoneKey(phone);
   if (!key) return;
-  const { rows: candidates } = await query(
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+    `customer_phone:${key}`,
+  ]);
+  const { rows: candidates } = await client.query(
     `SELECT id, phone FROM customers
       WHERE RIGHT(${digitsSql('phone')}, 9) = RIGHT($1, 9) ${ignoreId ? 'AND id <> $2' : ''}`,
     ignoreId ? [key, ignoreId] : [key],
@@ -332,6 +434,9 @@ async function summary(req, res, next) {
   }
 }
 
+// Mutations run in one transaction with their audit entry: if the audit
+// write fails, the change is rolled back rather than saved unrecorded.
+
 async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
@@ -343,39 +448,65 @@ async function create(req, res, next) {
         { status: 400, details: { field: 'trnNumber' } },
       );
     }
-    if (body.phone) await ensurePhoneUnique(body.phone);
 
-    const { rows } = await query(
-      `INSERT INTO customers
-         (name, phone, email, address, company_name, trn_number,
-          credit_limit, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       RETURNING id`,
-      [
-        body.name,
-        body.phone,
-        body.email || null,
-        body.address || null,
-        body.companyName || null,
-        body.trnNumber,
-        body.creditLimit ?? 0,
-        body.notes || null,
-        req.user.id,
-      ],
-    );
-    const id = rows[0].id;
+    const { id, replayed } = await withTransaction(async (client) => {
+      if (body.requestKey) {
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+          `customer_create:${body.requestKey}`,
+        ]);
+        const { rows: prior } = await client.query(
+          `SELECT id FROM customers WHERE request_key = $1`,
+          [body.requestKey],
+        );
+        if (prior.length) return { id: prior[0].id, replayed: true };
+      }
+      if (body.phone) await ensurePhoneUnique(client, body.phone);
 
-    await logActivity({
-      entityType: 'customer',
-      entityId: id,
-      action: 'customer.created',
-      performedBy: req.user.id,
-      notes: body.name,
+      const snapshot = {};
+      for (const [key, , normalize] of EDITABLE) {
+        if (key === 'isActive') continue;
+        snapshot[key] = normalize(body[key]);
+      }
+
+      const { rows } = await client.query(
+        `INSERT INTO customers
+           (name, phone, email, address, company_name, trn_number,
+            credit_limit, notes, created_by, request_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         RETURNING id`,
+        [
+          snapshot.name,
+          snapshot.phone,
+          snapshot.email,
+          snapshot.address,
+          snapshot.companyName,
+          snapshot.trnNumber,
+          snapshot.creditLimit,
+          snapshot.notes,
+          req.user.id,
+          body.requestKey || null,
+        ],
+      );
+      const newId = rows[0].id;
+
+      await logActivity({
+        client,
+        entityType: 'customer',
+        entityId: newId,
+        action: 'customer.created',
+        performedBy: req.user.id,
+        newValue: { ...snapshot, isActive: true },
+        notes: body.name,
+      });
+      return { id: newId, replayed: false };
     });
+
+    if (!replayed) emitCustomerChanged(req.app.get('io'), id, 'created');
 
     const base = await baseSelectAndJoin();
     const { rows: full } = await query(`${base} WHERE c.id = $1`, [id]);
-    return created(res, shapeCustomer(full[0], { includeBalance: true }));
+    const shaped = shapeCustomer(full[0], { includeBalance: true });
+    return replayed ? ok(res, shaped) : created(res, shaped);
   } catch (err) {
     next(err);
   }
@@ -387,71 +518,109 @@ async function update(req, res, next) {
     const { id } = req.params;
     const body = updateSchema.parse(req.body || {});
 
-    const { rows: existing } = await query(
-      `SELECT * FROM customers WHERE id = $1`,
-      [id],
-    );
-    if (!existing.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, {
-        status: 404,
-      });
-    }
-
-    if (!trnIsValid(body.trnNumber)) {
+    if (body.trnNumber !== undefined && !trnIsValid(body.trnNumber)) {
       throw new AppError(
         ERROR_CODES.VAL_INVALID_TRN,
         'TRN must be exactly 15 digits.',
         { status: 400, details: { field: 'trnNumber' } },
       );
     }
-    if (body.phone) await ensurePhoneUnique(body.phone, id);
 
-    const prevLimit = Number(existing[0].credit_limit || 0);
-    const newLimit = Number(body.creditLimit ?? prevLimit);
+    const changed = await withTransaction(async (client) => {
+      const { rows: existing } = await client.query(
+        `SELECT * FROM customers WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      if (!existing.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, {
+          status: 404,
+        });
+      }
+      const current = existing[0];
 
-    await query(
-      `UPDATE customers
-          SET name = $1,
-              phone = $2,
-              email = $3,
-              address = $4,
-              company_name = $5,
-              trn_number = $6,
-              credit_limit = $7,
-              notes = $8,
-              is_active = COALESCE($9, is_active),
-              updated_at = NOW()
-        WHERE id = $10`,
-      [
-        body.name,
-        body.phone,
-        body.email || null,
-        body.address || null,
-        body.companyName || null,
-        body.trnNumber,
-        newLimit,
-        body.notes || null,
-        body.isActive,
-        id,
-      ],
-    );
+      if (
+        body.expectedUpdatedAt &&
+        new Date(body.expectedUpdatedAt).getTime() !==
+          new Date(current.updated_at).getTime()
+      ) {
+        throw new AppError(
+          ERROR_CODES.RESOURCE_CONFLICT,
+          'This customer was changed by someone else. Reload to see the latest details, then reapply your edit.',
+          { status: 409, details: { updatedAt: current.updated_at } },
+        );
+      }
 
-    await logActivity({
-      entityType: 'customer',
-      entityId: id,
-      action: 'customer.updated',
-      performedBy: req.user.id,
+      // Only fields the request sent and that actually differ.
+      const before = {};
+      const after = {};
+      const columns = {};
+      for (const [key, column, normalize] of EDITABLE) {
+        if (body[key] === undefined) continue;
+        const next = normalize(body[key]);
+        const prev = storedValue(current, key, column, normalize);
+        const same =
+          key === 'creditLimit' ? Math.abs(prev - next) <= 0.001 : prev === next;
+        if (same) continue;
+        before[key] = prev;
+        after[key] = next;
+        columns[column] = next;
+      }
+      if (!Object.keys(after).length) return false;
+
+      if (after.phone) await ensurePhoneUnique(client, after.phone, id);
+
+      const cols = Object.keys(columns);
+      const sets = cols.map((col, i) => `${col} = $${i + 1}`);
+      await client.query(
+        `UPDATE customers SET ${sets.join(', ')}, updated_at = NOW()
+          WHERE id = $${cols.length + 1}`,
+        [...cols.map((col) => columns[col]), id],
+      );
+
+      const pick = (obj, keys) =>
+        Object.fromEntries(keys.filter((k) => k in obj).map((k) => [k, obj[k]]));
+      const detailKeys = Object.keys(after).filter(
+        (k) => k !== 'creditLimit' && k !== 'isActive',
+      );
+      if (detailKeys.length) {
+        await logActivity({
+          client,
+          entityType: 'customer',
+          entityId: id,
+          action: 'customer.updated',
+          performedBy: req.user.id,
+          oldValue: pick(before, detailKeys),
+          newValue: pick(after, detailKeys),
+          notes: `Changed: ${detailKeys.join(', ')}`,
+        });
+      }
+      if ('creditLimit' in after) {
+        await logActivity({
+          client,
+          entityType: 'customer',
+          entityId: id,
+          action: 'customer.credit_limit_updated',
+          performedBy: req.user.id,
+          oldValue: { creditLimit: before.creditLimit },
+          newValue: { creditLimit: after.creditLimit },
+        });
+      }
+      if ('isActive' in after) {
+        await logActivity({
+          client,
+          entityType: 'customer',
+          entityId: id,
+          action: 'customer.status_changed',
+          performedBy: req.user.id,
+          oldValue: { isActive: before.isActive },
+          newValue: { isActive: after.isActive },
+          notes: after.isActive ? 'Reactivated' : 'Deactivated',
+        });
+      }
+      return true;
     });
-    if (Math.abs(prevLimit - newLimit) > 0.001) {
-      await logActivity({
-        entityType: 'customer',
-        entityId: id,
-        action: 'customer.credit_limit_updated',
-        performedBy: req.user.id,
-        oldValue: { creditLimit: prevLimit },
-        newValue: { creditLimit: newLimit },
-      });
-    }
+
+    if (changed) emitCustomerChanged(req.app.get('io'), id, 'updated');
 
     const base = await baseSelectAndJoin();
     const { rows: full } = await query(`${base} WHERE c.id = $1`, [id]);
@@ -461,39 +630,51 @@ async function update(req, res, next) {
   }
 }
 
+// Soft delete. Locks the customer row so it serialises with credit sales
+// and collections: the zero-balance check and the deactivation see the same
+// balance.
 async function remove(req, res, next) {
   try {
     const { id } = req.params;
-    const { rows } = await query(
-      `SELECT id, name, credit_balance, is_active FROM customers WHERE id = $1`,
-      [id],
-    );
-    if (!rows.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, {
-        status: 404,
-      });
-    }
-    const balance = Number(rows[0].credit_balance || 0);
-    if (balance > 0.001) {
-      throw new AppError(
-        ERROR_CODES.BIZ_OUTSTANDING_BALANCE,
-        `Customer has outstanding balance of ${balance.toFixed(2)} AED. Collect payment before deactivating.`,
-        { status: 409, details: { balance } },
+    const changed = await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        `SELECT id, name, credit_balance, is_active FROM customers WHERE id = $1 FOR UPDATE`,
+        [id],
       );
-    }
+      if (!rows.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, {
+          status: 404,
+        });
+      }
+      const balance = Number(rows[0].credit_balance || 0);
+      if (balance > 0.001) {
+        throw new AppError(
+          ERROR_CODES.BIZ_OUTSTANDING_BALANCE,
+          `Customer has outstanding balance of ${balance.toFixed(2)} AED. Collect payment before deactivating.`,
+          { status: 409, details: { balance } },
+        );
+      }
+      if (rows[0].is_active === false) return false;
 
-    await query(
-      `UPDATE customers SET is_active = false, updated_at = NOW() WHERE id = $1`,
-      [id],
-    );
+      await client.query(
+        `UPDATE customers SET is_active = false, updated_at = NOW() WHERE id = $1`,
+        [id],
+      );
 
-    await logActivity({
-      entityType: 'customer',
-      entityId: id,
-      action: 'customer.deleted',
-      performedBy: req.user.id,
-      notes: rows[0].name,
+      await logActivity({
+        client,
+        entityType: 'customer',
+        entityId: id,
+        action: 'customer.deleted',
+        performedBy: req.user.id,
+        oldValue: { isActive: true },
+        newValue: { isActive: false },
+        notes: rows[0].name,
+      });
+      return true;
     });
+
+    if (changed) emitCustomerChanged(req.app.get('io'), id, 'deactivated');
 
     return ok(res, { id, isActive: false });
   } catch (err) {
@@ -706,18 +887,27 @@ async function listReturns(req, res, next) {
       [customerId],
     );
 
-    // Compute return-rate vs total spent for the headline metric.
+    // Return rate = value of goods actually taken back (executed return
+    // orders) over gross confirmed sales — the same sales base as the
+    // profile's cards.
     const { rows: totals } = await query(
       `SELECT
-         COALESCE(SUM(i.total),0)::numeric AS total_spent
-         FROM invoices i
-        WHERE i.customer_id = $1 AND i.status <> 'cancelled'`,
+         (SELECT COALESCE(SUM(i.total),0)::numeric
+            FROM invoices i
+           WHERE i.customer_id = $1 AND i.status = 'confirmed') AS total_spent,
+         (SELECT COALESCE(SUM(ro.total_value),0)::numeric
+            FROM return_orders ro
+           WHERE ro.customer_id = $1
+             AND ro.return_type IN ('customer_refund', 'customer_replace')) AS total_returned,
+         (SELECT COALESCE(SUM(ro.refund_total),0)::numeric
+            FROM return_orders ro
+           WHERE ro.customer_id = $1
+             AND ro.return_type IN ('customer_refund', 'customer_replace')) AS total_refunded`,
       [customerId],
     );
     const totalSpent = Number(totals[0]?.total_spent || 0);
-    const totalReturned = requests
-      .filter((r) => r.status === 'approved')
-      .reduce((acc, r) => acc + Number(r.total_value || 0), 0);
+    const totalReturned = Number(totals[0]?.total_returned || 0);
+    const totalRefunded = Number(totals[0]?.total_refunded || 0);
     const returnRate = totalSpent > 0 ? (totalReturned / totalSpent) * 100 : 0;
 
     return ok(
@@ -744,6 +934,7 @@ async function listReturns(req, res, next) {
         stats: {
           totalSpent,
           totalReturned,
+          totalRefunded,
           returnRate: Math.round(returnRate * 10) / 10,
         },
       },
@@ -788,67 +979,153 @@ async function listWarranties(req, res, next) {
   }
 }
 
+// One row per thing that happened, newest first, built from the source
+// tables. Paged with a (at, key) cursor: pass the previous page's
+// meta.nextCursor back as ?before=. The actor is the user the event belongs
+// to (confirmer for a confirmation, canceller for a cancellation, ...);
+// audit rows prefer the name recorded at the time.
+const TIMELINE_ACTIONS = [
+  'customer.created',
+  'customer.updated',
+  'customer.credit_limit_updated',
+  'customer.status_changed',
+  'customer.deleted',
+];
+
+function timelineSql(hasInvoices) {
+  const parts = [
+    `SELECT 'payment_collected' AS event, p.created_at AS at,
+            'pay:' || p.id AS key, p.id::text AS ref,
+            u.username AS employee, p.amount::numeric AS amount,
+            p.payment_method AS status, NULL::text AS label,
+            NULL::jsonb AS old_value, NULL::jsonb AS new_value
+       FROM customer_payments p
+       LEFT JOIN users u ON u.id = p.employee_id
+      WHERE p.customer_id = $1`,
+    // A voided collection keeps its original entry, plus the reversal.
+    `SELECT 'payment_collected', v.created_at, 'pay:' || v.id, v.id::text,
+            u.username, v.amount::numeric, 'voided', NULL::text,
+            NULL::jsonb, NULL::jsonb
+       FROM customer_payment_voids v
+       LEFT JOIN users u ON u.id = v.employee_id
+      WHERE v.customer_id = $1`,
+    `SELECT 'payment_voided', v.voided_at, 'void:' || v.id, v.id::text,
+            u.username, v.amount::numeric, v.payment_method, NULL::text,
+            NULL::jsonb, NULL::jsonb
+       FROM customer_payment_voids v
+       LEFT JOIN users u ON u.id = v.voided_by
+      WHERE v.customer_id = $1`,
+    `SELECT 'profile_updated', al.timestamp, 'log:' || al.id, al.id::text,
+            COALESCE(al.performed_by_name, u.username), NULL::numeric,
+            al.action, al.notes, al.old_value, al.new_value
+       FROM activity_log al
+       LEFT JOIN users u ON u.id = al.performed_by
+      WHERE al.entity_type = 'customer'
+        AND al.entity_id = $1
+        AND al.action = ANY($4::text[])`,
+  ];
+  if (hasInvoices) {
+    parts.push(
+      // Drafts that never reached confirmation.
+      `SELECT 'invoice_created', i.created_at, 'inv:' || i.id, i.id::text,
+              u.username, i.total::numeric, i.status, i.invoice_number,
+              NULL::jsonb, NULL::jsonb
+         FROM invoices i
+         LEFT JOIN users u ON u.id = i.created_by
+        WHERE i.customer_id = $1 AND i.confirmed_at IS NULL`,
+      `SELECT 'invoice_confirmed', i.confirmed_at, 'invc:' || i.id, i.id::text,
+              u.username, i.total::numeric, i.status, i.invoice_number,
+              NULL::jsonb, NULL::jsonb
+         FROM invoices i
+         LEFT JOIN users u ON u.id = i.confirmed_by
+        WHERE i.customer_id = $1 AND i.confirmed_at IS NOT NULL`,
+      `SELECT 'invoice_cancelled', i.cancelled_at, 'invx:' || i.id, i.id::text,
+              u.username, i.total::numeric, i.status, i.invoice_number,
+              NULL::jsonb, NULL::jsonb
+         FROM invoices i
+         LEFT JOIN users u ON u.id = i.cancelled_by
+        WHERE i.customer_id = $1 AND i.cancelled_at IS NOT NULL`,
+      `SELECT 'return_processed', ro.created_at, 'ret:' || ro.id, ro.id::text,
+              u.username, ro.refund_total::numeric, ro.return_type,
+              ro.return_order_number, NULL::jsonb, NULL::jsonb
+         FROM return_orders ro
+         LEFT JOIN users u ON u.id = ro.employee_id
+        WHERE ro.customer_id = $1
+          AND ro.return_type IN ('customer_refund', 'customer_replace')`,
+      `SELECT 'warranty_created', w.created_at, 'war:' || w.id, w.id::text,
+              u.username, NULL::numeric, w.status, p.name,
+              NULL::jsonb, NULL::jsonb
+         FROM warranties w
+         LEFT JOIN products p ON p.id = w.product_id
+         LEFT JOIN users u ON u.id = w.created_by
+        WHERE w.customer_id = $1`,
+    );
+  }
+  return `
+    SELECT t.*, t.at::text AS at_cursor FROM (
+      ${parts.map((p) => `(${p})`).join('\n UNION ALL \n')}
+    ) t(event, at, key, ref, employee, amount, status, label, old_value, new_value)
+    WHERE t.at IS NOT NULL
+      AND ($2::timestamptz IS NULL OR (t.at, t.key) < ($2::timestamptz, $3::text))
+    ORDER BY t.at DESC, t.key DESC
+    LIMIT $5`;
+}
+
+function decodeCursor(raw) {
+  if (!raw) return [null, null];
+  try {
+    const [at, key] = JSON.parse(Buffer.from(String(raw), 'base64url').toString());
+    // at is PostgreSQL's own text form of the timestamp, so microseconds
+    // survive the round trip.
+    if (!/^\d{4}-\d{2}-\d{2}[ T][\d:.]+([+-]\d{2}(:?\d{2})?|Z)?$/.test(at)) throw new Error();
+    if (typeof key !== 'string') throw new Error();
+    return [at, key];
+  } catch {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid timeline cursor.', {
+      status: 400,
+    });
+  }
+}
+
 async function listTimeline(req, res, next) {
   try {
     const customerId = req.params.id;
     const hasInvoices = await detectInvoicesTable();
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const [beforeAt, beforeKey] = decodeCursor(req.query.before);
 
-    const parts = [];
-    parts.push(`(
-      SELECT 'payment_collected' AS event, p.created_at AS at,
-             p.id::text AS ref,
-             COALESCE(u.username, 'system') AS employee,
-             p.amount::numeric AS amount,
-             p.payment_method AS status,
-             NULL::text AS label
-        FROM customer_payments p
-        LEFT JOIN users u ON u.id = p.employee_id
-       WHERE p.customer_id = $1
-    )`);
-
-    parts.push(`(
-      SELECT 'profile_updated' AS event, al.timestamp AS at,
-             al.id::text AS ref,
-             COALESCE(u.username, 'system') AS employee,
-             NULL::numeric AS amount,
-             al.action AS status,
-             al.notes AS label
-        FROM activity_log al
-        LEFT JOIN users u ON u.id = al.performed_by
-       WHERE al.entity_type = 'customer'
-         AND al.entity_id = $1
-         AND al.action IN ('customer.updated','customer.credit_limit_updated','customer.created')
-    )`);
-
-    if (hasInvoices) {
-      parts.push(`(
-        SELECT 'invoice_created' AS event, i.created_at AS at,
-               i.id::text AS ref,
-               COALESCE(u.username, 'system') AS employee,
-               i.total::numeric AS amount,
-               i.status AS status,
-               i.invoice_number AS label
-          FROM invoices i
-          LEFT JOIN users u ON u.id = i.employee_id
-         WHERE i.customer_id = $1
-      )`);
-    }
-
-    const sql = `${parts.join(' UNION ALL ')} ORDER BY at DESC NULLS LAST LIMIT 200`;
-    const { rows } = await query(sql, [customerId]);
+    // One extra row tells us whether another page exists.
+    const { rows } = await query(timelineSql(hasInvoices), [
+      customerId,
+      beforeAt,
+      beforeKey,
+      TIMELINE_ACTIONS,
+      limit + 1,
+    ]);
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    const nextCursor =
+      rows.length > limit && last
+        ? Buffer.from(
+            JSON.stringify([last.at_cursor, last.key]),
+          ).toString('base64url')
+        : null;
 
     const canSee = canSeeBalance(req);
     return ok(
       res,
-      rows.map((r) => ({
+      page.map((r) => ({
         event: r.event,
         at: r.at,
         referenceId: r.ref,
-        employeeUsername: r.employee,
+        employeeUsername: r.employee || 'system',
         amount: r.amount == null ? null : canSee ? Number(r.amount) : null,
         status: r.status,
         label: r.label,
+        oldValue: r.old_value || null,
+        newValue: r.new_value || null,
       })),
+      { nextCursor },
     );
   } catch (err) {
     next(err);

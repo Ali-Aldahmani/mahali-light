@@ -42,6 +42,7 @@ const countBus = makeBus();
 const poBus = makeBus();
 const supplierReturnBus = makeBus();
 const customerBus = makeBus();
+const customerChangedBus = makeBus();
 const invoiceBus = makeBus();
 const invoiceEditRequestBus = makeBus();
 const pdfBus = makeBus();
@@ -65,6 +66,10 @@ export const onCountEvent = (cb: EventCallback): Unsubscribe => countBus.on(cb);
 export const onPurchaseOrderEvent = (cb: EventCallback): Unsubscribe => poBus.on(cb);
 export const onSupplierReturnEvent = (cb: EventCallback): Unsubscribe => supplierReturnBus.on(cb);
 export const onCustomerBalanceUpdate = (cb: EventCallback): Unsubscribe => customerBus.on(cb);
+/** Any change to a customer (profile, balance, invoices, returns). Payload
+ * `{ customerId, reason }`, or `{ reconnected: true }` after a socket
+ * reconnect, when events may have been missed and everything should refetch. */
+export const onCustomerChanged = (cb: EventCallback): Unsubscribe => customerChangedBus.on(cb);
 export const onInvoiceEvent = (cb: EventCallback): Unsubscribe => invoiceBus.on(cb);
 export const onInvoiceEditRequestEvent = (cb: EventCallback): Unsubscribe => invoiceEditRequestBus.on(cb);
 export const onPdfReady = (cb: EventCallback): Unsubscribe => pdfBus.on(cb);
@@ -112,6 +117,7 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       // only on subsequent connections (i.e. socket reconnects).
       if (!firstConnect) {
         syncOnReconnect().catch(() => {});
+        customerChangedBus.emit({ reconnected: true });
       }
       firstConnect = false;
       if (wasConnected) {
@@ -372,6 +378,10 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
           `Drawer closed with discrepancy AED ${disc.toFixed(2)}.`,
         );
       }
+    });
+
+    socket.on('customer_changed', (payload) => {
+      customerChangedBus.emit(payload);
     });
 
     socket.on('customer_balance_updated', (payload) => {
