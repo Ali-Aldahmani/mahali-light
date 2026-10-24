@@ -70,7 +70,12 @@ async function backupDatabase(outputPath, { pgDumpPath = null } = {}) {
   });
 }
 
-async function restoreDatabase(backupPath, { pgRestorePath = null } = {}) {
+// The restore runs as one transaction and stops at the first error, so a
+// failed restore rolls back completely and leaves the current database as it
+// was. Without these flags pg_restore skips failing objects, keeps going and
+// exits 1 — a half-restored database that used to be reported as success.
+// `spawnProcess` exists for tests.
+async function restoreDatabase(backupPath, { pgRestorePath = null, spawnProcess = spawn } = {}) {
   const bin = resolveBinary('pg_restore', pgRestorePath);
   if (!fs.existsSync(backupPath)) {
     return { success: false, error: 'Backup file not found.' };
@@ -82,9 +87,11 @@ async function restoreDatabase(backupPath, { pgRestorePath = null } = {}) {
       '--if-exists',
       '--no-owner',
       '--no-privileges',
+      '--single-transaction',
+      '--exit-on-error',
       backupPath,
     ];
-    const proc = spawn(bin, args, { env: pgEnv() });
+    const proc = spawnProcess(bin, args, { env: pgEnv() });
     let stderr = '';
     proc.stderr.on('data', (d) => {
       stderr += d.toString();
@@ -93,14 +100,14 @@ async function restoreDatabase(backupPath, { pgRestorePath = null } = {}) {
       resolve({ success: false, error: `pg_restore could not start: ${err.message}` });
     });
     proc.on('close', (code) => {
-      // pg_restore returns 1 for non-fatal errors (object exists, etc).
-      // We treat code <= 1 as success since --clean already drops + recreates.
-      if (code === 0 || code === 1) {
+      if (code === 0) {
         resolve({ success: true, warnings: stderr.trim().slice(0, 800) });
       } else {
         resolve({
           success: false,
-          error: `pg_restore exited with code ${code}: ${stderr.trim().slice(0, 800)}`,
+          error:
+            `pg_restore exited with code ${code}; the restore was rolled back and the ` +
+            `current database is unchanged. ${stderr.trim().slice(0, 800)}`,
         });
       }
     });
