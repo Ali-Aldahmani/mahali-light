@@ -124,6 +124,7 @@ describe.skipIf(!enabled)('purchase VAT on real PostgreSQL', () => {
     app = express();
     app.use(express.json());
     app.use('/purchase-orders', require('../../server/routes/purchaseOrders'));
+    app.use('/supplier-returns', require('../../server/routes/supplierReturns'));
     app.use((err, _req, res, _next) =>
       res.status(err.status || (err.name === 'ZodError' ? 400 : 500)).json({ code: err.code, message: err.message }));
   }, 30000);
@@ -198,5 +199,37 @@ describe.skipIf(!enabled)('purchase VAT on real PostgreSQL', () => {
     expect(vat.inputTax).toBe(25);
     // Net purchases: 300 + 99.99 + 200 received, minus 100 returned.
     expect(vat.netPurchases).toBe(499.99);
+  });
+  it('the PO supplier-return button posts the same journal, and a rejection reverses it (Phase 4)', async () => {
+    const v = await newVariant('SKU-VAT-4', 100);
+    const { poId, itemId } = await confirmedPo(v, 2, 100); // 200 + 10 VAT
+    await receive(poId, itemId, 2);
+
+    const created = await call('post', '/supplier-returns', {
+      supplierId, purchaseOrderId: poId, reason: 'defective',
+      items: [{ productId, variantId: v, quantity: 1, condition: 'defective' }],
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const returnId = created.body.data.id;
+    const net = async () => {
+      const { rows } = await db.query(
+        `SELECT a.code, SUM(jl.debit - jl.credit)::float8 AS net
+           FROM journal_entries je
+           JOIN journal_lines jl ON jl.journal_entry_id = je.id
+           JOIN chart_of_accounts a ON a.id = jl.account_id
+          WHERE je.reference_type = 'return_order' AND je.reference_id = $1
+          GROUP BY a.code`,
+        [returnId],
+      );
+      return Object.fromEntries(rows.map((r) => [r.code, Math.round(r.net * 100) / 100]));
+    };
+    expect(await net()).toEqual({ 2001: 105, 1004: -100, 2002: -5 });
+    const stock = async () => Number((await db.query(`SELECT stock_qty FROM product_variants WHERE id = $1`, [v])).rows[0].stock_qty);
+    expect(await stock()).toBe(1);
+
+    const resolved = await call('put', `/supplier-returns/${returnId}/resolve`, { resolution: 'rejected' });
+    expect(resolved.status, JSON.stringify(resolved.body)).toBe(200);
+    expect(await net()).toEqual({ 2001: 0, 1004: 0, 2002: 0 });
+    expect(await stock()).toBe(2);
   });
 });

@@ -6,6 +6,22 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('../services/stockService');
+const journalService = require('../services/journalService');
+
+const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+// Input VAT claimed on returned goods, at the originating PO's own rate —
+// the same rule as returnService's supplier returns. Without a PO we don't
+// know what VAT was claimed, so none is reversed.
+async function supplierReturnVat(client, purchaseOrderId, value) {
+  if (!purchaseOrderId) return 0;
+  const { rows: [po] } = await client.query(
+    `SELECT subtotal, tax_amount FROM purchase_orders WHERE id = $1`,
+    [purchaseOrderId],
+  );
+  if (!po || Number(po.subtotal) <= 0) return 0;
+  return money(value * (Number(po.tax_amount) || 0) / Number(po.subtotal));
+}
 
 const REASONS = new Set(['defective', 'wrong_item', 'excess_stock', 'expired']);
 const RESOLUTIONS = new Set(['replaced', 'refunded', 'credit_note', 'rejected']);
@@ -251,6 +267,20 @@ async function create(req, res, next) {
         });
       }
 
+      // The goods leave at cost, so the ledger does what the approved-return
+      // flow (returnService) does: DR Accounts Payable, CR Inventory and the
+      // input VAT claimed on them (audit Phase 4, PO F15). Before, this
+      // button moved stock with no journal at all.
+      const value = money(totalValue);
+      await journalService.postSupplierReturnEntry(client, {
+        returnOrderId: returnId,
+        returnOrderNumber: returnNumber,
+        amount: value,
+        vatAmount: await supplierReturnVat(client, body.purchaseOrderId || null, value),
+        date: body.returnDate || todayStoreDate(),
+        userId: req.user.id,
+      });
+
       return { returnId, returnNumber, affectedVariants: body.items.map((i) => i.variantId) };
     });
 
@@ -295,30 +325,68 @@ async function resolve(req, res, next) {
     const { id } = req.params;
     const body = resolveSchema.parse(req.body || {});
 
-    const { rows } = await query(
-      `SELECT id, status FROM supplier_returns WHERE id = $1`,
-      [id],
-    );
-    if (!rows.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
-    }
-    if (rows[0].status === 'resolved') {
-      throw new AppError(
-        ERROR_CODES.BIZ_INVALID_STATE,
-        'Return is already resolved.',
-        { status: 409 },
+    await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        `SELECT id, status, return_number FROM supplier_returns WHERE id = $1 FOR UPDATE`,
+        [id],
       );
-    }
+      if (!rows.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      if (rows[0].status === 'resolved') {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          'Return is already resolved.',
+          { status: 409 },
+        );
+      }
 
-    await query(
-      `UPDATE supplier_returns
-          SET status = 'resolved',
-              resolution = $1,
-              resolution_notes = $2,
-              updated_at = NOW()
-        WHERE id = $3`,
-      [body.resolution, body.resolutionNotes || null, id],
-    );
+      // Rejected by the supplier, or replaced with the same goods: the units
+      // come back in at the cost they left at, and the return's journal is
+      // reversed. A refund or credit note leaves the payable reduction in
+      // place.
+      if (body.resolution === 'rejected' || body.resolution === 'replaced') {
+        const { rows: items } = await client.query(
+          `SELECT product_id, variant_id, quantity FROM supplier_return_items WHERE supplier_return_id = $1`,
+          [id],
+        );
+        for (const it of items) {
+          await applyStockMovement({
+            client,
+            variantId: it.variant_id,
+            productId: it.product_id,
+            type: 'return_in',
+            quantity: Number(it.quantity),
+            referenceType: 'supplier_return',
+            referenceId: id,
+            employeeId: req.user.id,
+            notes: `Supplier return ${rows[0].return_number} ${body.resolution}`,
+            skipReorderCheck: true,
+          });
+        }
+        const { rows: entries } = await client.query(
+          `SELECT id FROM journal_entries WHERE reference_type = 'return_order' AND reference_id = $1`,
+          [id],
+        );
+        for (const e of entries) {
+          await journalService.reverseJournalEntryWith(client, e.id, {
+            description: `Supplier return ${rows[0].return_number} ${body.resolution}`,
+            date: todayStoreDate(),
+            userId: req.user.id,
+          });
+        }
+      }
+
+      await client.query(
+        `UPDATE supplier_returns
+            SET status = 'resolved',
+                resolution = $1,
+                resolution_notes = $2,
+                updated_at = NOW()
+          WHERE id = $3`,
+        [body.resolution, body.resolutionNotes || null, id],
+      );
+    });
 
     await logActivity({
       entityType: 'supplier_return',
