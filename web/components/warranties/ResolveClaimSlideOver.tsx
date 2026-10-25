@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import SlideOver from '@/components/ui/SlideOver';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
+import Input from '@/components/ui/Input';
 import Textarea from '@/components/ui/Textarea';
 import { searchProducts } from '@/services/productService';
 import { resolveClaim } from '@/services/warrantyClaimService';
@@ -27,6 +28,7 @@ export default function ResolveClaimSlideOver({ claim, open, onClose }: ResolveC
   const [notes, setNotes] = useState('');
   const [variantOpts, setVariantOpts] = useState<SelectOption[]>([]);
   const [variantId, setVariantId] = useState('');
+  const [serial, setSerial] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export default function ResolveClaimSlideOver({ claim, open, onClose }: ResolveC
     setResolution('replaced');
     setNotes('');
     setVariantId('');
+    setSerial('');
     setVariantOpts([]);
     setSubmitting(false);
   }
@@ -78,6 +81,7 @@ export default function ResolveClaimSlideOver({ claim, open, onClose }: ResolveC
         resolution,
         notes: notes.trim() || null,
         replacementVariantId: resolution === 'replaced' ? variantId : null,
+        replacementSerial: resolution === 'replaced' ? serial.trim() || null : null,
       });
       toast.success('Claim resolved.');
       reset();
@@ -133,6 +137,16 @@ export default function ResolveClaimSlideOver({ claim, open, onClose }: ResolveC
             options={variantOpts}
             placeholder="Pick a replacement SKU"
             hint="A zero-value invoice will be created and stock will be deducted."
+          />
+        )}
+
+        {resolution === 'replaced' && (
+          <Input
+            label="Replacement serial number"
+            value={serial}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSerial(e.target.value)}
+            placeholder="Optional — for serialized products"
+            hint="Recorded on the replacement invoice and its new warranty."
           />
         )}
 

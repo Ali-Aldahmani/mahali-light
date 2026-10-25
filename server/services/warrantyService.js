@@ -451,16 +451,52 @@ async function createClaim({
     if (w.status === 'void') {
       throw new AppError(ERROR_CODES.BIZ_WARRANTY_VOID, undefined, { status: 409 });
     }
-    if (w.status !== 'active' && w.status !== 'claimed') {
+    // 'claimed' means the unit was already replaced: the replacement carries
+    // its own new warranty, so this one can't be claimed again (audit F16).
+    if (w.status !== 'active') {
       throw new AppError(
         ERROR_CODES.BIZ_WARRANTY_NOT_ACTIVE,
-        undefined,
+        w.status === 'claimed'
+          ? 'This warranty was already used for a replacement. Claim against the replacement’s warranty instead.'
+          : undefined,
         { status: 409 },
+      );
+    }
+    if (w.start_date && toDateOnlyStr(w.start_date) > toDateOnlyStr(new Date())) {
+      throw new AppError(
+        ERROR_CODES.BIZ_WARRANTY_NOT_ACTIVE,
+        'This warranty has not started yet.',
+        { status: 409 },
+      );
+    }
+    // One claim at a time per warranty: a second open claim could be resolved
+    // as another replacement of the same unit (F16). Finished claims stay as
+    // history and don't block a new one.
+    const { rows: openClaims } = await client.query(
+      `SELECT claim_number FROM warranty_claims
+        WHERE warranty_id = $1 AND status IN ('open', 'in_progress')
+        LIMIT 1`,
+      [warrantyId],
+    );
+    if (openClaims.length) {
+      throw new AppError(
+        ERROR_CODES.BIZ_INVALID_STATE,
+        `Claim ${openClaims[0].claim_number} is already open for this warranty.`,
+        { status: 409 },
+      );
+    }
+    // The claimant is the warranty's customer; another customer can't be
+    // attached to it.
+    if (customerId && w.customer_id && customerId !== w.customer_id) {
+      throw new AppError(
+        ERROR_CODES.VALIDATION_FAILED,
+        'The claim must be for the customer the warranty belongs to.',
+        { status: 400 },
       );
     }
 
     const claimNumber = await generateClaimNumber(client);
-    const customer = customerId || w.customer_id || null;
+    const customer = w.customer_id || customerId || null;
     const { rows: ins } = await client.query(
       `INSERT INTO warranty_claims (
         claim_number, warranty_id, customer_id, claim_date, issue_description,
@@ -524,7 +560,7 @@ async function createClaim({
 // keep this self-contained and atomic with the warranty changes.
 async function buildReplacementInvoice(
   client,
-  { warranty, variantId, productId, employeeId, pcIdentifier },
+  { warranty, variantId, productId, employeeId, pcIdentifier, serialNumber = null },
 ) {
   // Snapshot variant + product info for the replacement line.
   const { rows: vRows } = await client.query(
@@ -608,7 +644,7 @@ async function buildReplacementInvoice(
       v.sku,
       v.unit_label || 'pcs',
       Number(v.cost_price || 0),
-      null,
+      serialNumber,
     ],
   );
   const newItemId = itemIns[0].id;
@@ -633,6 +669,7 @@ async function resolveWarrantyClaim({
   resolution, // 'replaced' | 'repaired' | 'rejected'
   notes = null,
   replacementVariantId = null,
+  replacementSerial = null,
   pcIdentifier = null,
   managerId,
   io = null,
@@ -650,11 +687,11 @@ async function resolveWarrantyClaim({
               w.variant_id AS warranty_variant_id,
               w.customer_id AS warranty_customer_id,
               w.warranty_number, w.supplier_id, w.purchase_order_id,
-              w.duration_months
+              w.duration_months, w.status AS warranty_status
          FROM warranty_claims c
          JOIN warranties w ON w.id = c.warranty_id
         WHERE c.id = $1
-        FOR UPDATE`,
+        FOR UPDATE OF c, w`,
       [claimId],
     );
     if (!claimRows.length) {
@@ -667,6 +704,19 @@ async function resolveWarrantyClaim({
       throw new AppError(
         ERROR_CODES.BIZ_CLAIM_ALREADY_RESOLVED,
         undefined,
+        { status: 409 },
+      );
+    }
+    // Entitlement is checked again under the warranty lock (audit F17): a
+    // refund or manual void after the claim was filed, or another claim
+    // that already replaced the unit, rules out a replacement or repair. A
+    // claim filed in time may still be completed after the end date.
+    if (resolution !== 'rejected' && claim.warranty_status !== 'active') {
+      throw new AppError(
+        ERROR_CODES.BIZ_WARRANTY_NOT_ACTIVE,
+        claim.warranty_status === 'claimed'
+          ? 'This warranty was already used for a replacement.'
+          : `This warranty is ${claim.warranty_status}; the claim can only be rejected.`,
         { status: 409 },
       );
     }
@@ -683,7 +733,26 @@ async function resolveWarrantyClaim({
           'A replacement variant is required.',
         );
       }
-      const productId = claim.warranty_product_id;
+      // The replacement must be a variant of the warranted product, and the
+      // product recorded everywhere is the one actually handed out (audit
+      // F18). Cross-product replacements are not supported.
+      const { rows: [chosen] } = await client.query(
+        `SELECT product_id FROM product_variants WHERE id = $1`,
+        [variantId],
+      );
+      if (!chosen) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Replacement variant not found.', { status: 404 });
+      }
+      if (claim.warranty_product_id && chosen.product_id !== claim.warranty_product_id) {
+        throw new AppError(
+          ERROR_CODES.VALIDATION_FAILED,
+          'The replacement must be a variant of the same product as the warranty.',
+          { status: 400 },
+        );
+      }
+      const productId = chosen.product_id;
+      const serial = replacementSerial ? String(replacementSerial).trim() || null : null;
+      if (serial) await assertSerialUnique(client, { productId, serialNumber: serial });
 
       // Build the zero-value invoice for the replacement.
       const built = await buildReplacementInvoice(client, {
@@ -695,6 +764,7 @@ async function resolveWarrantyClaim({
         productId,
         employeeId: managerId,
         pcIdentifier,
+        serialNumber: serial,
       });
       replacementInvoiceId = built.invoice.id;
 
@@ -766,7 +836,7 @@ async function resolveWarrantyClaim({
           replacementInvoiceId,
           built.replacementInvoiceItemId,
           claim.warranty_customer_id,
-          null, // serial is unknown for the replacement at this point
+          serial,
           startDate,
           endDate,
           months,

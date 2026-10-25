@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { query } = require('../db/postgres');
+const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const {
@@ -167,51 +167,55 @@ const updateSchema = z.object({
 async function update(req, res, next) {
   try {
     const body = updateSchema.parse(req.body || {});
-    const { rows: existing } = await query(
-      `SELECT status FROM warranty_claims WHERE id = $1`,
-      [req.params.id],
-    );
-    if (!existing.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
-    }
-    if (['resolved', 'rejected'].includes(existing[0].status)) {
-      throw new AppError(
-        ERROR_CODES.BIZ_CLAIM_ALREADY_RESOLVED,
-        undefined,
-        { status: 409 },
+    // Read, check and write under the claim's row lock, so a delayed edit
+    // can't reopen a claim that was resolved in between (audit F17).
+    await withTransaction(async (client) => {
+      const { rows: existing } = await client.query(
+        `SELECT status FROM warranty_claims WHERE id = $1 FOR UPDATE`,
+        [req.params.id],
       );
-    }
-    const fields = [];
-    const params = [];
-    let i = 1;
-    function set(col, val) {
-      fields.push(`${col} = $${i++}`);
-      params.push(val);
-    }
-    if (body.status !== undefined) {
-      assertWarrantyClaimStatusTransition(existing[0].status, body.status);
-      set('status', body.status);
-    }
-    if (body.notes !== undefined) set('notes', body.notes || null);
-    if (body.issueDescription !== undefined) {
-      set('issue_description', body.issueDescription);
-    }
-    if (!fields.length) {
-      const { rows: cur } = await query(`${CLAIM_SELECT} WHERE c.id = $1`, [req.params.id]);
-      return ok(res, shapeClaim(cur[0]));
-    }
-    fields.push(`updated_at = NOW()`);
-    params.push(req.params.id);
-    await query(
-      `UPDATE warranty_claims SET ${fields.join(', ')} WHERE id = $${i}`,
-      params,
-    );
-    await logActivity({
-      entityType: 'warranty_claim',
-      entityId: req.params.id,
-      action: 'warranty_claim.updated',
-      performedBy: req.user.id,
-      newValue: body,
+      if (!existing.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      if (['resolved', 'rejected'].includes(existing[0].status)) {
+        throw new AppError(
+          ERROR_CODES.BIZ_CLAIM_ALREADY_RESOLVED,
+          undefined,
+          { status: 409 },
+        );
+      }
+      const fields = [];
+      const params = [];
+      let i = 1;
+      function set(col, val) {
+        fields.push(`${col} = $${i++}`);
+        params.push(val);
+      }
+      if (body.status !== undefined) {
+        assertWarrantyClaimStatusTransition(existing[0].status, body.status);
+        set('status', body.status);
+      }
+      if (body.notes !== undefined) set('notes', body.notes || null);
+      if (body.issueDescription !== undefined) {
+        set('issue_description', body.issueDescription);
+      }
+      if (!fields.length) return false;
+      fields.push(`updated_at = NOW()`);
+      params.push(req.params.id);
+      await client.query(
+        `UPDATE warranty_claims SET ${fields.join(', ')} WHERE id = $${i}`,
+        params,
+      );
+      await logActivity({
+        client,
+        entityType: 'warranty_claim',
+        entityId: req.params.id,
+        action: 'warranty_claim.updated',
+        performedBy: req.user.id,
+        oldValue: { status: existing[0].status },
+        newValue: body,
+      });
+      return true;
     });
     const { rows: cur } = await query(`${CLAIM_SELECT} WHERE c.id = $1`, [req.params.id]);
     return ok(res, shapeClaim(cur[0]));
@@ -233,6 +237,7 @@ const resolveSchema = z.object({
   resolution: z.enum(['replaced', 'repaired', 'rejected']),
   notes: z.string().max(2000).optional().nullable(),
   replacementVariantId: z.string().uuid().optional().nullable(),
+  replacementSerial: z.string().max(100).optional().nullable(),
   pcIdentifier: z.string().max(50).optional().nullable(),
 });
 
