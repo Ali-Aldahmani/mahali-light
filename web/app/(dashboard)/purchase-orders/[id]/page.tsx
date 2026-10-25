@@ -30,7 +30,7 @@ import { formatCurrency, formatDate } from '@/lib/utils/format';
 import {
   getPurchaseOrder,
   confirmPurchaseOrder,
-  deletePurchaseOrder,
+  cancelPurchaseOrder,
   uploadPurchaseOrderAttachment,
   deletePurchaseOrderAttachment,
 } from '@/services/purchaseOrderService';
@@ -109,6 +109,11 @@ function PurchaseOrderDetailPageContent() {
   }
 
   const isDraft = po.status === 'draft';
+  // Draft or confirmed, nothing received and nothing paid (see cancelPo).
+  const canCancel =
+    (po.status === 'draft' || po.status === 'confirmed') &&
+    !po.items?.some((it) => Number(it.quantityReceived) > 0) &&
+    Number(po.amountPaid || 0) <= 0;
   const canReceive =
     canCreatePo && ['confirmed', 'partially_received'].includes(po.status);
   const canAddPayment =
@@ -129,9 +134,10 @@ function PurchaseOrderDetailPageContent() {
 
   async function handleCancel() {
     try {
-      await deletePurchaseOrder(id);
-      toast.success('Draft cancelled.');
-      router.push('/purchase-orders');
+      await cancelPurchaseOrder(id);
+      toast.success('Purchase order cancelled.');
+      setConfirmCancel(false);
+      load();
     } catch (err: any) {
       toast.error(err?.message || 'Failed to cancel PO.');
       setConfirmCancel(false);
@@ -163,7 +169,8 @@ function PurchaseOrderDetailPageContent() {
             }
           : p,
       );
-      setPayments((list) => list.filter((pm) => pm.id !== confirmDeletePayment.id));
+      // The reversed payment stays in the list, marked reversed.
+      listPoPayments(id).then((list) => setPayments(list || [])).catch(() => {});
       toast.success('Payment reversed.');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to reverse payment.');
@@ -253,7 +260,7 @@ function PurchaseOrderDetailPageContent() {
                 Return to supplier
               </Button>
             )}
-            {isDraft && canCreatePo && (
+            {canCancel && canCreatePo && (
               <Button
                 variant="danger"
                 leftIcon={<XCircle className="h-4 w-4" />}
@@ -406,8 +413,8 @@ function PurchaseOrderDetailPageContent() {
         open={confirmCancel}
         onClose={() => setConfirmCancel(false)}
         onConfirm={handleCancel}
-        title="Cancel this draft PO?"
-        description="The draft will be permanently deleted. Items, totals, and the attachment will be removed."
+        title="Cancel this purchase order?"
+        description="The PO is kept, marked cancelled, with its items and attachment. It can't be confirmed, received or paid afterwards."
         confirmLabel="Cancel PO"
         variant="danger"
       />

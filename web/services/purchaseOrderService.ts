@@ -62,6 +62,12 @@ export function deletePurchaseOrder(id) {
   return apiDelete(`/purchase-orders/${id}`);
 }
 
+// Cancels a draft or confirmed PO that has nothing received or paid. The PO
+// is kept with status 'cancelled' (server: purchaseOrdersController.cancelPo).
+export function cancelPurchaseOrder(id, reason?: string | null) {
+  return apiPost(`/purchase-orders/${id}/cancel`, { reason: reason || null });
+}
+
 export function confirmPurchaseOrder(id) {
   return apiPost(`/purchase-orders/${id}/confirm`, {});
 }

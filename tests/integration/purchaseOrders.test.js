@@ -175,4 +175,44 @@ describe.skipIf(!enabled)('purchase order create/update/confirm on real PostgreS
       .send({});
     expect(res.status).toBe(409);
   });
+  it('cancelling keeps the PO, and is refused once something is received or paid (PO F04)', async () => {
+    const post = (url, body) => request(app).post(url).auth(adminToken, { type: 'bearer' }).send(body || {});
+    const newPo = async () => (await post('/purchase-orders', {
+      supplierId, items: [{ productId, variantId, quantity: 2, costPricePerUnit: 60 }],
+    })).body.data.id;
+
+    // A draft: the old DELETE now cancels instead of erasing it.
+    const draftId = await newPo();
+    const del = await request(app).delete(`/purchase-orders/${draftId}`).auth(adminToken, { type: 'bearer' });
+    expect(del.status).toBe(200);
+    const { rows: [kept] } = await db.query(
+      `SELECT status, cancelled_by, (SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = $1)::int AS items
+         FROM purchase_orders WHERE id = $1`, [draftId]);
+    expect(kept).toMatchObject({ status: 'cancelled', cancelled_by: adminId, items: 1 });
+    expect((await post(`/purchase-orders/${draftId}/cancel`)).status).toBe(409);
+
+    // A confirmed PO with nothing received or paid can be cancelled.
+    const confirmedId = await newPo();
+    expect((await post(`/purchase-orders/${confirmedId}/confirm`)).status).toBe(200);
+    const cancelled = await post(`/purchase-orders/${confirmedId}/cancel`, { reason: 'Supplier out of stock' });
+    expect(cancelled.status).toBe(200);
+    const { rows: [c] } = await db.query(`SELECT cancel_reason FROM purchase_orders WHERE id = $1`, [confirmedId]);
+    expect(c.cancel_reason).toBe('Supplier out of stock');
+
+    // Paid, or with goods received: refused.
+    const paidId = await newPo();
+    await post(`/purchase-orders/${paidId}/confirm`);
+    await require('../../server/services/supplierPaymentService').addPayment({
+      poId: paidId, amount: 10, method: 'cheque', employeeId: adminId,
+    });
+    expect((await post(`/purchase-orders/${paidId}/cancel`)).status).toBe(409);
+
+    const receivedId = await newPo();
+    await post(`/purchase-orders/${receivedId}/confirm`);
+    const { rows: [item] } = await db.query(`SELECT id FROM purchase_order_items WHERE purchase_order_id = $1`, [receivedId]);
+    const rec = await request(app).post(`/purchase-orders/${receivedId}/receive`).auth(adminToken, { type: 'bearer' })
+      .set('Idempotency-Key', randomUUID()).send({ items: [{ id: item.id, quantityReceived: 1 }] });
+    expect(rec.status).toBe(200);
+    expect((await post(`/purchase-orders/${receivedId}/cancel`)).status).toBe(409);
+  });
 });

@@ -20,6 +20,11 @@ router.delete(
 );
 
 router.post(
+  '/:id/cancel',
+  requirePermission('supplier.purchase_order.create'),
+  pos.cancel,
+);
+router.post(
   '/:id/confirm',
   requirePermission('supplier.purchase_order.create'),
   pos.confirm,

@@ -67,6 +67,8 @@ function shapePO(row, includeCost) {
     employeeUsername: row.employee_username,
     orderDate: row.order_date,
     confirmedAt: row.confirmed_at || null,
+    cancelledAt: row.cancelled_at || null,
+    cancelReason: row.cancel_reason || null,
     expectedDate: row.expected_date,
     receivedDate: row.received_date,
     dueDate: row.due_date,
@@ -469,40 +471,89 @@ async function update(req, res, next) {
   }
 }
 
-async function remove(req, res, next) {
+// Cancel a purchase order (PO audit F04). The PO is kept with status
+// 'cancelled' and who, when and why — it used to be deleted outright.
+// A draft or confirmed PO can be cancelled while nothing has been received
+// and nothing is paid: up to then it has no stock or ledger effect
+// (payables are recognised at receipt). Received goods go back through a
+// supplier return, payments through a payment reversal, first.
+// DELETE /:id stays draft-only (a confirmed PO is cancelled on purpose,
+// through POST /:id/cancel); both keep the PO.
+function cancelPo(req, res, next) {
+  return cancelPurchaseOrder(req, res, next, { draftOnly: false });
+}
+function removeDraft(req, res, next) {
+  return cancelPurchaseOrder(req, res, next, { draftOnly: true });
+}
+
+async function cancelPurchaseOrder(req, res, next, { draftOnly }) {
   try {
     const { id } = req.params;
-    const rows = await withTransaction(async (client) => {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 500) || null : null;
+    const result = await withTransaction(async (client) => {
       const { rows: found } = await client.query(
-        `SELECT status, po_number, attachment_path FROM purchase_orders WHERE id = $1 FOR UPDATE`,
+        `SELECT status, po_number, amount_paid FROM purchase_orders WHERE id = $1 FOR UPDATE`,
         [id],
       );
       if (!found.length) {
         throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
       }
-      if (found[0].status !== 'draft') {
+      const po = found[0];
+      if (draftOnly && po.status !== 'draft') {
         throw new AppError(
           ERROR_CODES.BIZ_INVALID_STATE,
-          'Only draft purchase orders can be deleted.',
+          'Only draft purchase orders can be deleted. Use Cancel for a confirmed one.',
           { status: 409 },
         );
       }
-      await client.query(`DELETE FROM purchase_orders WHERE id = $1`, [id]);
-      return found;
+      if (po.status !== 'draft' && po.status !== 'confirmed') {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          po.status === 'cancelled'
+            ? 'This purchase order is already cancelled.'
+            : 'Goods have been received on this purchase order, so it can’t be cancelled. Return them to the supplier instead.',
+          { status: 409 },
+        );
+      }
+      const { rows: [received] } = await client.query(
+        `SELECT COALESCE(SUM(quantity_received), 0) AS qty
+           FROM purchase_order_items WHERE purchase_order_id = $1`,
+        [id],
+      );
+      if (Number(received.qty) > 0) {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          'Goods have been received on this purchase order, so it can’t be cancelled. Return them to the supplier instead.',
+          { status: 409 },
+        );
+      }
+      if (Number(po.amount_paid) > 0) {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          'This purchase order has payments. Reverse them before cancelling it.',
+          { status: 409 },
+        );
+      }
+      await client.query(
+        `UPDATE purchase_orders
+            SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = $2,
+                cancel_reason = $3, updated_at = NOW()
+          WHERE id = $1`,
+        [id, req.user.id, reason],
+      );
+      await logActivity({
+        client,
+        entityType: 'purchase_order',
+        entityId: id,
+        action: 'purchase_order.cancelled',
+        performedBy: req.user.id,
+        oldValue: { status: po.status },
+        newValue: { status: 'cancelled' },
+        notes: reason ? `${po.po_number}: ${reason}` : po.po_number,
+      });
+      return { poNumber: po.po_number };
     });
-
-    if (rows[0].attachment_path) {
-      deleteAttachmentFile(rows[0].attachment_path);
-    }
-
-    await logActivity({
-      entityType: 'purchase_order',
-      entityId: id,
-      action: 'purchase_order.cancelled',
-      performedBy: req.user.id,
-      notes: rows[0].po_number,
-    });
-    return ok(res, { id, deleted: true });
+    return ok(res, { id, cancelled: true, poNumber: result.poNumber });
   } catch (err) {
     next(err);
   }
@@ -704,7 +755,8 @@ module.exports = {
   getOne,
   create,
   update,
-  remove,
+  remove: removeDraft,
+  cancel: cancelPo,
   confirm,
   receive,
   uploadAttachment,

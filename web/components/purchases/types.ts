@@ -22,6 +22,8 @@ export interface POItem {
 export interface PurchaseOrder {
   id: number;
   poNumber: string;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
   supplierId: number;
   supplierName?: string;
   orderDate: string;
