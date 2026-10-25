@@ -149,18 +149,13 @@ async function completeSetup(payload) {
     // Open cash drawer outside transaction if we have an admin user.
     if (result.adminUserId && cashDrawer?.opening_balance != null) {
       try {
-        const employeeId = (
-          await query(`SELECT employee_id FROM users WHERE id = $1`, [
-            result.adminUserId,
-          ])
-        ).rows[0]?.employee_id;
-        if (employeeId) {
-          await cashService.openDrawer({
-            openingBalance: Number(cashDrawer.opening_balance) || 0,
-            employeeId,
-            notes: 'Opening balance from setup wizard',
-          });
-        }
+        // openDrawer's employeeId is a users.id (cash_drawer_sessions.opened_by
+        // and journal_entries.created_by reference users), not employees.id.
+        await cashService.openDrawer({
+          openingBalance: Number(cashDrawer.opening_balance) || 0,
+          employeeId: result.adminUserId,
+          notes: 'Opening balance from setup wizard',
+        });
       } catch (err) {
         console.warn('[setup] cash drawer open failed', err.message);
       }

@@ -1,5 +1,6 @@
 const { query, withTransaction } = require('../db/postgres');
 const { todayStoreDate } = require('../utils/dates');
+const journalService = require('./journalService');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 
@@ -328,6 +329,17 @@ async function createAccount(body, employeeId) {
           'Recorded automatically on account creation',
         ],
       );
+      // The ledger gets the same opening balance, as owner money (Phase 4).
+      await journalService.postTreasuryEntry(client, {
+        referenceType: 'bank_account',
+        referenceId: account.id,
+        date: todayStoreDate(),
+        description: `Opening balance of ${account.bank_name}`.slice(0, 250),
+        debitCode: journalService.TREASURY_CODES.bank,
+        creditCode: journalService.TREASURY_CODES.ownerEquity,
+        amount: opening,
+        userId: employeeId,
+      });
     }
 
     await logActivity({

@@ -6,6 +6,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
 const cashService = require('../services/cashService');
+const journalService = require('../services/journalService');
 const { postTransactionWith: postBankWith } = require('../services/bankService');
 
 async function getState(_req, res, next) {
@@ -270,6 +271,17 @@ async function transferToBank(req, res, next) {
             body.notes || null,
           ],
         );
+        // The ledger moves the same money from Cash to Bank.
+        await journalService.postTreasuryEntry(client, {
+          referenceType: 'cash_transfer',
+          referenceId: transferRows[0].id,
+          date: body.transferDate || todayStoreDate(),
+          description: 'Cash drawer to bank transfer',
+          debitCode: journalService.TREASURY_CODES.bank,
+          creditCode: journalService.TREASURY_CODES.cash,
+          amount: body.amount,
+          userId: req.user.id,
+        });
         // The transfer's audit entry commits with both legs.
         await logActivity({
           client,

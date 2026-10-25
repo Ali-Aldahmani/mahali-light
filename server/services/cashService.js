@@ -2,6 +2,10 @@ const { query, withTransaction } = require('../db/postgres');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const { runOnce } = require('../utils/operations');
+const { todayStoreDate } = require('../utils/dates');
+const journalService = require('./journalService');
+
+const { TREASURY_CODES: GL } = journalService;
 
 // Tolerance below which a drawer-close discrepancy is allowed without manager
 // approval (the cashier must still leave a note). Anything above this trips
@@ -359,6 +363,27 @@ async function openDrawer({ openingBalance, employeeId, notes = null, io = null 
     );
     const session = sessRows[0];
 
+    // The opening count replaces whatever the drawer held at its last close.
+    // A difference means cash was added or taken out between sessions; the
+    // ledger follows it (against Owner Equity) so GL cash keeps matching the
+    // drawer. The very first opening funds the drawer from zero.
+    const previous = money(drawer.current_balance);
+    const floatChange = money(amt - previous);
+    if (floatChange !== 0) {
+      await journalService.postTreasuryEntry(client, {
+        referenceType: 'cash_drawer_session',
+        referenceId: session.id,
+        date: todayStoreDate(),
+        description: floatChange > 0
+          ? 'Cash added to the drawer float at opening'
+          : 'Cash taken from the drawer between sessions',
+        debitCode: floatChange > 0 ? GL.cash : GL.ownerEquity,
+        creditCode: floatChange > 0 ? GL.ownerEquity : GL.cash,
+        amount: Math.abs(floatChange),
+        userId: employeeId,
+      });
+    }
+
     await client.query(
       `UPDATE cash_drawer
           SET status = 'open',
@@ -445,10 +470,18 @@ async function closeDrawer({
       );
     }
 
-    // The "expected" balance is whatever the running ledger says we should
-    // have. We trust the running balance because every cash event since the
-    // session began has updated it through this service.
-    const expected = money(drawer.current_balance);
+    // Expected cash is rebuilt from the session itself — its opening float
+    // plus every movement recorded in it — rather than trusted from the
+    // stored running balance. If the two ever disagree, that is recorded
+    // for investigation (the running balance is what the ledger follows).
+    const { rows: [moved] } = await client.query(
+      `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS net
+         FROM cash_drawer_transactions
+        WHERE session_id = $1 AND transaction_type NOT IN ('opening', 'closing')`,
+      [session.id],
+    );
+    const expected = money(money(session.opening_balance) + money(moved.net));
+    const running = money(drawer.current_balance);
     const discrepancy = money(counted - expected);
 
     if (Math.abs(discrepancy) > DISCREPANCY_TOLERANCE && !force) {
@@ -511,6 +544,32 @@ async function closeDrawer({
         WHERE id = $3`,
       [counted, employeeId, drawer.id],
     );
+
+    // Over/short: the drawer now holds the counted amount, so the ledger
+    // moves from the running balance to the count (DR/CR Cash Over/Short).
+    const ledgerChange = money(counted - running);
+    if (ledgerChange !== 0) {
+      await journalService.postTreasuryEntry(client, {
+        referenceType: 'cash_drawer_session',
+        referenceId: session.id,
+        date: todayStoreDate(),
+        description: ledgerChange > 0 ? 'Cash over at drawer close' : 'Cash short at drawer close',
+        debitCode: ledgerChange > 0 ? GL.cash : GL.overShort,
+        creditCode: ledgerChange > 0 ? GL.overShort : GL.cash,
+        amount: Math.abs(ledgerChange),
+        userId: employeeId,
+      });
+    }
+    if (Math.abs(running - expected) > 0.005) {
+      await logActivity({
+        client,
+        entityType: 'cash_drawer',
+        entityId: drawer.id,
+        action: 'cash_drawer.running_balance_mismatch',
+        performedBy: employeeId,
+        newValue: { sessionId: session.id, runningBalance: running, expectedFromMovements: expected },
+      });
+    }
 
     await logActivity({
       client,
@@ -598,6 +657,17 @@ async function recordManualAdjustment({
         amount,
         employeeId,
         notes: reason.trim(),
+      });
+      // Cash put in or taken out by hand is owner money in the ledger.
+      await journalService.postTreasuryEntry(client, {
+        referenceType: 'cash_drawer_transaction',
+        referenceId: posted.transaction.id,
+        date: todayStoreDate(),
+        description: `Cash ${direction === 'in' ? 'added to' : 'taken from'} drawer: ${reason.trim()}`.slice(0, 250),
+        debitCode: direction === 'in' ? GL.cash : GL.ownerEquity,
+        creditCode: direction === 'in' ? GL.ownerEquity : GL.cash,
+        amount,
+        userId: employeeId,
       });
       await logActivity({
         client,

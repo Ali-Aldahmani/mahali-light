@@ -5,6 +5,7 @@ const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('./notificationService');
+const journalService = require('./journalService');
 
 // Normalizes a Date object or date-like string to a plain YYYY-MM-DD. A
 // Date from the pg driver represents LOCAL midnight for a DATE column, so
@@ -725,6 +726,16 @@ async function resolveWarrantyClaim({
           referenceType: 'invoice',
           referenceId: replacementInvoiceId,
         },
+      });
+
+      // The unit leaves inventory at cost and becomes warranty expense, in
+      // the same transaction as the stock movement (audit Phase 4).
+      await journalService.postWarrantyReplacementEntry(client, {
+        claimId: claim.id,
+        claimNumber: claim.claim_number || claim.warranty_number,
+        cost: Number(built.replacementVariant.cost_price || 0),
+        date: todayStoreDate(),
+        userId: managerId,
       });
 
       // Void the original warranty + create a new active warranty for the

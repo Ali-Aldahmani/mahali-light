@@ -7,6 +7,9 @@ const { logActivity } = require('../utils/activityLog');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
 const bankService = require('../services/bankService');
 const cashService = require('../services/cashService');
+const journalService = require('../services/journalService');
+
+const GL = journalService.TREASURY_CODES;
 
 const createSchema = z.object({
   bankName: z.string().min(1).max(100),
@@ -140,6 +143,17 @@ async function deposit(req, res, next) {
           referenceId: body.referenceId || null,
           notes: body.notes || null,
         });
+        // Money paid into the bank by hand is owner money in the ledger.
+        await journalService.postTreasuryEntry(client, {
+          referenceType: 'bank_transaction',
+          referenceId: posted.transaction.id,
+          date: body.transactionDate || todayStoreDate(),
+          description: `Bank deposit${body.description ? `: ${body.description}` : ''}`.slice(0, 250),
+          debitCode: GL.bank,
+          creditCode: GL.ownerEquity,
+          amount: body.amount,
+          userId: req.user.id,
+        });
         await logActivity({
           client,
           entityType: 'bank_account',
@@ -195,6 +209,16 @@ async function withdrawal(req, res, next) {
           referenceId: body.referenceId || null,
           notes: body.notes || null,
           allowOverdraft: body.allowOverdraft,
+        });
+        await journalService.postTreasuryEntry(client, {
+          referenceType: 'bank_transaction',
+          referenceId: posted.transaction.id,
+          date: body.transactionDate || todayStoreDate(),
+          description: `Bank withdrawal${body.description ? `: ${body.description}` : ''}`.slice(0, 250),
+          debitCode: GL.ownerEquity,
+          creditCode: GL.bank,
+          amount: body.amount,
+          userId: req.user.id,
         });
         await logActivity({
           client,
@@ -306,6 +330,20 @@ async function transfer(req, res, next) {
             body.notes || null,
           ],
         );
+        // Bank to drawer moves money from Bank to Cash in the ledger; bank to
+        // bank stays inside Bank (1002) and posts nothing.
+        if (body.toType === 'cash_drawer') {
+          await journalService.postTreasuryEntry(client, {
+            referenceType: 'cash_transfer',
+            referenceId: trRows[0].id,
+            date: body.transferDate || todayStoreDate(),
+            description: 'Bank to cash drawer transfer',
+            debitCode: GL.cash,
+            creditCode: GL.bank,
+            amount: body.amount,
+            userId: req.user.id,
+          });
+        }
         // The transfer's audit entry commits with both legs.
         await logActivity({
           client,

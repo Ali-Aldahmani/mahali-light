@@ -813,6 +813,70 @@ async function postStockAdjustmentEntry(client, {
 }
 
 // =======================================================================
+// Treasury movements with no business document behind them (audit Phase 4)
+// =======================================================================
+// Manual cash adjustments, bank deposits/withdrawals, drawer↔bank
+// transfers, a drawer float changed between sessions, a new bank account's
+// opening balance and the drawer's over/short at close. Without these the
+// treasury balances moved while cash (1001) and bank (1002) in the ledger
+// did not. Money put in or taken out by the owner goes against Owner
+// Equity (3001); moving money between drawer and bank only moves it between
+// 1001 and 1002. Bank-to-bank transfers stay inside 1002 and post nothing.
+const TREASURY_CODES = {
+  cash: '1001',
+  bank: '1002',
+  ownerEquity: '3001',
+  overShort: '5015',
+  warrantyExpense: '5016',
+};
+
+async function postTreasuryEntry(client, {
+  referenceType,
+  referenceId = null,
+  date,
+  description,
+  debitCode,
+  creditCode,
+  amount,
+  userId = null,
+}) {
+  const amt = money(amount);
+  if (amt <= 0 || debitCode === creditCode) return null;
+  return postJournalEntryWith(client, {
+    referenceType,
+    referenceId,
+    date,
+    description,
+    lines: [
+      { accountId: await getAccountIdByCode(debitCode, client), debit: amt, credit: 0 },
+      { accountId: await getAccountIdByCode(creditCode, client), debit: 0, credit: amt },
+    ],
+    userId,
+  });
+}
+
+// Warranty replacement: the unit handed out leaves inventory at cost and
+// becomes warranty expense (DR 5016, CR 1004).
+async function postWarrantyReplacementEntry(client, {
+  claimId,
+  claimNumber,
+  cost,
+  date,
+  userId,
+}) {
+  return postTreasuryEntry(client, {
+    referenceType: 'warranty_claim',
+    referenceId: claimId,
+    date,
+    description: `Warranty replacement ${claimNumber || ''}`.trim(),
+    debitCode: TREASURY_CODES.warrantyExpense,
+    creditCode: '1004',
+    amount: cost,
+    userId,
+  });
+}
+
+// =======================================================================
 // Period management
 // =======================================================================
 async function listPeriods({ status = null } = {}) {
@@ -1212,6 +1276,9 @@ module.exports = {
   reverseExpenseEntries,
   postRefundEntry,
   postStockAdjustmentEntry,
+  postTreasuryEntry,
+  postWarrantyReplacementEntry,
+  TREASURY_CODES,
   // Lookups
   getAccountByCode,
   getAccountIdByCode,
