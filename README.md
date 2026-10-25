@@ -4,6 +4,8 @@ Point of sale for an electrical shop (UAE). One **server PC** runs everything
 in Docker; every **till/cashier PC** is just a browser pointed at the server
 over the shop's LAN. Several tills share one PostgreSQL database.
 
+> **Version**: 1.10.0 | **License**: UNLICENSED | **Author**: Ali Aldahmani (hello@bytecra.com)
+
 ## 1. Project overview
 
 - **Next.js 15 (App Router, TypeScript)** — the real, native browser POS frontend
@@ -28,6 +30,66 @@ have been removed from this repo (see
 `docs/web-migration/VITE_ARCHIVE_STATUS.md`) — `web/` fully replaces them.
 Normal tills do **not** install Node, Python, or PostgreSQL — only a browser.
 
+### 1.1 Key Features
+
+**POS & Sales:**
+- Product management with barcode scanning (camera-based on phones)
+- Multi-line invoice creation with item-level discounts
+- Multiple payment methods: cash, card, bank transfer, check
+- Cash drawer management with opening/closing balances
+- Returns and exchanges with refund handling
+- Customer profiles and credit limits
+- Pricing restrictions and special pricing
+
+**Inventory & Purchasing:**
+- Stock level tracking with real-time updates
+- Purchase order management with supplier integration
+- Purchase returns and supplier payments
+- Stock transfers and adjustments
+- Barcode lookup integration (UPCitemdb, configurable)
+- Low stock alerts and reorder points
+
+**Financial Management:**
+- Treasury and cash drawer reconciliation
+- Bank account management
+- Expense tracking with categories
+- Bill payment tracking
+- Financial reports (sales, profit/loss, cash flow)
+- Invoice integrity with payment idempotency
+
+**HR & Attendance:**
+- Employee management with roles and permissions
+- Attendance tracking with check-in/check-out
+- Leave management (types, balances, approval)
+- Holiday calendar
+- Attendance policies (late arrival, early departure)
+- Shift management
+
+**Warranty & Support:**
+- Warranty claim management
+- Warranty terms and policies
+- Supplier warranty tracking
+- Customer warranty history
+
+**Operations & Security:**
+- Role-Based Access Control (RBAC) with granular permissions
+- JWT authentication with configurable expiration
+- Real-time notifications via Socket.io
+- Force-logout capability (admin-controlled)
+- Rate limiting and CORS protection
+- Automated backups with NAS support
+- Encrypted backup archives
+- In-app update system
+- Audit logging for critical operations
+
+**Reporting & Analytics:**
+- Sales reports (daily, weekly, monthly)
+- Inventory reports
+- Financial summaries
+- Customer purchase history
+- Employee performance reports
+- Custom report generation with Excel export
+
 ## 2. Architecture
 
 ```text
@@ -42,6 +104,154 @@ optional: docker compose --profile ml  →  FastAPI (future ML)
 
 Everything above the "LAN browsers" line runs in Docker **on one machine**
 (the server PC). Nothing below it is installed on tills.
+
+### 2.1 Technology Stack
+
+**Frontend (Next.js 15):**
+- **Framework**: Next.js 15 with App Router and TypeScript
+- **UI Components**: Radix UI (headless components), Tailwind CSS
+- **Icons**: Lucide React
+- **Animations**: Motion (Framer Motion)
+- **State Management**: Zustand
+- **HTTP Client**: Axios
+- **Real-time**: Socket.io Client
+- **Charts**: Recharts
+- **Barcode Scanning**: barcode-detector (camera-based)
+- **Testing**: Vitest + Testing Library
+
+**Backend (Express.js):**
+- **Framework**: Express 4.19
+- **Database**: PostgreSQL 16 with node-pg
+- **Authentication**: JWT (jsonwebtoken), bcrypt for password hashing
+- **Real-time**: Socket.io 4.8
+- **PDF Generation**: Puppeteer with Chromium
+- **Image Processing**: Sharp
+- **File Uploads**: Multer
+- **Validation**: Zod
+- **Security**: Helmet, CORS, express-rate-limit
+- **Scheduled Tasks**: node-cron
+- **Backup**: Archiver, tar
+- **Excel Export**: ExcelJS, fast-csv
+- **QR Codes**: qrcode
+- **Testing**: Vitest, Supertest
+
+**Optional Components:**
+- **Hardware Agent**: Node.js (localhost-only print service)
+- **FastAPI (ML)**: Python 3.11+, FastAPI, SQLAlchemy, Pydantic, Alembic
+
+**Infrastructure:**
+- **Containerization**: Docker, Docker Compose
+- **Reverse Proxy**: Caddy 2.8 (self-signed HTTPS)
+- **Process Management**: PM2 (for native installs)
+- **Version Control**: Git with GitHub Actions CI/CD
+
+### 2.2 Project Structure
+
+```
+mahali-light/
+├── web/                      # Next.js frontend (standalone)
+│   ├── app/                 # App Router pages
+│   │   ├── (auth)/         # Login, setup wizard
+│   │   ├── (cashier)/      # POS interface
+│   │   ├── (dashboard)/    # Admin dashboard
+│   │   └── (mobile)/       # Mobile views
+│   ├── components/         # React components
+│   ├── services/           # API client services
+│   ├── store/              # Zustand stores
+│   ├── lib/                # Utilities
+│   └── hooks/              # Custom hooks
+│
+├── server/                  # Express API
+│   ├── controllers/       # Request handlers
+│   ├── routes/            # API endpoints (45+ routes)
+│   ├── services/          # Business logic
+│   ├── middleware/        # Express middleware
+│   ├── socket/            # Socket.io handlers
+│   ├── db/                # Database & migrations
+│   ├── backup/            # Backup logic
+│   ├── jobs/              # Scheduled tasks
+│   └── utils/             # Helper functions
+│
+├── shared/                 # Shared business logic
+│   ├── authzPolicy.js     # Authorization rules
+│   ├── permissions.js     # Permission definitions
+│   ├── errorCodes.js      # Error registry
+│   ├── attendancePolicy.js
+│   └── warrantyClaimPolicy.js
+│
+├── backend-fastapi/       # Optional ML sidecar
+│   ├── app/              # FastAPI app
+│   ├── alembic/          # Python migrations
+│   └── tests/            # pytest tests
+│
+├── hardware-agent/       # Local print service
+│   ├── server.js         # Agent server
+│   └── print.ps1         # Windows print script
+│
+├── docker/               # Docker configs
+│   ├── postgres/         # PG init scripts
+│   ├── Caddyfile         # Caddy config
+│   └── caddy-entrypoint.sh
+│
+├── scripts/              # Maintenance scripts
+│   ├── reconcile.js      # Balance reconciliation
+│   ├── decryptBackup.js  # Backup decryption
+│   ├── applyUpdate.js    # In-app updater
+│   └── dev.js            # Dev launcher
+│
+├── tests/                # Test suites
+│   ├── unit/            # Backend unit tests
+│   ├── integration/     # Integration tests
+│   ├── contracts/       # Contract tests
+│   └── migration/       # Migration tests
+│
+├── docs/                 # Documentation
+│   ├── web-migration/   # Migration records
+│   ├── LOCAL_DEV.md     # Local dev guide
+│   └── Setup guides
+│
+└── [Audit files]        # Financial/POS audit reports
+```
+
+### 2.3 API Endpoints
+
+The Express API exposes 45+ route modules covering:
+
+- **Authentication**: `/api/auth` (login, logout, refresh tokens)
+- **Users & Roles**: `/api/users`, `/api/roles`, `/api/employees`
+- **Products & Inventory**: `/api/products`, `/api/stock`, `/api/categories`, `/api/variants`
+- **Sales & Invoices**: `/api/invoices`, `/api/invoiceEditRequests`
+- **Customers**: `/api/customers`, `/api/customerPayments`
+- **Purchasing**: `/api/purchaseOrders`, `/api/suppliers`, `/api/supplierPayments`, `/api/supplierReturns`
+- **Returns**: `/api/returnOrders`, `/api/returnRequests`
+- **Warranties**: `/api/warranties`, `/api/warrantyClaims`
+- **Cash & Treasury**: `/api/cashDrawer`, `/api/treasury`
+- **Finance**: `/api/finance`, `/api/bankAccounts`, `/api/expenses`, `/api/bills`, `/api/billPayments`
+- **HR**: `/api/attendance`, `/api/leaves`, `/api/leaveBalances`, `/api/holidays`
+- **Reports**: `/api/reports`, `/api/analytics`
+- **Settings**: `/api/settings`, `/api/appSettings`, `/api/backup`
+- **Files**: `/api/files` (upload/download)
+- **Real-time**: Socket.io events (stock, notifications, presence)
+- **Setup**: `/api/setup` (initial setup wizard)
+
+Full API documentation: See `API-doc.md` in the repository root.
+
+### 2.4 Audit & Quality Assurance
+
+The repository includes several audit reports documenting system integrity and compliance:
+
+- **POS Invoice Financial Integrity Audit** (`POS_INVOICE_FINANCIAL_INTEGRITY_AUDIT.md`) - Detailed analysis of invoice data integrity, payment idempotency, and financial consistency
+- **POS Transaction Atomicity Audit** (`POS_TRANSACTION_ATOMICITY_AUDIT.md`) - Transaction atomicity and data consistency analysis
+- **POS Idempotency & Duplicate Operations Audit** (`POS_IDEMPOTENCY_DUPLICATE_OPERATIONS_AUDIT.md`) - Idempotency mechanisms and duplicate operation prevention
+- **POS Warranty Audit** (`POS_WARRANTY_AUDIT.md`) - Warranty system review and validation
+- **Purchase Order Inventory Payment Audit** (`PURCHASE_ORDER_INVENTORY_PAYMENT_AUDIT.md`) - PO financial integrity and inventory updates
+- **Cash Drawer Payment Audit** (`PO_CASH_DRAWER_PAYMENT_AUDIT.md`) - Cash drawer payment flow analysis
+- **Customer Profile Financial Audit** (`CUSTOMER_PROFILE_FINANCIAL_AUDIT.md`) - Customer credit and payment profile integrity
+- **User Presence and Logout Audit** (`USER_PRESENCE_AND_LOGOUT_AUDIT.md`) - Session management and logout mechanisms
+- **AI/ML Feasibility Audit** (`AI_ML_FEASIBILITY_AUDIT.md`) - Assessment of ML/AI integration possibilities
+- **Audit Fix Progress** (`AUDIT_FIX_PROGRESS.md`) - Status of audit findings and remediation
+
+These audits ensure the system maintains data integrity, financial accuracy, and operational reliability in production environments.
 
 ---
 
@@ -634,3 +844,139 @@ idempotency, etc.).
 
 Invoice integrity changes, payment idempotency migration, private-file access,
 and PostgreSQL regression-test instructions: [docs/INVOICE_INTEGRITY_FIXES.md](docs/INVOICE_INTEGRITY_FIXES.md).
+
+---
+
+## PART F — Environment Variables Reference
+
+### F.1 Required Variables
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | PostgreSQL database password | `Sup3rSecret!` |
+| `POSTGRES_USER` | PostgreSQL user | `mahali` |
+| `POSTGRES_DB` | PostgreSQL database name | `mahali_light` |
+| `JWT_SECRET` | JWT signing secret (48+ hex bytes) | Generate with Node.js |
+| `MAHALI_BACKUP_SECRET` | Backup encryption key (32+ hex bytes) | Generate with Node.js |
+| `SERVER_IP` | Server's LAN IP address | `192.168.1.50` |
+| `STORE_TIMEZONE` | Store's timezone (IANA format) | `Asia/Dubai` |
+
+### F.2 Docker Ports
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `WEB_PORT` | `80` | Next.js web UI port |
+| `WEB_TLS_PORT` | `443` | HTTPS port (Caddy) |
+| `API_PORT` | `3000` | Express API + Socket.io port |
+| `FASTAPI_PORT` | `8000` | Optional ML sidecar port |
+
+### F.3 Security Configuration
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `JWT_EXPIRES_IN` | `8h` | JWT token expiration |
+| `BCRYPT_ROUNDS` | `12` | Password hashing rounds |
+| `TRUSTED_PROXIES` | `nextjs` | Trusted proxy IPs for X-Forwarded-For |
+| `CORS_ORIGINS` | (empty) | Additional CORS origins |
+| `SERVER_USE_HTTPS` | `false` | Enable HTTPS on Express (not Docker) |
+
+### F.4 Optional Features
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BARCODE_LOOKUP_PROVIDER` | `upcitemdb` | Barcode lookup service |
+| `BARCODE_LOOKUP_API_KEY` | (empty) | API key for barcode service |
+| `NEXT_PUBLIC_HARDWARE_AGENT_URL` | `http://127.0.0.1:17473` | Hardware agent endpoint |
+| `LOG_LEVEL` | `info` | Application logging level |
+
+---
+
+## PART G — CI/CD & Release Process
+
+### G.1 GitHub Actions Workflows
+
+The repository uses GitHub Actions for continuous integration and automated releases:
+
+**Build Workflow** (`.github/workflows/build.yml`):
+- Runs on every pull request
+- Executes all test suites (backend, frontend, ML)
+- Tests against PostgreSQL 16
+- Validates TypeScript types
+- Runs migration tests
+
+**Release Workflow** (`.github/workflows/release.yml`):
+- Triggered by pushing `v*.*.*` tags
+- Creates GitHub release
+- Publishes release artifacts
+- Used by in-app updater
+
+### G.2 Version Management
+
+- Current version: `1.10.0`
+- Version numbers are synchronized across:
+  - Root `package.json`
+  - `web/package.json`
+  - Docker image tags in `docker-compose.yml`
+- Semantic versioning is recommended for releases
+
+### G.3 In-App Updates
+
+Admins can update the API directly from the POS UI:
+1. Go to **Settings → About → Check for updates**
+2. The system downloads the latest GitHub release
+3. Updates are applied via `scripts/applyUpdate.js`
+4. Only updates the API (`server/`, `shared/`, dependencies)
+5. UI changes require full Docker rebuild (see D.2)
+
+---
+
+## PART H — Support & Resources
+
+### H.1 Documentation
+
+- **API Documentation**: `API-doc.md` - Complete API reference
+- **Migration Records**: `docs/web-migration/` - Frontend migration history
+- **Local Development**: `docs/LOCAL_DEV.md` - Development setup guide
+- **Invoice Integrity**: `docs/INVOICE_INTEGRITY_FIXES.md` - Financial integrity details
+- **Setup Guides**: `docs/SETUP_GUIDE.md`, `docs/SHOP_MULTI_PC.md` - Additional setup instructions
+
+### H.2 Audit Reports
+
+See section 2.4 for a complete list of audit reports covering:
+- POS invoice financial integrity
+- Transaction atomicity
+- Idempotency and duplicate operations
+- Warranty system
+- Purchase order payments
+- Cash drawer operations
+- Customer profiles
+- User presence and logout
+- AI/ML feasibility
+
+### H.3 Contact
+
+- **Author**: Ali Aldahmani
+- **Email**: hello@bytecra.com
+- **Website**: https://bytecra.com
+- **License**: UNLICENSED (proprietary)
+
+### H.4 Troubleshooting Resources
+
+- See Part D.7 for common issues and solutions
+- Check `docker compose logs` for container-specific errors
+- Review audit reports for known issues and fixes
+- Consult `docs/` directory for detailed guides
+
+---
+
+## Summary
+
+Bytecra POS is a production-ready, Docker-first point of sale system designed for electrical retail in the UAE. It combines a modern Next.js frontend with a robust Express API backend, PostgreSQL database, and optional ML capabilities. The system emphasizes:
+
+- **Simplicity**: Browser-only clients, no local installation
+- **Reliability**: Docker containers with auto-restart, automated backups
+- **Security**: JWT auth, RBAC, encrypted backups, rate limiting
+- **Scalability**: Multiple tills sharing one database, real-time updates
+- **Maintainability**: Comprehensive documentation, audit trails, in-app updates
+
+The system is designed to run unattended on a server PC with minimal maintenance, while providing cashiers with a responsive, feature-rich POS interface accessible from any browser on the shop's LAN.
