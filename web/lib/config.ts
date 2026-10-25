@@ -1,10 +1,18 @@
+// Next.js only inlines NEXT_PUBLIC_* values into browser code where they are
+// written out literally (`process.env.NEXT_PUBLIC_X`); a computed lookup like
+// `process.env[key]` is always undefined in the browser. So every public
+// setting is read literally here.
+const PUBLIC_ENV: Record<string, string | undefined> = {
+  NEXT_PUBLIC_EXPRESS_PORT: process.env.NEXT_PUBLIC_EXPRESS_PORT,
+  NEXT_PUBLIC_HARDWARE_AGENT_URL: process.env.NEXT_PUBLIC_HARDWARE_AGENT_URL,
+  NEXT_PUBLIC_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL,
+  NEXT_PUBLIC_SERVER_IP: process.env.NEXT_PUBLIC_SERVER_IP,
+  NEXT_PUBLIC_SERVER_PORT: process.env.NEXT_PUBLIC_SERVER_PORT,
+};
+
 function envPublic(viteKey: string, fallback: string): string {
-  if (typeof process !== 'undefined' && process.env) {
-    const nextKey = viteKey.replace(/^VITE_/, 'NEXT_PUBLIC_');
-    const v = process.env[nextKey] || process.env[viteKey];
-    if (v != null && v !== '') return v;
-  }
-  return fallback;
+  const v = PUBLIC_ENV[viteKey.replace(/^VITE_/, 'NEXT_PUBLIC_')];
+  return v != null && v !== '' ? v : fallback;
 }
 
 function electronCfg(): any {

@@ -31,6 +31,8 @@ interface PresenceState {
   clear: () => void;
 }
 
+let inFlight: Promise<void> | null = null;
+
 export const usePresenceStore = create<PresenceState>()((set, get) => ({
   onlineUsers: [],
   revision: 0,
@@ -45,15 +47,23 @@ export const usePresenceStore = create<PresenceState>()((set, get) => ({
     });
   },
 
-  refresh: async () => {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const before = get().revision;
-      const rows = await listOnline();
-      if (get().revision === before) {
-        set({ onlineUsers: rows || [] });
-        return;
-      }
+  // Callers that overlap (mount, socket connect) share one request.
+  refresh: () => {
+    if (!inFlight) {
+      inFlight = (async () => {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const before = get().revision;
+          const rows = await listOnline();
+          if (get().revision === before) {
+            set({ onlineUsers: rows || [] });
+            return;
+          }
+        }
+      })().finally(() => {
+        inFlight = null;
+      });
     }
+    return inFlight;
   },
 
   clear: () => set({ onlineUsers: [], revision: get().revision + 1 }),
