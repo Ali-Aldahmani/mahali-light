@@ -72,7 +72,13 @@ describe.skipIf(!enabled)('dashboard KPI series on real PostgreSQL', () => {
       `INSERT INTO journal_entries (entry_number, date, description) VALUES ('JE-T-1', CURRENT_DATE, 'Credit sale') RETURNING id`,
     );
     const { rows: [ar] } = await db.query(`SELECT id FROM chart_of_accounts WHERE code = '1003'`);
-    await db.query(`INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit) VALUES ($1, $2, 200, 0)`, [je.id, ar.id]);
+    // Balanced against revenue (the database refuses an unbalanced entry, migration 047).
+    const { rows: [rev] } = await db.query(`SELECT id FROM chart_of_accounts WHERE code = '4001'`);
+    await db.query(
+      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit)
+       VALUES ($1, $2, 200, 0), ($1, $3, 0, 200)`,
+      [je.id, ar.id, rev.id],
+    );
 
     const express = require('express');
     request = require('supertest');

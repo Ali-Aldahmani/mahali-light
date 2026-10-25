@@ -44,10 +44,11 @@ describe('locking present in critical writers', () => {
     );
   });
 
-  it('product_variants has no CHECK preventing negative stock_qty', () => {
-    const src = read('server/db/migrations/002_products.sql');
-    expect(src).toMatch(/stock_qty DECIMAL\(12,2\)/);
-    expect(src).not.toMatch(/stock_qty[^\n]*CHECK/i);
+  it('the database refuses negative stock and cash, and unbalanced journals (migration 047)', () => {
+    const src = read('server/db/migrations/047_financial_constraints.sql');
+    expect(src).toMatch(/'stock_qty >= 0'/);
+    expect(src).toMatch(/'current_balance >= 0'/);
+    expect(src).toMatch(/CONSTRAINT TRIGGER journal_lines_balanced/);
   });
 
   it('withTransaction rolls back on throw', () => {
