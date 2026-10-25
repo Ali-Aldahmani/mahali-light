@@ -217,10 +217,13 @@ async function addPayment({
   });
 }
 
-// Delete a payment but only if it was created today. Reverses the PO totals.
-// `userId` is the person reversing it; the reversal entries are theirs, not
-// the original payer's.
-async function deletePayment({ paymentId, userId = null }) {
+// Reverse a payment created today. The payment row is kept and marked
+// reversed (who, when, why) rather than deleted, so the payment history,
+// its receipt and the journal it points to stay intact (audit Phase 4,
+// like customer payment voids). PO totals, treasury and the ledger are
+// reversed. `userId` is the person reversing it; the reversal entries are
+// theirs, not the original payer's.
+async function deletePayment({ paymentId, userId = null, reason = null }) {
   return withTransaction(async (client) => {
     const { rows: pmRows } = await client.query(
       `SELECT * FROM supplier_payments WHERE id = $1 FOR UPDATE`,
@@ -231,6 +234,13 @@ async function deletePayment({ paymentId, userId = null }) {
     }
     const pm = pmRows[0];
     const reversedBy = userId || pm.employee_id;
+    if (pm.reversed_at) {
+      throw new AppError(
+        ERROR_CODES.BIZ_INVALID_STATE,
+        'This payment has already been reversed.',
+        { status: 409 },
+      );
+    }
 
     const today = todayStoreDate();
     const createdDay = storeDate(new Date(pm.created_at));
@@ -253,7 +263,12 @@ async function deletePayment({ paymentId, userId = null }) {
     }
     const po = poRows[0];
 
-    await client.query(`DELETE FROM supplier_payments WHERE id = $1`, [paymentId]);
+    await client.query(
+      `UPDATE supplier_payments
+          SET reversed_at = NOW(), reversed_by = $2, reversal_reason = $3
+        WHERE id = $1`,
+      [paymentId, reversedBy, reason],
+    );
 
     const totalCost = money(po.total_cost);
     const newPaid = money(money(po.amount_paid) - money(pm.amount));

@@ -123,6 +123,30 @@ describe.skipIf(!enabled)('purchase order create/update/confirm on real PostgreS
     expect(res.body.data.notes).toBe('updated notes only');
   });
 
+  it('a paid draft keeps its supplier and cannot drop below what was paid (Phase 4)', async () => {
+    const put = (id, body) => request(app).put(`/purchase-orders/${id}`).auth(adminToken, { type: 'bearer' }).send(body);
+    const created = await request(app).post('/purchase-orders').auth(adminToken, { type: 'bearer' })
+      .send({ supplierId, items: [{ productId, variantId, quantity: 2, costPricePerUnit: 60 }] });
+    const draftId = created.body.data.id;
+    await require('../../server/services/supplierPaymentService').addPayment({
+      poId: draftId, amount: 100, method: 'cheque', employeeId: adminId,
+    });
+    const { rows: [other] } = await db.query(`INSERT INTO suppliers (name) VALUES ('Other Supplier') RETURNING id`);
+
+    expect((await put(draftId, { supplierId: other.id })).status).toBe(409);
+    expect((await put(draftId, { items: [{ productId, variantId, quantity: 1, costPricePerUnit: 60 }] })).status).toBe(409);
+    const { rows: [unchanged] } = await db.query(
+      `SELECT supplier_id, amount_paid FROM purchase_orders WHERE id = $1`, [draftId]);
+    expect(unchanged.supplier_id).toBe(supplierId);
+
+    const grown = await put(draftId, { items: [{ productId, variantId, quantity: 3, costPricePerUnit: 60 }] });
+    expect(grown.status).toBe(200);
+    const { rows: [after] } = await db.query(
+      `SELECT payment_status, balance_due FROM purchase_orders WHERE id = $1`, [draftId]);
+    expect(after.payment_status).toBe('partial');
+    expect(Number(after.balance_due)).toBeGreaterThan(0);
+  });
+
   it('confirms the draft PO', async () => {
     const res = await request(app)
       .post(`/purchase-orders/${poId}/confirm`)

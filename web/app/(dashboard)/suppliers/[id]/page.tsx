@@ -454,7 +454,7 @@ function PaymentsTab({ supplier }: { supplier: Supplier }) {
       .finally(() => setLoading(false));
   }, [supplier.id]);
 
-  const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const total = rows.reduce((s, r) => (r.reversedAt ? s : s + Number(r.amount || 0)), 0);
 
   return (
     <div className="space-y-3">

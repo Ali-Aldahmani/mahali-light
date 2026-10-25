@@ -560,7 +560,7 @@ async function fetchPurchaseOrder(poId) {
     [poId],
   );
   const { rows: payments } = await query(
-    `SELECT * FROM supplier_payments WHERE purchase_order_id = $1
+    `SELECT * FROM supplier_payments WHERE purchase_order_id = $1 AND reversed_at IS NULL
       ORDER BY payment_date ASC, created_at ASC`,
     [poId],
   );

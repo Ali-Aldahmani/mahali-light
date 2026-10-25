@@ -11,6 +11,7 @@ const METHOD_META = {
 
 // Renders supplier payments with method icon. `onDelete(payment)` is optional
 // and shown when the caller has the permission to reverse same-day entries.
+// A reversed payment stays in the list, struck through and labelled.
 export default function PaymentHistoryTable({
   payments,
   loading = false,
@@ -33,9 +34,12 @@ export default function PaymentHistoryTable({
       key: 'amount',
       header: 'Amount',
       align: 'right',
-      render: (r) => (
-        <span className="font-medium text-ink">{formatCurrency(r.amount)}</span>
-      ),
+      render: (r) =>
+        r.reversedAt ? (
+          <span className="text-ink-muted line-through">{formatCurrency(r.amount)}</span>
+        ) : (
+          <span className="font-medium text-ink">{formatCurrency(r.amount)}</span>
+        ),
     },
     {
       key: 'paymentMethod',
@@ -63,7 +67,17 @@ export default function PaymentHistoryTable({
     {
       key: 'employeeUsername',
       header: 'By',
-      render: (r) => r.employeeUsername || '—',
+      render: (r) =>
+        r.reversedAt ? (
+          <span title={r.reversalReason || undefined}>
+            {r.employeeUsername || '—'}
+            <span className="ml-1.5 rounded-full bg-error-light px-1.5 py-0.5 text-[11px] font-medium text-error">
+              Reversed{r.reversedByUsername ? ` by ${r.reversedByUsername}` : ''}
+            </span>
+          </span>
+        ) : (
+          r.employeeUsername || '—'
+        ),
     },
     {
       key: 'receipt',
@@ -81,7 +95,7 @@ export default function PaymentHistoryTable({
               <Receipt size={14} />
             </PrivateFileLink>
           )}
-          {onDelete && (
+          {onDelete && !r.reversedAt && (
             <button
               type="button"
               onClick={(e) => {

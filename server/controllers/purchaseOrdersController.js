@@ -370,7 +370,7 @@ async function update(req, res, next) {
       // concurrent confirm()/remove() land in between the check and the
       // write, silently mutating a PO that was no longer a draft.
       const { rows: existing } = await client.query(
-        `SELECT status FROM purchase_orders WHERE id = $1 FOR UPDATE`,
+        `SELECT status, supplier_id, amount_paid FROM purchase_orders WHERE id = $1 FOR UPDATE`,
         [id],
       );
       if (!existing.length) {
@@ -380,6 +380,17 @@ async function update(req, res, next) {
         throw new AppError(
           ERROR_CODES.BIZ_INVALID_STATE,
           'Only draft purchase orders can be edited.',
+          { status: 409 },
+        );
+      }
+      // A draft that already has payments keeps its supplier, and its total
+      // can't drop below what was paid: the payments are tied to that
+      // supplier and amount (audit Phase 4, PO F13).
+      const amountPaid = Number(existing[0].amount_paid) || 0;
+      if (amountPaid > 0 && body.supplierId && body.supplierId !== existing[0].supplier_id) {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          'This draft already has payments, so its supplier can’t be changed. Reverse the payments first.',
           { status: 409 },
         );
       }
@@ -429,6 +440,19 @@ async function update(req, res, next) {
         }
       }
       await recalculatePOTotals(client, id);
+      if (amountPaid > 0) {
+        const { rows: [totals] } = await client.query(
+          `SELECT total_cost FROM purchase_orders WHERE id = $1`,
+          [id],
+        );
+        if (Number(totals.total_cost) + 0.005 < amountPaid) {
+          throw new AppError(
+            ERROR_CODES.BIZ_INVALID_STATE,
+            `This draft has ${amountPaid.toFixed(2)} AED paid, so its total can’t go below that.`,
+            { status: 409 },
+          );
+        }
+      }
     });
 
     await logActivity({

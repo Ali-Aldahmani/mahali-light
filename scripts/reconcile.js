@@ -137,7 +137,7 @@ const CHECKS = [
       SELECT po.po_number AS item,
              po.amount_paid::float8 AS recorded,
              COALESCE(SUM(sp.amount), 0)::float8 AS expected
-        FROM purchase_orders po LEFT JOIN supplier_payments sp ON sp.purchase_order_id = po.id
+        FROM purchase_orders po LEFT JOIN supplier_payments sp ON sp.purchase_order_id = po.id AND sp.reversed_at IS NULL
        GROUP BY po.id
       HAVING ABS(po.amount_paid - COALESCE(SUM(sp.amount), 0)) > 0.005`,
   },

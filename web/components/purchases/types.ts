@@ -68,6 +68,10 @@ export interface Payment {
   poNumber?: string;
   employeeUsername?: string;
   receiptAttachment?: string | null;
+  // Set when the payment was reversed; it stays listed but no longer counts.
+  reversedAt?: string | null;
+  reversedByUsername?: string | null;
+  reversalReason?: string | null;
 }
 
 // Shape returned by VariantSearchInput's onSelect / searchProducts results.

@@ -36,14 +36,18 @@ function shape(row) {
     receiptAttachment: row.receipt_attachment,
     notes: row.notes,
     createdAt: row.created_at,
+    reversedAt: row.reversed_at || null,
+    reversedByUsername: row.reversed_by_username || null,
+    reversalReason: row.reversal_reason || null,
   };
 }
 
 const PAYMENT_SELECT = `
-  SELECT p.*, u.username AS employee_username,
+  SELECT p.*, u.username AS employee_username, ru.username AS reversed_by_username,
          po.po_number, s.name AS supplier_name
     FROM supplier_payments p
     LEFT JOIN users u ON u.id = p.employee_id
+    LEFT JOIN users ru ON ru.id = p.reversed_by
     LEFT JOIN purchase_orders po ON po.id = p.purchase_order_id
     LEFT JOIN suppliers s ON s.id = p.supplier_id
 `;
@@ -151,11 +155,9 @@ async function remove(req, res, next) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
 
-    const { payment, po, treasury } = await deletePayment({ paymentId: id, userId: req.user.id });
-
-    if (existing[0].receipt_attachment) {
-      deleteAttachmentFile(existing[0].receipt_attachment);
-    }
+    // The payment is kept, marked reversed, and so is its receipt file.
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 500) || null : null;
+    const { payment, po, treasury } = await deletePayment({ paymentId: id, userId: req.user.id, reason });
 
     const io = req.app.get('io');
     if (io && treasury) {

@@ -73,6 +73,13 @@ async function recalculatePOTotals(client, poId) {
             tax_amount = $2,
             total_cost = $3,
             balance_due = $3 - COALESCE(amount_paid, 0),
+            -- Recomputed with the total, so a draft edited after a payment
+            -- doesn't keep a stale status. Nothing paid is always 'unpaid'
+            -- (an empty draft isn't "paid").
+            payment_status = CASE
+              WHEN COALESCE(amount_paid, 0) <= 0 THEN 'unpaid'
+              WHEN $3 - amount_paid <= 0.0001 THEN 'paid'
+              ELSE 'partial' END,
             updated_at = NOW()
       WHERE id = $4`,
     [subtotal, taxAmount, totalCost, poId],

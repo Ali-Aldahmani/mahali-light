@@ -71,7 +71,7 @@ const STATS_JOIN = `
   ) po_stats ON TRUE
   LEFT JOIN LATERAL (
     SELECT MAX(payment_date) AS last_payment_date
-      FROM supplier_payments WHERE supplier_id = s.id
+      FROM supplier_payments WHERE supplier_id = s.id AND reversed_at IS NULL
   ) pm_stats ON TRUE
   LEFT JOIN LATERAL (
     SELECT
@@ -369,6 +369,8 @@ async function listPayments(req, res, next) {
         receiptAttachment: r.receipt_attachment,
         notes: r.notes,
         createdAt: r.created_at,
+        reversedAt: r.reversed_at || null,
+        reversalReason: r.reversal_reason || null,
       })),
     );
   } catch (err) {
@@ -553,7 +555,7 @@ async function listTimeline(req, res, next) {
           FROM supplier_payments sp
           LEFT JOIN purchase_orders po ON po.id = sp.purchase_order_id
           LEFT JOIN users u ON u.id = sp.employee_id
-         WHERE sp.supplier_id = $1
+         WHERE sp.supplier_id = $1 AND sp.reversed_at IS NULL
        )
        UNION ALL
        (

@@ -842,7 +842,7 @@ async function supplierPaymentsReport(params) {
        LEFT JOIN suppliers s ON s.id = sp.supplier_id
        LEFT JOIN purchase_orders po ON po.id = sp.purchase_order_id
        LEFT JOIN users u ON u.id = sp.employee_id
-      WHERE sp.payment_date BETWEEN $1::date AND $2::date
+      WHERE sp.payment_date BETWEEN $1::date AND $2::date AND sp.reversed_at IS NULL
       ORDER BY sp.payment_date DESC`,
     [startDate, endDate],
   );
@@ -2204,7 +2204,7 @@ async function customMonthlySummary(params) {
       query(
         `SELECT COALESCE(SUM(amount), 0)::float8 AS total
            FROM supplier_payments
-          WHERE payment_date BETWEEN $1::date AND $2::date`,
+          WHERE payment_date BETWEEN $1::date AND $2::date AND reversed_at IS NULL`,
         [startDate, endDate],
       ),
       query(

@@ -200,6 +200,17 @@ describe.skipIf(!enabled)('audit quick fixes on real PostgreSQL', () => {
         [bankA],
       );
       expect(back.employee_id).toBe(manager.id);
+
+      // Phase 4: the payment is kept, marked reversed by the reverser, and
+      // can't be reversed twice; the PO no longer counts it.
+      const { rows: [kept] } = await db.query(
+        `SELECT reversed_at, reversed_by FROM supplier_payments WHERE id = $1`, [payment.id]);
+      expect(kept.reversed_at).not.toBeNull();
+      expect(kept.reversed_by).toBe(manager.id);
+      await expect(payments.deletePayment({ paymentId: payment.id, userId: manager.id }))
+        .rejects.toMatchObject({ status: 409 });
+      const { rows: [poAfter] } = await db.query(`SELECT amount_paid FROM purchase_orders WHERE id = $1`, [po.id]);
+      expect(Number(poAfter.amount_paid)).toBe(0);
     });
   });
 
