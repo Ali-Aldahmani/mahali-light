@@ -32,6 +32,11 @@ const PERMISSIONS = {
     poCreate: 'supplier.purchase_order.create',
     poPay: 'supplier.purchase_order.pay',
   },
+  po: {
+    commentsView: 'po.comments.view',
+    commentsCreate: 'po.comments.create',
+    commentsReact: 'po.comments.react',
+  },
   customer: {
     view: 'customer.view',
     create: 'customer.create',
@@ -151,6 +156,7 @@ const ROLE_DEFAULTS = {
     'invoice.refund', 'invoice.print', 'invoice.download', 'invoice.custom_item',
     'product.view', 'product.create', 'product.edit', 'product.adjust_stock', 'product.view_cost',
     'supplier.view', 'supplier.create', 'supplier.edit', 'supplier.purchase_order.create', 'supplier.purchase_order.pay',
+    'po.comments.view', 'po.comments.create', 'po.comments.react',
     'customer.view', 'customer.create', 'customer.edit', 'customer.collect_payment', 'customer.view_balance',
     'employee.view', 'employee.create', 'employee.edit',
     'stock.view', 'stock.adjust_approve', 'stock.adjust_direct', 'stock.count_initiate', 'stock.count_approve',

@@ -20,6 +20,8 @@ function probePort(host, port, timeoutMs = 800) {
 export default async function globalSetup() {
   if (process.env.INVOICE_TEST_PG_PORT) return;
 
+  // Never fall back to the app's own PG* settings from .env: the integration
+  // suites create and drop databases, and .env points at a real one.
   const port = Number(process.env.PG_PROBE_PORT || 5432);
   const reachable = await probePort('127.0.0.1', port);
   if (reachable) {

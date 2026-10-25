@@ -57,4 +57,27 @@ router.post(
   pdf.regeneratePurchaseOrderPdf,
 );
 
+// Comments & Discussion -----------------------------------------------------
+const comments = require('../controllers/purchaseOrderCommentsController');
+router.get(
+  '/:id/comments',
+  requirePermission('po.comments.view'),
+  comments.list,
+);
+router.post(
+  '/:id/comments',
+  requirePermission('po.comments.create'),
+  comments.create,
+);
+router.post(
+  '/:id/comments/:commentId/reactions',
+  requirePermission('po.comments.react'),
+  comments.react,
+);
+router.delete(
+  '/:id/comments/:commentId/reactions/:emoji',
+  requirePermission('po.comments.react'),
+  comments.removeReaction,
+);
+
 module.exports = router;

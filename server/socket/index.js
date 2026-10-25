@@ -1,5 +1,5 @@
 const { Server } = require('socket.io');
-const { verifyToken, hashToken } = require('../middleware/auth');
+const { verifyToken, hashToken, loadUserContext } = require('../middleware/auth');
 const { query } = require('../db/postgres');
 const attendanceService = require('../services/attendanceService');
 const { isAllowedOrigin } = require('../utils/corsOrigins');
@@ -83,6 +83,48 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       } catch (err) {
         // ignore; heartbeats are best-effort
       }
+    });
+
+    // Purchase Order discussion room subscription with permission validation
+    socket.on('join_po_discussion', async (payload, callback) => {
+      try {
+        const poId = payload?.poId;
+        if (!poId) {
+          if (typeof callback === 'function') callback({ success: false, error: 'MISSING_PO_ID' });
+          return;
+        }
+
+        const user = await loadUserContext(userId);
+        if (!user || !user.is_active) {
+          if (typeof callback === 'function') callback({ success: false, error: 'UNAUTHORIZED' });
+          return;
+        }
+
+        const owned = new Set(user.permissions || []);
+        if (!owned.has('*') && !owned.has('po.comments.view')) {
+          if (typeof callback === 'function') callback({ success: false, error: 'NO_PERMISSION' });
+          return;
+        }
+
+        const { rows } = await query('SELECT id FROM purchase_orders WHERE id = $1', [poId]);
+        if (!rows.length) {
+          if (typeof callback === 'function') callback({ success: false, error: 'PO_NOT_FOUND' });
+          return;
+        }
+
+        socket.join(`po_discussion:${poId}`);
+        if (typeof callback === 'function') callback({ success: true, poId });
+      } catch (err) {
+        if (typeof callback === 'function') callback({ success: false, error: 'INTERNAL_ERROR' });
+      }
+    });
+
+    socket.on('leave_po_discussion', (payload, callback) => {
+      const poId = payload?.poId;
+      if (poId) {
+        socket.leave(`po_discussion:${poId}`);
+      }
+      if (typeof callback === 'function') callback({ success: true, poId });
     });
 
     socket.on('disconnect', async () => {

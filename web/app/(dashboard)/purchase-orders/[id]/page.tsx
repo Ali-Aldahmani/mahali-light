@@ -41,6 +41,7 @@ import {
 import ReceiveItemsSlideOver from '@/components/purchases/ReceiveItemsSlideOver';
 import AddPaymentSlideOver from '@/components/purchases/AddPaymentSlideOver';
 import SupplierReturnSlideOver from '@/components/purchases/SupplierReturnSlideOver';
+import PurchaseOrderComments from '@/components/purchases/PurchaseOrderComments';
 import { onPurchaseOrderEvent } from '@/store/socketStore';
 import type { Payment, PurchaseOrder } from '@/components/purchases/types';
 
@@ -280,22 +281,26 @@ function PurchaseOrderDetailPageContent() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 card p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink">Items</h2>
-            {po.expectedDate && (
-              <div className="text-xs text-ink-muted">
-                Expected: {formatDate(po.expectedDate)}
-                {po.receivedDate && ` · Received: ${formatDate(po.receivedDate)}`}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-ink">Items</h2>
+              {po.expectedDate && (
+                <div className="text-xs text-ink-muted">
+                  Expected: {formatDate(po.expectedDate)}
+                  {po.receivedDate && ` · Received: ${formatDate(po.receivedDate)}`}
+                </div>
+              )}
+            </div>
+            <POItemsTable items={po.items || []} editable={false} showCost={canSeeCost} />
+            {po.notes && (
+              <div className="rounded-input bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+                {po.notes}
               </div>
             )}
           </div>
-          <POItemsTable items={po.items || []} editable={false} showCost={canSeeCost} />
-          {po.notes && (
-            <div className="rounded-input bg-surface-2 px-3 py-2 text-sm text-ink-muted">
-              {po.notes}
-            </div>
-          )}
+
+          <PurchaseOrderComments purchaseOrderId={id} />
         </div>
 
         <div className="space-y-4">
