@@ -4,7 +4,7 @@
 
 This report covers the work done against the nine `*_AUDIT.md` reports in this folder, what was verified, and what is still to do. Read **"Before you deploy"** first.
 
-**Status:** Phases 0–5 of the plan are done in code and tested. They cover the headline findings of every audit, not every finding. Section 5 lists what's left: open code findings, accountant checks and your decisions.
+**Status:** Phases 0–5 of the plan are done, and so are the findings the phases left open (section 3, "Open findings closed on 26 Oct"). What's left in section 5 is accountant checks, your decisions, and feature work the audits list as missing features.
 
 ---
 
@@ -14,7 +14,7 @@ This report covers the work done against the nine `*_AUDIT.md` reports in this f
    ```bash
    docker compose up -d --build express-api nextjs
    ```
-   The API applies the new migrations on start: 039, 040 and 041 (earlier phases), **042** (purchase-order comments) and **043** (two new accounts, supplier payment reversal columns). All are additive (new columns, tables, accounts, permissions) and safe on existing data. The API refuses to migrate without a successful pre-migration backup. That is on purpose.
+   The API applies the new migrations on start: 039, 040 and 041 (earlier phases), **042** (purchase-order comments), **043** (two new accounts, supplier payment reversal columns), **044** (one open warranty claim), **045** (customer snapshot on invoices), **046** (PO cancellation fields), **047** (database CHECKs and the balanced-journal trigger) and **049** (session last-seen). All are additive (new columns, tables, accounts, permissions, indexes and constraints) and safe on existing data: 044 skips its index if old data already has two open claims on one warranty, and 047's CHECKs are `NOT VALID`, so existing rows can't block the upgrade. (048 belongs to the record-level audit log work, which is separate.) The API refuses to migrate without a successful pre-migration backup. That is on purpose.
 2. **Run the reconciliation before and after the deploy** (section 6) and compare with the baseline in section 4. A new difference means stop and investigate.
 3. **Reload every till's browser after the deploy.** Money and stock actions now *require* a request key. A page loaded before the update doesn't send one and gets "This screen is out of date. Reload the page and try again."
 4. **Things staff will notice:**
@@ -30,6 +30,12 @@ This report covers the work done against the nine `*_AUDIT.md` reports in this f
    - The **online-users list** is only sent to people allowed to see it (`user.edit` or `user.force_logout`).
    - **Sales Summary** shows *Total Collected* (cash and bank only) and *On Account* (credit sales) separately. **Customer Receivables** now ages the actual open credit sales.
    - The **notification bell** shows its unread badge straight away, not only after it is clicked.
+   - A **warranty claim** is refused while another claim on that warranty is open, or once the warranty was used for a replacement. A replacement must be the same product and can record a serial number.
+   - A **held sale that already has payments** can be resumed at the till. A draft saved on two screens: the second save is refused with "This sale was changed on another screen".
+   - **Quantities** for products sold by the piece must be whole numbers, and any quantity has at most two decimals.
+   - The **"allow negative stock" setting** is gone. Selling below zero stock was never actually possible.
+   - **Cancelling a PO** keeps it, marked cancelled. A confirmed PO can be cancelled while nothing is received or paid.
+   - An **unattended till** now shows as idle in the online list after 5 minutes without input.
 5. **Accounting choices made in Phase 4. Have your accountant confirm these** (section 3, Phase 4). They decide which accounts the new journal entries hit.
 
 ---
@@ -38,18 +44,18 @@ This report covers the work done against the nine `*_AUDIT.md` reports in this f
 
 All nine audits were read and the headline findings re-checked against the code (the reports cite line numbers from older commits).
 
-The plan's phases covered each audit's headline findings, not every finding. Section 5 lists the findings still open.
+The plan's phases covered each audit's headline findings. The findings they left open in code were fixed on 26 Oct (section 3).
 
 | Audit | Result |
 |---|---|
 | Customer profile financial audit | Fixed by `b14d912` before this work began (timeline, transactional audit with old/new values, net cards, edit conflicts, live sync) |
-| PO, cash drawer & payment audit | Headline findings fixed in Phases 1–4. Open: cheques (your decision) |
-| Purchase order, inventory & payment audit | Headline findings fixed in Phases 1–4. Open: draft deletion, cancelling a confirmed PO |
-| Idempotency & duplicate operations audit | Money and stock commands fixed in Phase 3. Open: a few lower-risk creates |
-| Transaction atomicity audit | Fixed in Phase 2, except database constraints (TXA-011) |
-| Invoice financial integrity audit | Main findings fixed in Phases 1–4. Several medium findings still open |
-| Warranty audit | Fixed in Phases 1, 2 and 4: sale/return consistency, permissions, invoice filter, replacement cost. Open: duplicate-replacement guard, replacement variant/serial, plus feature gaps |
-| User presence & logout audit | Fixed in Phases 1 and 5. Open: idle detection, freshness after a restart |
+| PO, cash drawer & payment audit | Fixed in Phases 1–4. Open: cheques (your decision) |
+| Purchase order, inventory & payment audit | Fixed in Phases 1–4 and on 26 Oct (draft deletion, cancelling a confirmed PO) |
+| Idempotency & duplicate operations audit | Fixed in Phase 3 and on 26 Oct (the remaining creates) |
+| Transaction atomicity audit | Fixed in Phase 2 and on 26 Oct (database constraints, TXA-011). FIFO: your decision |
+| Invoice financial integrity audit | Fixed in Phases 1–4 and on 26 Oct (F11, F13, F14, F21, F23, F24). FIFO, serial ownership (F18) and per-invoice settlement (F20): decisions / feature work |
+| Warranty audit | Fixed in Phases 1, 2, 4 and on 26 Oct (F16–F18). Per-unit warranties and the "missing features" list: your decision |
+| User presence & logout audit | Fixed in Phases 1, 5 and on 26 Oct (F08, F11, F16). HTTPS on the LAN (F14/F15): your decision |
 | AI/ML feasibility audit | Not a defect list. No action needed now |
 
 ---
@@ -104,6 +110,19 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 - The web app re-reads the online list on every reconnect, re-reads a snapshot that a live update overtook, clears the list on disconnect, and shows an error instead of hiding a failed load.
 - Sign-out reports "Signed out." only once the server confirms.
 
+### Open findings closed on 26 Oct (`47c0992`, `d38243a`, `a97bc92`, `8d642c0`, `626ee5b`, `cf01874`, `d685074`)
+- **Warranty F16/F17:** one open claim per warranty, enforced under the warranty lock and by a partial unique index (044). A warranty already used for a replacement, one not started, or a claim for another customer is refused. Resolution relocks and rechecks the warranty: coverage voided after filing (refund, manual void) can only be rejected. Claim edits run under the claim's lock and can't reopen a resolved claim.
+- **Warranty F18:** a replacement must be a variant of the warranted product; the recorded product is the unit's own; an optional serial is checked and recorded on the replacement invoice and the new warranty (new field on the resolve screen).
+- **Invoice F23:** a draft save carries the `updatedAt` the screen last saw; a draft changed since is refused with 409 instead of overwritten. The till keeps it across holds, resumes and refreshes.
+- **Invoice F13:** quantities are rejected (not rounded) with more than two decimals, above 1,000,000, or fractional for products sold by the piece — on new lines, custom lines and edit requests.
+- **Invoice F24:** negative stock isn't supported, so the setting always reads false and can't be turned on.
+- **Invoice F11:** confirmation stores the customer's name, phone, company, TRN, email and address on the invoice (045); screens and the PDF read it first. Older invoices fall back to the live record.
+- **Invoice F14:** the till resumes a draft that has payments; at checkout the draft's allocations are reconciled with the current plan — unchanged ones replay by key, changed ones are removed (new `DELETE /invoices/:id/payments/:paymentId`, drafts only, kept in the invoice history).
+- **PO F04:** cancelling keeps the PO with status `cancelled` and who/when/why (046). `DELETE` stays draft-only; `POST /purchase-orders/:id/cancel` also cancels a confirmed PO while nothing is received or paid.
+- **TXA-011 / F21:** `NOT VALID` CHECKs for non-negative stock, quarantine, drawer and customer balances, received ≤ ordered, positive quantities and payment/expense amounts; a deferred trigger refuses any unbalanced journal entry at commit (047).
+- **Remaining creates:** POs, supplier returns, return requests, manual journal entries, bills and warranty claims run once per request key; the forms send one.
+- **Presence F08/F11/F16:** heartbeats report real input, and only that counts as activity (idle works); `last_seen_at` (049) tracks the connection for the 30-minute sign-out; open sessions are marked offline at startup until they reconnect; beats that change nothing within 20 seconds aren't written.
+
 ### Other work in this push
 - **Purchase-order discussion** (`8e8f75d`, migration 042): comments, replies and reactions on each PO. Comments can't be edited or deleted, are permission-gated and update live. The thread scrolls and opens on the latest comment.
 - **Notification bell** (`b92f390`): the unread badge shows on page load, and notifications missed while offline are re-read after a reconnect.
@@ -115,9 +134,9 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 ## 4. How it was verified
 
 - Every fix has a test that **fails on the old code and passes on the new** (checked by running the tests with the old files restored).
-- Server: **530 tests pass**, 7 skipped. Two files are disabled with `describe.skip`; the live concurrency test needs `RUN_PG_CONCURRENCY=1` and also passes.
-- New end-to-end suites: `presenceLifecycle` (real HTTP and Socket.IO server), `treasuryLedger` (runs every treasury movement, then the reconciliation), `receivablesAging`. Supplier-return, split-refund and exchange-difference tests sit in the existing suites.
-- Web: **188 tests pass**; the TypeScript check is clean.
+- Server: **558 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
+- New end-to-end suites: `presenceLifecycle` (real HTTP and Socket.IO server), `treasuryLedger` (runs every treasury movement, then the reconciliation), `receivablesAging`, `warrantyClaims`, `invoiceDraftRules`, `dbConstraints`, `createRetries`. Supplier-return, split-refund, exchange-difference and PO-cancellation tests sit in the existing suites.
+- Web: all tests pass; the TypeScript check is clean. (The web count includes tests of the separate, uncommitted record-level audit log work.)
 - Checked in the running app: login, dashboard, live connection on the right port, online-users list, the bell badge, and sign-out confirmation.
 - The reconciliation run on a fresh local install (setup wizard plus migrations) shows **0 differences across 14 checks**.
 - The full server run occasionally dies with `Error: Channel closed` during the migration-upgrade test. That is the test runner, not a failing test; a rerun passes.
@@ -139,19 +158,8 @@ Phase 4 only fixes movements **from now on**. Both differences above stay in the
 - **Large drawer discrepancies need a second person.** Today the same user can `force` a close above the AED 10 tolerance. A second-person sign-in on the till is a workflow decision, so it wasn't built.
 - Not added: reconciliation checks for **accounts payable** and **inventory** against their sub-ledgers. Payables are recognised at receipt while a PO's balance includes goods not yet received (and prepayments on drafts), so the two need an agreed definition first.
 
-### Findings still open in code (not in the plan's phases)
-Checked against the code on 25 Oct 2026. These are fixable without a policy decision:
-- **Warranty F16/F17:** a warranty that already had a replacement can take another claim and be replaced again. One open claim per warranty, and a parent-state check at resolution, are needed.
-- **Warranty F18:** a replacement of a different variant, or a serialized unit, isn't recorded properly (mixed product, unknown serial).
-- **Invoice F23:** two people editing the same draft invoice: the last save silently wins (no version check).
-- **Invoice F24:** the "allow negative stock" setting conflicts with the stock service, which always blocks negative stock.
-- **Invoice F11:** an invoice doesn't keep a snapshot of the customer's name and details at the time of sale.
-- **Invoice F13:** quantity precision and limits aren't validated the same way everywhere.
-- **Invoice F14:** there's no screen to resume a draft that already has payments.
-- **PO F04:** deleting a draft PO removes it completely, yet logs it as "cancelled". There is no way to cancel a confirmed PO.
-- **Atomicity TXA-011 / Invoice F21:** the database itself doesn't enforce the key rules: non-negative stock and drawer, received ≤ ordered, balanced journals.
-- **Idempotency:** supplier-return create, return-request create, PO create, manual journal, bill create and warranty-claim create carry no request key. Each is protected by state or quantity checks, but a retried request can still create a duplicate record.
-- **Presence F08/F11/F16:** the heartbeat counts as activity, so an unattended till never shows as idle. After a server restart, sessions stay "online" until the sweeps run. Heartbeat writes are unthrottled.
+### Feature work the audits list as missing
+Not defects in existing code, and each needs a product decision first: serial-number ownership through receipt, sale and return (invoice F18, warranty F06/F07); per-invoice settlement of customer debt (invoice F20 — aging now approximates it from the open credit sales); warranty policy versions, certificates, repair orders and a supplier RMA ledger (warranty audit section 22); a durable outbox for post-commit notifications.
 
 ### Decisions only you can make
 - **FIFO costing:** sales currently use the latest purchase cost.
