@@ -1,4 +1,5 @@
 import { apiGet, apiGetWithMeta, apiPost, apiPut } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 function toParams(obj: Record<string, any>): string {
   const p = new URLSearchParams();
@@ -17,8 +18,8 @@ export function getClaim(id) {
   return apiGet(`/warranty-claims/${id}`);
 }
 
-export function createClaim(body) {
-  return apiPost('/warranty-claims', body);
+export function createClaim(body, requestKey?: string) {
+  return apiPost('/warranty-claims', body, withRequestKey(requestKey));
 }
 
 export function updateClaim(id, body) {

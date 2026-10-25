@@ -5,6 +5,7 @@ import {
   apiPut,
   apiDelete,
 } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 function qs(params: Record<string, any>): string {
   const usp = new URLSearchParams();
@@ -61,8 +62,8 @@ export function getJournalEntry(id) {
   return apiGet(`/finance/journal/${id}`);
 }
 
-export function postManualJournalEntry(body) {
-  return apiPost('/finance/journal', body);
+export function postManualJournalEntry(body, requestKey?: string) {
+  return apiPost('/finance/journal', body, withRequestKey(requestKey));
 }
 
 // =======================================================================

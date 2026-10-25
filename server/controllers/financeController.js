@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { requestKeyFrom } = require('../utils/operations');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const journalService = require('../services/journalService');
@@ -167,6 +168,7 @@ async function postManualEntry(req, res, next) {
       })),
       isManual: true,
       userId: req.user?.id || null,
+      requestKey: requestKeyFrom(req),
     });
     return created(res, await journalService.getEntry(result.entry.id));
   } catch (err) {

@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { requestKeyFrom } = require('../utils/operations');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -141,6 +142,7 @@ async function createOne(req, res, next) {
       ...body,
       createdBy: req.user.id,
       io,
+      requestKey: requestKeyFrom(req),
     });
     const { rows } = await query(`${CLAIM_SELECT} WHERE c.id = $1`, [claim.id]);
     return created(res, shapeClaim(rows[0]));

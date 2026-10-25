@@ -9,6 +9,7 @@ import WarrantyStatusBadge from '@/components/ui/WarrantyStatusBadge';
 import { createClaim } from '@/services/warrantyClaimService';
 import { toast } from '@/store/toastStore';
 import type { Warranty } from './types';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 interface RaiseClaimSlideOverProps {
   warranty: Warranty | null;
@@ -20,6 +21,7 @@ export default function RaiseClaimSlideOver({ warranty, open, onClose }: RaiseCl
   const router = useRouter();
   const [issue, setIssue] = useState('');
   const [notes, setNotes] = useState('');
+  const createKey = useRequestKey(open);
   const [submitting, setSubmitting] = useState(false);
 
   function reset() {
@@ -41,7 +43,7 @@ export default function RaiseClaimSlideOver({ warranty, open, onClose }: RaiseCl
         customerId: warranty.customerId,
         issueDescription: issue.trim(),
         notes: notes.trim() || null,
-      });
+      }, createKey.current());
       toast.success(`Claim ${claim.claimNumber} created.`);
       reset();
       onClose?.(true);

@@ -6,6 +6,7 @@ const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('./notificationService');
 const journalService = require('./journalService');
+const { runOnce } = require('../utils/operations');
 const { snapshotInvoiceCustomer } = require('../utils/customerSnapshot');
 
 // Normalizes a Date object or date-like string to a plain YYYY-MM-DD. A
@@ -412,6 +413,7 @@ async function createClaim({
   notes = null,
   createdBy = null,
   io = null,
+  requestKey = null,
 }) {
   if (!issueDescription || !String(issueDescription).trim()) {
     throw new AppError(
@@ -420,7 +422,13 @@ async function createClaim({
     );
   }
   const afterCommit = [];
-  const created = await withTransaction(async (client) => {
+  // A retried create with the same request key returns the first claim.
+  const { result: created } = await withTransaction((client) => runOnce(client, {
+    scope: 'warranty_claim_create',
+    key: requestKey,
+    userId: createdBy,
+    payload: { warrantyId, customerId, issueDescription, notes },
+  }, async () => {
     const { rows } = await client.query(
       `SELECT w.*, p.name AS product_name
          FROM warranties w
@@ -551,7 +559,7 @@ async function createClaim({
       } catch (_e) { /* best-effort */ }
     });
     return claim;
-  });
+  }));
   for (const send of afterCommit) await send();
   return created;
 }

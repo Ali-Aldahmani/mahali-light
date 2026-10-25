@@ -50,8 +50,8 @@ export function getPurchaseOrder(id) {
   return apiGet(`/purchase-orders/${id}`);
 }
 
-export function createPurchaseOrder(body) {
-  return apiPost('/purchase-orders', body);
+export function createPurchaseOrder(body, requestKey?: string) {
+  return apiPost('/purchase-orders', body, withRequestKey(requestKey));
 }
 
 export function updatePurchaseOrder(id, body) {

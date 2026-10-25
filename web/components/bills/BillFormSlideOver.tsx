@@ -9,6 +9,7 @@ import { listBankAccounts } from '@/services/bankAccountService';
 import { toast } from '@/store/toastStore';
 import { storeDate, localIsoDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const FREQ_OPTIONS = [
   { value: 'monthly', label: 'Monthly' },
@@ -56,6 +57,7 @@ export default function BillFormSlideOver({ open, onClose, bill = null, onSaved 
   const [notes, setNotes] = useState('');
   const [categories, setCategories] = useState([]);
   const [banks, setBanks] = useState([]);
+  const createKey = useRequestKey(open);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -158,7 +160,7 @@ export default function BillFormSlideOver({ open, onClose, bill = null, onSaved 
             ...body,
             nextDueDate: firstDueDate,
           })
-        : await createBill(body);
+        : await createBill(body, createKey.current());
       toast.success(isEdit ? 'Bill updated.' : 'Bill added.');
       onSaved?.(saved);
       onClose();

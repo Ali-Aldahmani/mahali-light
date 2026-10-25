@@ -31,6 +31,7 @@ import { newPoSavedMessage } from '@/lib/purchases/newPoMessage';
 import { newRequestKey } from '@/lib/requestKey';
 import type { Supplier } from '@/components/suppliers/types';
 import DateField from '@/components/ui/DateField';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const STEPS = [
   { id: 1, label: 'Order info' },
@@ -72,6 +73,8 @@ function NewPurchaseOrderPageContent() {
   const [taxAmount, setTaxAmount] = useState<number | string>(0);
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<DraftItem[]>([]);
+  // One key per visit: a retried save returns the PO already created.
+  const createKey = useRequestKey();
   const [saving, setSaving] = useState(false);
   const [addSupplierOpen, setAddSupplierOpen] = useState(false);
   const [addProductOpen, setAddProductOpen] = useState(false);
@@ -221,7 +224,7 @@ function NewPurchaseOrderPageContent() {
           unitLabel: it.unitLabel || null,
           costPricePerUnit: Number(it.costPricePerUnit),
         })),
-      });
+      }, createKey.current());
 
       if (!asDraft) {
         await confirmPurchaseOrder(created.id);

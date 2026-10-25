@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { requestKeyFrom } = require('../utils/operations');
 const { query } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -348,6 +349,7 @@ async function create(req, res, next) {
       approvedBy: noInvoice ? req.user.id : null,
       requestedBy: req.user.id,
       io,
+      requestKey: requestKeyFrom(req),
     });
     const { rows } = await query(`${REQUEST_SELECT} WHERE r.id = $1`, [
       result.request.id,

@@ -7,6 +7,7 @@ import {
   validateMoneyResponse,
   type ReturnRequest,
 } from '@/lib/schemas/returnRequest';
+import { withRequestKey } from '@/lib/requestKey';
 
 const returnRequestListSchema = z.array(returnRequestSchema);
 
@@ -37,8 +38,8 @@ export async function lookupReturnTransaction({ q, mode = 'auto' }) {
   return data;
 }
 
-export async function createReturnRequest(body): Promise<ReturnRequest> {
-  const data = await apiPost('/return-requests', body);
+export async function createReturnRequest(body, requestKey?: string): Promise<ReturnRequest> {
+  const data = await apiPost('/return-requests', body, withRequestKey(requestKey));
   return validateMoneyResponse(returnRequestSchema, data, 'POST /return-requests');
 }
 

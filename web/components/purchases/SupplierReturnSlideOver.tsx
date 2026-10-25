@@ -10,6 +10,7 @@ import { createSupplierReturn } from '@/services/supplierReturnService';
 import { formatQty } from '@/lib/utils/format';
 import { fileUrl } from '@/lib/config';
 import type { PurchaseOrder } from './types';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const REASONS = [
   { value: 'defective', label: 'Defective' },
@@ -52,6 +53,7 @@ export default function SupplierReturnSlideOver({
 }: SupplierReturnSlideOverProps) {
   const [reason, setReason] = useState('defective');
   const [items, setItems] = useState<ReturnRow[]>([]);
+  const createKey = useRequestKey(open);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -106,7 +108,7 @@ export default function SupplierReturnSlideOver({
           condition: it.condition || null,
           serialNumber: it.serialNumber || null,
         })),
-      });
+      }, createKey.current());
       toast.success(`Return ${created.returnNumber} created.`);
       onCreated?.(created);
       onClose?.();

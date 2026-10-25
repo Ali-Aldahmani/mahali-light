@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { runOnce } = require('../utils/operations');
 const { emitCustomerChanged } = require('../utils/customerEvents');
 const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -569,6 +570,7 @@ async function createReturnRequest({
   replacementPlan = null,
   requestedBy,
   io = null,
+  requestKey = null,
 }) {
   if (!RETURN_TYPES.has(returnType)) {
     throw new AppError(
@@ -596,7 +598,14 @@ async function createReturnRequest({
     throw new AppError(ERROR_CODES.BIZ_NO_INVOICE_NEEDS_APPROVAL);
   }
 
-  const result = await withTransaction(async (client) => {
+  // A retried create with the same request key returns the first request
+  // instead of filing a second one.
+  const { result, replayed } = await withTransaction((client) => runOnce(client, {
+    scope: 'return_request_create',
+    key: requestKey,
+    userId: requestedBy,
+    payload: { returnType, referenceType, referenceId, customerId, supplierId, noInvoiceReturn, reason, requestNote, items, refundPlan, replacementPlan },
+  }, async () => {
     let invoice = null;
     let invoiceItems = [];
     if (referenceType === 'invoice' && referenceId) {
@@ -695,7 +704,8 @@ async function createReturnRequest({
     });
 
     return { request, totalValue, itemCount: resolvedItems.length };
-  });
+  }));
+  if (replayed) return result;
 
   // Managers hear about the request only once it is committed, so they can
   // never open a request that a failed commit rolled back.

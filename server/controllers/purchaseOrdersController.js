@@ -4,7 +4,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
-const { requestKeyFrom } = require('../utils/operations');
+const { runOnce, requestKeyFrom } = require('../utils/operations');
 const {
   generatePoNumber,
   recalculatePOTotals,
@@ -285,7 +285,13 @@ async function create(req, res, next) {
       );
     }
 
-    const poId = await withTransaction(async (client) => {
+    // A retried create with the same request key returns the first PO.
+    const { result: poId, replayed } = await withTransaction((client) => runOnce(client, {
+      scope: 'purchase_order_create',
+      key: requestKeyFrom(req),
+      userId: req.user.id,
+      payload: body,
+    }, async () => {
       const poNumber = await generatePoNumber(client);
       const { rows } = await client.query(
         `INSERT INTO purchase_orders
@@ -328,17 +334,19 @@ async function create(req, res, next) {
       }
       await recalculatePOTotals(client, id);
       return id;
-    });
+    }));
 
-    await logActivity({
-      entityType: 'purchase_order',
-      entityId: poId,
-      action: 'purchase_order.created',
-      performedBy: req.user.id,
-    });
+    if (!replayed) {
+      await logActivity({
+        entityType: 'purchase_order',
+        entityId: poId,
+        action: 'purchase_order.created',
+        performedBy: req.user.id,
+      });
+    }
 
     const io = req.app.get('io');
-    if (io) {
+    if (io && !replayed) {
       const { rows } = await query(`${LIST_SELECT} WHERE po.id = $1`, [poId]);
       const payload = {
         poId,
@@ -354,7 +362,7 @@ async function create(req, res, next) {
     }
 
     const { rows: full } = await query(`${LIST_SELECT} WHERE po.id = $1`, [poId]);
-    return created(res, shapePO(full[0], includeCost));
+    return (replayed ? ok : created)(res, shapePO(full[0], includeCost));
   } catch (err) {
     next(err);
   }

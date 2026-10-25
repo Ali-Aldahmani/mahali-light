@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { requestKeyFrom } = require('../utils/operations');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const billService = require('../services/billService');
@@ -48,7 +49,7 @@ const createSchema = z.object({
 async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
-    const bill = await billService.createBill(body, req.user.id);
+    const bill = await billService.createBill(body, req.user.id, { requestKey: requestKeyFrom(req) });
     return created(res, bill);
   } catch (err) {
     if (err instanceof z.ZodError) return next(zodFail(err));

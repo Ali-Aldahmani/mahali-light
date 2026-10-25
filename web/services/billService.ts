@@ -5,6 +5,7 @@ import http, {
   apiPut,
   apiDelete,
 } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 function qs(params: Record<string, any>): string {
   const usp = new URLSearchParams();
@@ -23,8 +24,8 @@ export function getBill(id) {
   return apiGet(`/bills/${id}`);
 }
 
-export function createBill(body) {
-  return apiPost('/bills', body);
+export function createBill(body, requestKey?: string) {
+  return apiPost('/bills', body, withRequestKey(requestKey));
 }
 
 export function updateBill(id, body) {

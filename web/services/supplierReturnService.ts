@@ -1,4 +1,5 @@
 import { apiGet, apiGetWithMeta, apiPost, apiPut } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 function toParams(o: Record<string, any>): string {
   const p = new URLSearchParams();
@@ -29,8 +30,8 @@ export function getSupplierReturn(id) {
   return apiGet(`/supplier-returns/${id}`);
 }
 
-export function createSupplierReturn(body) {
-  return apiPost('/supplier-returns', body);
+export function createSupplierReturn(body, requestKey?: string) {
+  return apiPost('/supplier-returns', body, withRequestKey(requestKey));
 }
 
 export function resolveSupplierReturn(id, body) {

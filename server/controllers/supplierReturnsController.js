@@ -6,6 +6,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('../services/stockService');
+const { runOnce, requestKeyFrom } = require('../utils/operations');
 const journalService = require('../services/journalService');
 
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -196,7 +197,14 @@ async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
 
-    const result = await withTransaction(async (client) => {
+    // A retried create with the same request key returns the first return
+    // instead of moving the stock out twice.
+    const { result, replayed } = await withTransaction((client) => runOnce(client, {
+      scope: 'supplier_return_create',
+      key: requestKeyFrom(req),
+      userId: req.user.id,
+      payload: body,
+    }, async () => {
       const numberRes = await nextDocumentNumber(client, 'SR');
       const returnNumber = numberRes.formatted;
 
@@ -282,7 +290,12 @@ async function create(req, res, next) {
       });
 
       return { returnId, returnNumber, affectedVariants: body.items.map((i) => i.variantId) };
-    });
+    }));
+
+    if (replayed) {
+      const { rows: again } = await query(`${LIST_SELECT} WHERE sr.id = $1`, [result.returnId]);
+      return ok(res, shapeReturn(again[0]));
+    }
 
     await logActivity({
       entityType: 'supplier_return',

@@ -2,6 +2,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce } = require('../utils/operations');
 
 const VALID_TYPES = new Set(['asset', 'liability', 'equity', 'revenue', 'expense']);
 
@@ -317,9 +318,18 @@ async function postJournalEntryWith(client, params) {
 // journal entries from the UI). Auto-posting paths use postJournalEntryWith
 // directly so the entry rides in the source transaction.
 async function postJournalEntry(params) {
-  const result = await withTransaction((client) =>
-    postJournalEntryWith(client, params),
-  );
+  // A retried manual entry with the same request key returns the first one.
+  const { result: posted, replayed } = await withTransaction((client) => runOnce(client, {
+    scope: 'journal_entry_manual',
+    key: params.requestKey || null,
+    userId: params.userId || null,
+    payload: { ...params, requestKey: undefined },
+  }, async () => {
+    const r = await postJournalEntryWith(client, params);
+    return { entry: r.entry, lines: r.lines, period: r.period };
+  }));
+  const result = posted;
+  if (replayed) return result;
 
   await logActivity({
     entityType: 'journal_entry',

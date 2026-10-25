@@ -11,6 +11,7 @@ import { listAccounts, postManualJournalEntry } from '@/services/financeService'
 import { toast } from '@/store/toastStore';
 import { storeDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 function todayIso() {
   return storeDate();
@@ -36,6 +37,7 @@ export default function ManualJournalEntrySlideOver({
   const [description, setDescription] = useState('');
   const [lines, setLines] = useState([emptyLine(), emptyLine()]);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const createKey = useRequestKey(open);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export default function ManualJournalEntrySlideOver({
           debit: l.side === 'debit' ? Number(l.amount) : 0,
           credit: l.side === 'credit' ? Number(l.amount) : 0,
         })),
-      });
+      }, createKey.current());
       toast.success('Journal entry posted.');
       onPosted?.();
     } catch (err: any) {

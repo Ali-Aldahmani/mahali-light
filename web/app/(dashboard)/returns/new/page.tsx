@@ -26,6 +26,7 @@ import { createReturnRequest } from '@/services/returnService';
 import { searchProducts } from '@/services/productService';
 import { formatCurrency, formatDate, timeAgo } from '@/lib/utils/format';
 import type { Invoice, InvoiceItem, RefundPlanEntry, ReplacementPlanItem, SelectOption } from '../types';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const REASON_OPTIONS: SelectOption[] = [
   { value: 'defective', label: 'Defective' },
@@ -93,6 +94,8 @@ function NewReturnRequestPageContent() {
   const [replacementItems, setReplacementItems] = useState<ReplacementPlanItem[]>([]);
   // Each entry: { id, sourceItemId, variantId, productName, sku, quantity, unitPrice }
 
+  // One key per visit: a retried submit returns the request already filed.
+  const createKey = useRequestKey();
   const [submitting, setSubmitting] = useState(false);
 
   // ---------------------------------------------------------------- Step 1
@@ -323,7 +326,7 @@ function NewReturnRequestPageContent() {
         replacementPlan: replacementPayload,
       };
 
-      const res = await createReturnRequest(body);
+      const res = await createReturnRequest(body, createKey.current());
       toast.success(`Return request ${res.requestNumber} submitted.`);
       router.push(`/returns/requests/${res.id}`);
     } catch (err: any) {

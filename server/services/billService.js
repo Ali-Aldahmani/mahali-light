@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('../db/postgres');
+const { runOnce } = require('../utils/operations');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
@@ -131,7 +132,7 @@ function shapeBillPayment(row) {
 // =======================================================================
 // CRUD
 // =======================================================================
-async function createBill(input, userId) {
+async function createBill(input, userId, { requestKey = null } = {}) {
   if (!input.name?.trim()) {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Bill name is required.');
   }
@@ -151,7 +152,13 @@ async function createBill(input, userId) {
     );
   }
 
-  return withTransaction(async (client) => {
+  // A retried create with the same request key returns the first bill.
+  const { result } = await withTransaction((client) => runOnce(client, {
+    scope: 'bill_create',
+    key: requestKey,
+    userId,
+    payload: input,
+  }, async () => {
     const nextDue = dateOnly(input.firstDueDate || input.startDate);
     const { rows } = await client.query(
       `INSERT INTO bills
@@ -207,7 +214,8 @@ async function createBill(input, userId) {
       },
     });
     return shapeBill(bill);
-  });
+  }));
+  return result;
 }
 
 async function updateBill(id, input, userId) {
