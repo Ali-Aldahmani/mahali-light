@@ -185,6 +185,17 @@ async function loadCatalogVariant(client, variantId) {
 // BIZ_REFUND_PLAN_MISMATCH whenever a product's price simply changed in the
 // meantime. We still confirm each variant is still active — that's a real
 // reason to block, just not a price mismatch.
+// How the customer pays the difference when the replacement costs more than
+// what they returned: { method: 'cash' | 'bank', bankAccountId? }. Optional
+// in the plan; cash when not given, as before (audit F10).
+function parseDifferencePayment(raw) {
+  if (!raw || typeof raw !== 'object') return { method: 'cash', bankAccountId: null };
+  if (raw.method !== 'cash' && raw.method !== 'bank') {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Difference payment must be cash or bank.');
+  }
+  return { method: raw.method, bankAccountId: raw.method === 'bank' ? raw.bankAccountId || null : null };
+}
+
 async function loadFrozenReplacementPlan(client, plan) {
   if (!plan) return null;
   let parsed = plan;
@@ -233,6 +244,7 @@ async function loadFrozenReplacementPlan(client, plan) {
     replacementTotal,
     priceDifference: 0,
     differenceDirection: 'none',
+    differencePayment: parseDifferencePayment(parsed.differencePayment),
   };
 }
 
@@ -287,6 +299,7 @@ async function resolveReplacementPlan(client, plan) {
     // Derived at approve time from return total vs replacement total.
     priceDifference: 0,
     differenceDirection: 'none',
+    differencePayment: parseDifferencePayment(parsed.differencePayment),
   };
 }
 
@@ -1061,9 +1074,23 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       (request.return_type === 'customer_replace' && refundPlan)
     ) {
       if (Array.isArray(refundPlan) && refundPlan.length > 0) {
-        for (const p of refundPlan) {
+        // VAT is worked out once for the whole refund and shared across the
+        // tenders, the last one taking the rounding remainder, so a refund
+        // split over cash and bank reverses exactly the VAT a single tender
+        // would (audit F08).
+        const refundTaxRate = invoice ? Number(invoice.tax_rate) || 0 : 0;
+        const planTotal = money(refundPlan.reduce((s, p) => s + money(p.amount), 0));
+        const planVat = refundTaxRate > 0
+          ? money(planTotal - money(planTotal / (1 + refundTaxRate / 100)))
+          : 0;
+        let vatLeft = planVat;
+        for (const [planIndex, p] of refundPlan.entries()) {
           const amount = money(p.amount);
           refundTotal = money(refundTotal + amount);
+          const lineVat = planIndex === refundPlan.length - 1 || planTotal <= 0
+            ? vatLeft
+            : money(planVat * amount / planTotal);
+          vatLeft = money(vatLeft - lineVat);
           await client.query(
             `INSERT INTO refund_payments
                (return_order_id, method, amount, bank_account_id, employee_id, notes)
@@ -1107,7 +1134,8 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
             method: p.method,
             date: todayStoreDate(),
             userId: managerId,
-            taxRate: invoice ? Number(invoice.tax_rate) || 0 : 0,
+            taxRate: refundTaxRate,
+            vatAmount: lineVat,
           });
 
           // Cash / bank refunds now book through the treasury services.
@@ -1178,6 +1206,8 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
         priceDifference: Math.max(0, money(replacementTotal - totalValue)),
         differenceDirection: replacementTotal > totalValue ? 'customer_pays' : 'none',
         returnOrderNumber: orderNumber,
+        differencePayment: replacementPlan.differencePayment || { method: 'cash', bankAccountId: null },
+        taxRate: invoice ? Number(invoice.tax_rate) || 0 : 0,
       });
       replacementInvoiceId = built.invoiceId;
       executionEvents.push(...built.stockEmits);
@@ -1303,7 +1333,10 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
 
 async function buildReplacementInvoice(
   client,
-  { customerId, managerId, items, priceDifference, differenceDirection, returnOrderNumber },
+  {
+    customerId, managerId, items, priceDifference, differenceDirection, returnOrderNumber,
+    differencePayment = { method: 'cash', bankAccountId: null }, taxRate = 0,
+  },
 ) {
   const year = new Date().getFullYear();
   const scope = 'RET';
@@ -1326,6 +1359,13 @@ async function buildReplacementInvoice(
 
   const total =
     differenceDirection === 'customer_pays' ? money(priceDifference) : 0;
+  // The difference is what the customer pays, VAT included (the returned
+  // value it is measured against is what they paid, VAT included). Split it
+  // at the original sale's rate instead of booking it all as revenue with
+  // zero VAT (audit F10). The amount the customer pays is unchanged.
+  const rate = Number(taxRate) || 0;
+  const taxable = rate > 0 ? money(total / (1 + rate / 100)) : total;
+  const tax = money(total - taxable);
 
   const { rows: inv } = await client.query(
     `INSERT INTO invoices (
@@ -1336,10 +1376,10 @@ async function buildReplacementInvoice(
       invoice_discount
     ) VALUES (
       $1,$2,'confirmed','paid',
-      $3,$3::numeric-$4::numeric,0,$4,0,
+      $3,GREATEST($3::numeric-$8::numeric, 0),$9,$8,$10,
       $4,$4,0,
       $5,$6,$7,$7,NOW(),
-      $3::numeric-$4::numeric
+      GREATEST($3::numeric-$8::numeric, 0)
     ) RETURNING id`,
     [
       invoiceNumber,
@@ -1349,6 +1389,9 @@ async function buildReplacementInvoice(
       'RET',
       `Replacement invoice for return ${returnOrderNumber}`,
       managerId,
+      taxable,
+      rate,
+      tax,
     ],
   );
   const invoiceId = inv[0].id;
@@ -1435,35 +1478,55 @@ async function buildReplacementInvoice(
     });
   }
 
-  // If the customer pays the difference, we record it as paid in cash by
-  // default — managers can revise in Phase 10's banking flow.
+  // The difference is paid by the tender the plan names (cash by default),
+  // and lands in that treasury: a bank-paid difference no longer inflates
+  // the drawer (audit F10).
+  const payMethod = differencePayment?.method === 'bank' ? 'bank' : 'cash';
   if (total > 0) {
+    let posted;
+    if (payMethod === 'bank') {
+      posted = await bankService.recordBankIn({
+        client, bankAccountId: differencePayment.bankAccountId || null,
+        transactionType: 'sale', amount: total,
+        referenceType: 'invoice', referenceId: invoiceId, employeeId: managerId,
+        description: `Price-difference payment for ${returnOrderNumber}`,
+      });
+      stockEmits.push({
+        event: 'bank_balance_updated', audience: ['role:Manager', 'role:Admin'],
+        payload: { bankAccountId: posted.accountId, bankName: posted.bankName,
+          newBalance: posted.balanceAfter, delta: posted.delta,
+          transactionType: 'sale', changedBy: managerId, at: new Date().toISOString() },
+      });
+    } else {
+      posted = await cashService.recordCashIn({
+        client, transactionType: 'sale', amount: total,
+        referenceType: 'invoice', referenceId: invoiceId, employeeId: managerId,
+        notes: `Price-difference payment for ${returnOrderNumber}`,
+      });
+      stockEmits.push({
+        event: 'cash_balance_updated', audience: ['role:Manager', 'role:Admin'],
+        payload: { newBalance: posted.balanceAfter, delta: posted.delta,
+          transactionType: 'sale', changedBy: managerId, at: new Date().toISOString() },
+      });
+    }
     await client.query(
-      `INSERT INTO invoice_payments (invoice_id, method, amount, employee_id, notes)
-       VALUES ($1,'cash',$2,$3,$4)`,
+      `INSERT INTO invoice_payments (invoice_id, method, amount, bank_account_id, employee_id, notes)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
       [
         invoiceId,
+        payMethod,
         total,
+        payMethod === 'bank' ? posted.accountId || null : null,
         managerId,
         `Price-difference payment for ${returnOrderNumber}`,
       ],
     );
-    const posted = await cashService.recordCashIn({
-      client, transactionType: 'sale', amount: total,
-      referenceType: 'invoice', referenceId: invoiceId, employeeId: managerId,
-      notes: `Price-difference payment for ${returnOrderNumber}`,
-    });
-    stockEmits.push({
-      event: 'cash_balance_updated', audience: ['role:Manager', 'role:Admin'],
-      payload: { newBalance: posted.balanceAfter, delta: posted.delta,
-        transactionType: 'sale', changedBy: managerId, at: new Date().toISOString() },
-    });
   }
 
   await journalService.postSaleEntry(client, {
     invoiceId, invoiceNumber, date: todayStoreDate(),
-    subtotal: total, taxAmount: 0,
-    payments: total > 0 ? [{ method: 'cash', amount: total }] : [],
+    subtotal: taxable, taxAmount: tax,
+    payments: total > 0 ? [{ method: payMethod, amount: total }] : [],
     cogsAmount, userId: managerId,
   });
 

@@ -255,6 +255,43 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     await expect(returnRequest(inv)).rejects.toMatchObject({ code: 'BIZ_RETURN_QTY_EXCEEDED' });
   });
 
+  it('F8 a refund split across tenders reverses the same VAT as one tender (Phase 4)', async () => {
+    await db.query(`INSERT INTO bank_accounts (bank_name,account_name,is_default)
+      SELECT 'F8 bank','Test',true WHERE NOT EXISTS (SELECT 1 FROM bank_accounts WHERE is_default)`);
+    const inv = await sale({ price: 0.21, taxRate: 5 });
+    expect(Number(inv.total)).toBe(0.22);
+    const r = await returnRequest(inv, { plan: [{ method: 'cash', amount: 0.11 }, { method: 'bank', amount: 0.11 }] });
+    const result = await approve(r);
+    // One tender of 0.22 reverses 0.01 VAT; rounding each 0.11 separately gave 0.02.
+    expect(await net(result.order.id, '2002')).toBe(0.01);
+    expect(await net(result.order.id, '4001')).toBe(0.21);
+  });
+
+  it('F10 an exchange difference carries VAT and lands in the tender it was paid with (Phase 4)', async () => {
+    const bank = (await db.query(`SELECT id, current_balance FROM bank_accounts WHERE is_default LIMIT 1`)).rows[0]
+      || (await db.query(`INSERT INTO bank_accounts (bank_name,account_name,is_default) VALUES ('F10 bank','Test',true)
+            RETURNING id, current_balance`)).rows[0];
+    const inv = await sale({ price: 100, taxRate: 5 }); // paid 105
+    const cashBefore = await cash();
+    const bankBefore = Number(bank.current_balance);
+    const v = await variant({ price: 120, cost: 30 });
+    const r = await returnRequest(inv, { plan: null,
+      replacement: { items: [{ variantId: v.id, quantity: 1 }], differencePayment: { method: 'bank', bankAccountId: bank.id } } });
+    const result = await approve(r);
+    const newId = result.order.replacement_invoice_id;
+    // The customer pays 120 − 105 = 15, VAT included at the sale's 5%.
+    const replacement = await invoice(newId);
+    expect(Number(replacement.total)).toBe(15);
+    expect(Number(replacement.tax_amount)).toBe(0.71);
+    expect(Number(replacement.taxable_amount)).toBe(14.29);
+    expect(await net(newId, '2002')).toBe(-0.71);
+    expect(await net(newId, '4001')).toBe(-14.29);
+    expect(await net(newId, '1002')).toBe(15);
+    expect(await cash()).toBe(cashBefore);
+    expect(Number((await db.query('SELECT current_balance FROM bank_accounts WHERE id=$1', [bank.id])).rows[0].current_balance))
+      .toBe(bankBefore + 15);
+  });
+
   it('F7 simultaneous credit sales serialize the shared credit limit', async () => {
     const c = await customer(100);
     const a = await draft({ price: 75, customerId: c.id });

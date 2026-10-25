@@ -742,6 +742,7 @@ async function postRefundEntry(client, {
   date,
   userId,
   taxRate = 0,
+  vatAmount = null,
 }) {
   const amt = money(amount);
   if (amt <= 0) return null;
@@ -757,9 +758,15 @@ async function postRefundEntry(client, {
   // refund of a sale showed up as a pure loss (revenue - refund-as-expense)
   // rather than netting to zero, and the VAT report kept showing tax due
   // on a sale that no longer exists.
+  //
+  // `vatAmount`, when given, is this tender's share of VAT worked out once
+  // for the whole refund (returnService), so splitting a refund across
+  // tenders can't round the VAT differently (audit F08).
   const rate = Number(taxRate) || 0;
-  const revenuePortion = rate > 0 ? money(amt / (1 + rate / 100)) : amt;
-  const vatPortion = money(amt - revenuePortion);
+  const vatPortion = vatAmount != null
+    ? money(vatAmount)
+    : money(amt - (rate > 0 ? money(amt / (1 + rate / 100)) : amt));
+  const revenuePortion = money(amt - vatPortion);
 
   const lines = [
     { accountId: await getAccountIdByCode('4001', client), debit: revenuePortion, credit: 0 },
