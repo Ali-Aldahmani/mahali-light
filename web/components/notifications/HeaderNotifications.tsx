@@ -33,7 +33,11 @@ export default function HeaderNotifications() {
   const dismiss = useNotificationStore((s) => s.dismiss);
   const setPinned = useNotificationStore((s) => s.setPinned);
 
-  // Refresh the list each time the panel opens.
+  // The bell's badge counts the loaded list, so load it on mount rather than
+  // waiting for the first open; then refresh each time the panel opens.
+  useEffect(() => {
+    fetchNotifications({ append: false });
+  }, [fetchNotifications]);
   useEffect(() => {
     if (panelOpen) fetchNotifications({ append: false });
   }, [panelOpen, fetchNotifications]);
