@@ -6,13 +6,20 @@ over the shop's LAN. Several tills share one PostgreSQL database.
 
 ## 1. Project overview
 
-- **Next.js (App Router, TypeScript)** — the real, native browser POS frontend
+- **Next.js 15 (App Router, TypeScript)** — the real, native browser POS frontend
   (cashiers open a URL). It is a standalone application under `web/` with its
-  own routes, components, stores, and services, and does not use
-  `react-router-dom`. See `docs/web-migration/` for the migration record.
-- **Express** — permanent core API (JWT, RBAC, invoices, inventory, finance).
+  own routes, components, Zustand stores, and services, and does not use
+  `react-router-dom`. Route groups: `(auth)`, `(cashier)`, `(dashboard)`, and
+  `(mobile)` (a phone-friendly view under `/m`). See `docs/web-migration/` for
+  the migration record.
+- **Express** — permanent core API (JWT, RBAC, invoices, inventory, purchasing,
+  returns/warranties, cash drawer & treasury, HR/attendance, finance, reports,
+  backups, in-app updates).
 - **PostgreSQL 16** — permanent database.
 - **Socket.io** — realtime events (stock, force-logout, notifications), hosted on Express.
+- **Caddy (`web-tls`)** — HTTPS front door on `:443` with an auto-generated
+  self-signed cert, so phones can use the camera for barcode scanning
+  (browsers only allow camera access over HTTPS).
 - **Hardware Agent** (optional, per till) — silent thermal print / local printers. Not required for ordinary use.
 - **FastAPI** (optional) — future ML/AI only. **Not** part of normal POS startup and **not** a replacement for Express.
 
@@ -25,9 +32,9 @@ Normal tills do **not** install Node, Python, or PostgreSQL — only a browser.
 
 ```text
 LAN browsers (tills)  →  Next.js (:80)  →  Express API (:3000)  →  PostgreSQL
-                               │                    │
-                               │                    └── Socket.io (browsers also connect to :3000)
-                               │
+                               ↑                    │
+Phones (HTTPS)  →  Caddy web-tls (:443)             └── Socket.io (browsers also connect to :3000)
+
                       optional Hardware Agent on a till (127.0.0.1 only)
 
 optional: docker compose --profile ml  →  FastAPI (future ML)
@@ -126,11 +133,17 @@ Open `.env` in a text editor and set at least these values:
 | `POSTGRES_PASSWORD` | Strong database password (pick your own) | `Sup3rSecret!` |
 | `POSTGRES_USER` / `POSTGRES_DB` | Database role and name (defaults are fine) | `mahali` / `mahali_light` |
 | `JWT_SECRET` | Random 48+ byte hex string — **generate one, don't type your own words** | see command below |
-| `MAHALI_BACKUP_SECRET` | Random 32+ byte hex string for NAS backup credential encryption | see command below |
-| `SERVER_IP` | This PC's LAN IP (find it in A.5) | `192.168.1.50` |
+| `MAHALI_BACKUP_SECRET` | Random 32+ byte hex string; encrypts NAS credentials and (if enabled) backup archives | see command below |
+| `SERVER_IP` | This PC's LAN IP (find it in A.5). Also used as the IP in the HTTPS cert | `192.168.1.50` |
 | `WEB_PORT` | Port the POS website listens on. `80` is normal; use `8080` if `80` is taken | `80` |
+| `WEB_TLS_PORT` | HTTPS port for phones (Caddy `web-tls`) | `443` |
 | `API_PORT` | Port the API + Socket.io listens on; must be open on the firewall | `3000` |
+| `STORE_TIMEZONE` | IANA timezone that defines the store's business day | `Asia/Dubai` |
 | `SERVER_USE_HTTPS` | Leave `false` for plain HTTP over Docker unless you've added TLS certs | `false` |
+
+Optional: `BARCODE_LOOKUP_PROVIDER` / `BARCODE_LOOKUP_API_KEY` for
+scan-to-autofill when adding products (defaults to a free UPCitemdb trial
+tier; set the provider to `none` to disable outbound lookups).
 
 Generate the two secrets (run on any machine with Node.js — your laptop is
 fine, you're just generating random text):
@@ -141,6 +154,12 @@ node -e "require('crypto').randomBytes(32,(e,b)=>console.log(b.toString('hex')))
 ```
 
 Paste each output into the matching line in `.env`.
+
+> In production the API **refuses to start** if `JWT_SECRET` is missing,
+> shorter than 32 characters, or still a placeholder (`REPLACE_ME…`,
+> `change-me`, …), or if `MAHALI_BACKUP_SECRET` is missing. Keep a copy of
+> `MAHALI_BACKUP_SECRET` **off the server** — without it, encrypted backups
+> cannot be restored.
 
 ### A.5 Find this PC's LAN IP (needed for `SERVER_IP` above)
 
@@ -250,23 +269,29 @@ stopping it and will always come back on its own once Docker starts.
 ## PART B — The Docker setup (what's actually running)
 
 This project ships two Dockerfiles and one Compose file that wires them
-together. You don't need to edit these files for normal use — this section
-just explains what they do, so `docker compose up` isn't a black box.
+together (plus a stock Caddy image for HTTPS). You don't need to edit these
+files for normal use — this section just explains what they do, so
+`docker compose up` isn't a black box.
 
 ### B.1 `Dockerfile` (repo root) — the Express API image
 
-Multi-stage build: installs production Node dependencies (including native
-modules like `bcrypt` and `sharp`), then a runtime stage with Chromium
-(for PDF generation) and the PostgreSQL 16 client tools (for backups). Runs
-`server/index.js`. Exposes port `3000` inside the container.
+Multi-stage build on Node 22: installs production Node dependencies
+(including native modules like `bcrypt` and `sharp`), then a runtime stage
+with Chromium (for PDF generation via Puppeteer) and the PostgreSQL 16
+client tools (for backups). `docker/entrypoint.sh` fixes volume ownership
+and drops to the unprivileged `node` user, then runs `server/index.js`.
+Exposes port `3000` inside the container.
 
 ### B.2 `web/Dockerfile` — the Next.js frontend image
 
 Multi-stage build: installs `web/`'s own dependencies, runs `next build`
 (with full TypeScript checking — the build fails if there are type errors),
-then copies only the resulting standalone server into a slim runtime image.
-It does **not** touch `src/` (the old Vite app) at all — this image is built
-entirely from `web/`. Exposes port `3000` inside the container.
+then copies only the resulting standalone server into a slim runtime image
+running as a non-root user. It is built entirely from `web/`.
+`NEXT_PUBLIC_EXPRESS_PORT` is baked in at **build** time from `API_PORT`, so
+changing `API_PORT` requires rebuilding this image. `web/forwarded-for.cjs`
+is preloaded so Express sees each till's real IP (for rate limits and audit).
+Exposes port `3000` inside the container.
 
 ### B.3 `docker-compose.yml` — how the pieces fit together
 
@@ -275,7 +300,11 @@ entirely from `web/`. Exposes port `3000` inside the container.
 | `postgres` | official `postgres:16-bookworm` | *(not published — LAN can't reach it)* | The database. Data persists in the `postgres_data` volume. |
 | `express-api` | `Dockerfile` | `${API_PORT:-3000}` | The core API + Socket.io. Waits for `postgres` to be healthy before starting. |
 | `nextjs` | `web/Dockerfile` | `${WEB_PORT:-80}` | The POS website. Waits for `express-api` to be healthy, then proxies `/api/*` and `/files/*` to it internally. |
+| `web-tls` | official `caddy:2.8-alpine` | `${WEB_TLS_PORT:-443}` | HTTPS reverse proxy to `nextjs` for phones. Generates a 10-year self-signed cert for `SERVER_IP` on first start (stored in the `web_tls` volume). |
 | `fastapi` | `backend-fastapi/Dockerfile` | `${FASTAPI_PORT:-8000}` | **Optional**, only starts with `--profile ml`. Future ML only — exposes `GET /health` today. |
+
+Named volumes: `postgres_data`, `api_uploads`, `api_backups`, `api_tls`,
+`web_tls`.
 
 Note that `postgres` has **no `ports:` published to the host** — only
 containers on the internal `bytecrapos` Docker network can reach it. This is
@@ -292,15 +321,18 @@ docker compose ps
 ```
 
 Wait a minute, then check `docker compose ps` again — `postgres`,
-`express-api`, and `nextjs` should all show **healthy**. `fastapi` must
-**not** appear at all (it's opt-in only).
+`express-api`, and `nextjs` should all show **healthy**, and `web-tls`
+should be **running** (it has no healthcheck). `fastapi` must **not**
+appear at all (it's opt-in only).
 
 If a service shows `unhealthy` or keeps restarting, see the Troubleshooting
 table in Part D before continuing.
 
-### B.5 Apply the database schema
+### B.5 Database schema (automatic)
 
-Safe to run every time (it only applies new migrations):
+The API applies any pending migrations (taking a pre-migration backup first)
+and seeds default data **every time it starts**, so there is normally
+nothing to do. To run migrations by hand anyway (safe to repeat):
 
 ```bash
 docker compose run --rm express-api npm run migrate
@@ -312,6 +344,7 @@ The server PC's firewall must allow incoming connections on:
 - **`WEB_PORT`** (default `80`) — so tills can load the website.
 - **`API_PORT`** (default `3000`) — so the browser can talk to the API and
   Socket.io.
+- **`WEB_TLS_PORT`** (default `443`) — only if phones will be used (B.8).
 
 Do **not** open port `5432` (PostgreSQL) — it isn't published anyway.
 
@@ -319,6 +352,7 @@ Windows example (PowerShell, run as Administrator):
 ```powershell
 New-NetFirewallRule -DisplayName "Bytecra POS Web" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
 New-NetFirewallRule -DisplayName "Bytecra POS API" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "Bytecra POS HTTPS" -Direction Inbound -LocalPort 443 -Protocol TCP -Action Allow
 ```
 
 ### B.7 First login
@@ -350,6 +384,20 @@ Follow live logs any time with:
 ```bash
 docker compose logs -f
 ```
+
+### B.8 Phones (HTTPS for barcode scanning)
+
+Phone browsers only allow camera access on HTTPS, so phones should open:
+
+```
+https://SERVER_IP
+```
+
+(add `:WEB_TLS_PORT` if you changed it from `443`). The certificate is
+self-signed, so the phone will show a security warning the first time —
+accept it to continue. Desktop tills can keep using plain `http://SERVER_IP`.
+If `SERVER_IP` ever changes, delete the `web_tls` volume (or the cert files
+inside it) and restart `web-tls` so a new cert is issued for the new IP.
 
 **Server setup is done.** The server PC should now be left running.
 
@@ -417,15 +465,22 @@ Optional ML sidecar: `docker compose --profile ml up -d`
 
 ### D.2 Updating to a new version
 
+**Full update (recommended — updates API *and* UI):**
+
 1. **Back up the database first** (D.4).
-2. Pull/copy the new code into the project folder.
+2. Pull/copy the new code (or a release tag) into the project folder.
 3. ```bash
-   docker compose build
-   docker compose up -d
-   docker compose run --rm express-api npm run migrate
+   docker compose up -d --build
    docker compose ps
    ```
+   Migrations run automatically when the API restarts.
 4. Open the web UI and confirm it loads.
+
+**In-app update:** Admins can also use **Settings → About → Check for
+updates**, which downloads the latest GitHub release and swaps it into the
+running API container (`scripts/applyUpdate.js`). This only updates the
+**API** (`server/`, `shared/`, dependencies) — the Next.js UI image is not
+rebuilt, so releases with UI changes still need the full update above.
 
 Never delete the `postgres_data` volume as part of an update.
 
@@ -438,15 +493,23 @@ Data lives in the Docker volume `postgres_data`.
 
 ### D.4 Backup
 
-The app writes scheduled backups (triggered from **Settings → Backup** in
-the POS) to the `api_backups` volume (`/app/backups` inside `express-api`).
+The app writes scheduled backups (configured from **Settings → Backup** in
+the POS, optionally to a NAS) to the `api_backups` volume (`/app/backups`
+inside `express-api`).
+
+If "Encrypt backup archives" is on, archives are encrypted with
+`MAHALI_BACKUP_SECRET`. Decrypt one by hand with:
+```bash
+node scripts/decryptBackup.js <file.tar.gz.enc> <out.tar.gz>
+```
 
 Manual one-off dump:
 ```bash
 docker compose exec postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > shop-$(date +%Y%m%d).dump
 ```
 On Windows, read the user/db values from `.env` and redirect the output to a
-file on the server's disk.
+file on the server's disk. (`./docker/postgres/backups` on the host is also
+mounted at `/backups` inside the `postgres` container.)
 
 ### D.5 Restore
 
@@ -465,8 +528,10 @@ curl -sS http://127.0.0.1:3000/api/health  # Express
 curl -sS http://127.0.0.1:8000/health
 ```
 
-Express health JSON includes `data.status: ok`. Postgres health is Compose's
-built-in `pg_isready` check.
+Express `/api/health` actually queries the database: it returns `200` with
+`data.status: ok` when healthy, or `503` with `data.status: degraded` /
+`database: unreachable` if PostgreSQL can't be reached. Postgres health is
+Compose's built-in `pg_isready` check.
 
 ### D.7 Troubleshooting
 
@@ -479,7 +544,9 @@ built-in `pg_isready` check.
 | API restarting in a loop | `docker compose logs express-api` — usually `JWT_SECRET`, DB password, or a failed migration |
 | UI loads but API calls fail with CORS errors | `SERVER_IP` in `.env` must match the host used in the browser's address bar |
 | Code/UI updated but POS looks unchanged | Rebuild the web image: `docker compose build nextjs && docker compose up -d nextjs` (restart alone keeps the old UI). Use `http://SERVER_IP` (`WEB_PORT`), not `:3000`. Hard-refresh (**Ctrl+Shift+R**) |
-| Socket.io shows disconnected | Firewall must allow `API_PORT` (3000); confirm `NEXT_PUBLIC_EXPRESS_PORT` matches `API_PORT` |
+| Socket.io shows disconnected | Firewall must allow `API_PORT` (3000); `NEXT_PUBLIC_EXPRESS_PORT` is baked from `API_PORT` at build time — after changing `API_PORT`, run `docker compose build nextjs && docker compose up -d` |
+| Phone camera / barcode scanner won't start | Open `https://SERVER_IP` (B.8), not `http://`; accept the cert warning; firewall must allow `WEB_TLS_PORT` |
+| API exits on start with a `JWT_SECRET` / `MAHALI_BACKUP_SECRET` error | Generate real secrets (A.4) — placeholders are rejected in production |
 | Login fails | Confirm the setup wizard was completed; check caps lock; look for a "session expired" modal |
 | Printing doesn't work | Browser PDF print vs. Hardware Agent — check agent logs and `lpstat -p` on that till |
 | Everything crash-looping | `docker compose logs --tail 100`; fix the cause in `.env`; do **not** use `-v` |
@@ -495,22 +562,44 @@ invoice/receipt by UUID (no arbitrary shell/printer commands). Full detail in
 ### D.9 FastAPI / ML (reference)
 
 Optional and off by default. Start it with `docker compose --profile ml up -d`.
-It exposes `GET /health` today and nothing else — Express remains the POS
-backend for everything. A normal `docker compose up -d` (no `--profile ml`)
-never starts this service.
+It exposes `GET /health` today and nothing else — draft forecast/analytics
+routers exist under `backend-fastapi/app/api/v2/` but are not mounted.
+Express remains the POS backend for everything. A normal
+`docker compose up -d` (no `--profile ml`) never starts this service.
+
+### D.10 Maintenance scripts
+
+| Script | Purpose |
+| --- | --- |
+| `scripts/reconcile.js [--json] [--strict]` | Read-only report comparing stored running balances (cash drawer, etc.) against their source records. Runs in a `READ ONLY` transaction. |
+| `scripts/decryptBackup.js` | Decrypt an encrypted backup archive (D.4). |
+| `scripts/applyUpdate.js` | Used internally by the in-app updater (D.2). Don't run by hand. |
+
+Inside Docker, run them via the API container, e.g.
+`docker compose exec express-api node scripts/reconcile.js`.
 
 ---
 
 ## PART E — Local development (not for the live shop)
 
-For working on the code, on a laptop — not the shop's server PC:
+For working on the code, on a laptop — not the shop's server PC. You need
+Node.js 22 and a local PostgreSQL 15+ (see `docs/LOCAL_DEV.md` if you hit
+`ECONNREFUSED 127.0.0.1:5432`).
 
 ```bash
-cp .env.example .env   # use local JWT/Postgres values
+cp .env.example .env   # set PG* to your local Postgres, PGHOST=localhost, NODE_ENV=development
 npm install
-npm run dev:server     # Express, on :3002 by default
-cd web && npm install && npm run dev   # Next.js App Router (TypeScript), on :3001
+npm --prefix web install
+npm run dev            # Express (nodemon) + Next.js dev server together
 ```
+
+Or run them separately: `npm run dev:server` (Express) and
+`npm run dev:web` (Next.js on `:3001`).
+
+Ports: Express listens on `PORT` from `.env` (`3000` in `.env.example`;
+`3002` if `PORT` is unset). The Next.js dev server proxies `/api` and
+`/files` to `EXPRESS_INTERNAL_URL` (default `http://127.0.0.1:3000`), so
+keep the two in sync. Open the app at `http://localhost:3001`.
 
 `web/` is a self-contained TypeScript Next.js project (its own
 `package.json`, `tsconfig.json`, `node_modules`). `npm run build` inside
@@ -518,12 +607,30 @@ cd web && npm install && npm run dev   # Next.js App Router (TypeScript), on :30
 false`) and produces a standalone server (`.next/standalone/web/server.js`),
 which is exactly what `web/Dockerfile` packages for production.
 
+### Tests
+
+```bash
+npm test                 # backend (Vitest): unit, contract, integration, migration
+npm --prefix web test    # frontend (Vitest + Testing Library)
+cd backend-fastapi && pip install -e ".[dev]" && pytest -v   # ML sidecar
+```
+
+Live-database suites (invoice integrity, concurrency) run automatically when
+a PostgreSQL is reachable on `127.0.0.1:5432` (user/password `postgres` by
+default; override with `INVOICE_TEST_PG_*`), and are skipped otherwise.
+CI (`.github/workflows/build.yml`) runs all three suites against a real
+Postgres 16 on every PR; pushing a `v*.*.*` tag runs
+`.github/workflows/release.yml`, which publishes the GitHub release used by
+the in-app updater.
+
 Never run local dev processes as the live shop — the live shop is always
 `docker compose up -d` (Part B).
 
 More ops notes: `docker/README.md`. Architecture and migration record:
 `docs/web-migration/` (start with `FRONTEND_MIGRATION_INVENTORY.md` and
-`NEXTJS_NATIVE_PARITY.md`).
+`NEXTJS_NATIVE_PARITY.md`). Root-level `*_AUDIT.md` files are internal
+audit reports for specific areas (POS invoices, purchase orders, warranty,
+idempotency, etc.).
 
 Invoice integrity changes, payment idempotency migration, private-file access,
 and PostgreSQL regression-test instructions: [docs/INVOICE_INTEGRITY_FIXES.md](docs/INVOICE_INTEGRITY_FIXES.md).
