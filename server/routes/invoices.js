@@ -10,6 +10,8 @@ const router = express.Router();
 router.use(requireAuth());
 
 router.get('/next-number', requirePermission('invoice.create'), invoices.nextNumberPreview);
+// Before '/:id': did a sale whose response was lost go through?
+router.get('/checkout/:checkoutId', requirePermission('invoice.create'), invoices.checkoutStatus);
 
 router.get('/', requirePermission('invoice.view'), invoices.list);
 router.post('/', requirePermission('invoice.create'), invoices.create);

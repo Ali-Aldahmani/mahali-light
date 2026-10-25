@@ -35,12 +35,14 @@ const createInvoice = vi.fn();
 const updateInvoiceItems = vi.fn();
 const addInvoicePayment = vi.fn();
 const confirmInvoice = vi.fn();
+const getCheckoutStatus = vi.fn();
 vi.mock('@/services/invoiceService', async (orig) => ({
   ...(await orig<any>()),
   createInvoice: (...a: any[]) => createInvoice(...a),
   updateInvoiceItems: (...a: any[]) => updateInvoiceItems(...a),
   addInvoicePayment: (...a: any[]) => addInvoicePayment(...a),
   confirmInvoice: (...a: any[]) => confirmInvoice(...a),
+  getCheckoutStatus: (...a: any[]) => getCheckoutStatus(...a),
   listInvoices: vi.fn().mockResolvedValue({ data: [], meta: {} }),
   getInvoice: vi.fn(),
 }));
@@ -105,6 +107,7 @@ beforeEach(() => {
   updateInvoiceItems.mockReset();
   addInvoicePayment.mockReset();
   confirmInvoice.mockReset();
+  getCheckoutStatus.mockReset();
   createCustomer.mockReset();
 });
 
@@ -356,15 +359,66 @@ describe('Cashier Mode — payment, hold and exit', () => {
     expect(usePosStore.getState().cart).toHaveLength(1);
   });
 
-  it('a network failure during payment keeps the cart', async () => {
+  it('a lost connection is checked with the server: no sale yet keeps the cart for a retry', async () => {
     createInvoice.mockRejectedValue({ code: 'NETWORK_ERROR', message: 'Network unavailable.' });
+    getCheckoutStatus.mockResolvedValue({ status: 'none', invoice: null, warranties: [] });
     await renderTerminal();
     fireEvent.click(screen.getByRole('button', { name: /Add LED Bulb/ }));
     fireEvent.keyDown(document.body, { key: 'F4' });
     const dialog = await screen.findByRole('dialog', { name: 'Take payment' });
     fireEvent.click(within(dialog).getByRole('button', { name: /Complete sale/ }));
-    expect(await within(dialog).findByText(/Your cart is kept/)).toBeInTheDocument();
+    expect(await within(dialog).findByText(/The sale was not completed. Your cart is kept/)).toBeInTheDocument();
+    expect(getCheckoutStatus).toHaveBeenCalledWith(usePosStore.getState().checkoutId);
     expect(usePosStore.getState().cart).toHaveLength(1);
+  });
+
+  it('a confirmation whose answer was lost but went through shows the sale as complete', async () => {
+    createInvoice.mockResolvedValue({ id: 'inv1', invoiceNumber: 'INV-1', status: 'draft' });
+    addInvoicePayment.mockResolvedValue({});
+    confirmInvoice.mockRejectedValue({ code: 'NETWORK_TIMEOUT', message: 'Request timed out.' });
+    getCheckoutStatus.mockResolvedValue({
+      status: 'confirmed',
+      invoice: { id: 'inv1', invoiceNumber: 'INV-1', total: 10.5, amountPaid: 10.5, balanceDue: 0 },
+      warranties: [],
+    });
+    await renderTerminal();
+    fireEvent.click(screen.getByRole('button', { name: /Add LED Bulb/ }));
+    fireEvent.click(payButton());
+    const dialog = await screen.findByRole('dialog', { name: 'Take payment' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /Complete sale/ }));
+
+    await screen.findByRole('dialog', { name: 'Sale complete' });
+    expect(usePosStore.getState().cart).toHaveLength(0);
+    expect(confirmInvoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('the checkout ID goes with the draft, and a retry after an unclear outcome reuses the sale', async () => {
+    createInvoice.mockResolvedValue({ id: 'inv1', invoiceNumber: 'INV-1', status: 'draft' });
+    addInvoicePayment.mockResolvedValue({});
+    confirmInvoice.mockRejectedValueOnce({ code: 'NETWORK_TIMEOUT', message: 'Request timed out.' });
+    // First check: not done. Second (the retry): it did go through after all.
+    getCheckoutStatus
+      .mockResolvedValueOnce({ status: 'draft', invoice: { id: 'inv1' }, warranties: [] })
+      .mockResolvedValue({
+        status: 'confirmed',
+        invoice: { id: 'inv1', invoiceNumber: 'INV-1', total: 10.5, amountPaid: 10.5, balanceDue: 0 },
+        warranties: [],
+      });
+    await renderTerminal();
+    fireEvent.click(screen.getByRole('button', { name: /Add LED Bulb/ }));
+    const checkoutId = usePosStore.getState().checkoutId;
+    fireEvent.click(payButton());
+    const dialog = await screen.findByRole('dialog', { name: 'Take payment' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /Complete sale/ }));
+    expect(await within(dialog).findByText(/The sale was not completed/)).toBeInTheDocument();
+    expect(createInvoice).toHaveBeenCalledWith(expect.objectContaining({ checkoutId }));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Complete sale/ }));
+    await screen.findByRole('dialog', { name: 'Sale complete' });
+    // The retry found the confirmed sale and did not edit, pay or confirm again.
+    expect(updateInvoiceItems).not.toHaveBeenCalled();
+    expect(confirmInvoice).toHaveBeenCalledTimes(1);
+    expect(usePosStore.getState().checkoutId).not.toBe(checkoutId);
   });
 
   it('F7 holds the sale as a server draft and clears the screen', async () => {

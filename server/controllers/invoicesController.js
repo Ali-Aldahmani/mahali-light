@@ -90,6 +90,7 @@ function shapeInvoice(row, opts = {}) {
     cancelledByUsername: row.cancelled_by_username || null,
     cancelReason: row.cancel_reason,
     pcIdentifier: row.pc_identifier,
+    checkoutId: row.checkout_id ?? null,
     createdAt: row.created_at,
     confirmedAt: row.confirmed_at,
     cancelledAt: row.cancelled_at,
@@ -406,6 +407,8 @@ const createSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
   items: z.array(itemSchema).default([]),
   invoiceDiscount: z.number().nonnegative().optional().default(0),
+  // The POS's ID for this sale attempt; see migration 041.
+  checkoutId: z.string().trim().min(1).max(128).optional().nullable(),
 });
 
 async function create(req, res, next) {
@@ -416,6 +419,21 @@ async function create(req, res, next) {
     assertCustomItemCostAuthority(req, body.items);
 
     const result = await withTransaction(async (client) => {
+      // A retried checkout gets the invoice its first attempt created, so one
+      // sale attempt can never become two invoices.
+      if (body.checkoutId) {
+        await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+          `checkout:${body.checkoutId}`,
+        ]);
+        const { rows: existing } = await client.query(
+          `SELECT id, invoice_number FROM invoices WHERE checkout_id = $1`,
+          [body.checkoutId],
+        );
+        if (existing.length) {
+          return { id: existing[0].id, invoiceNumber: existing[0].invoice_number, existing: true };
+        }
+      }
+
       const { invoiceNumber, pcCode } = await generateInvoiceNumber(client, {
         pcIdentifier: body.pcIdentifier || 'P0',
       });
@@ -424,8 +442,8 @@ async function create(req, res, next) {
       const { rows } = await client.query(
         `INSERT INTO invoices (
           invoice_number, customer_id, created_by, status,
-          invoice_discount, tax_rate, pc_identifier, notes
-        ) VALUES ($1,$2,$3,'draft',$4,$5,$6,$7)
+          invoice_discount, tax_rate, pc_identifier, notes, checkout_id
+        ) VALUES ($1,$2,$3,'draft',$4,$5,$6,$7,$8)
         RETURNING id`,
         [
           invoiceNumber,
@@ -435,6 +453,7 @@ async function create(req, res, next) {
           taxRate,
           pcCode,
           body.notes || null,
+          body.checkoutId || null,
         ],
       );
       const id = rows[0].id;
@@ -469,6 +488,11 @@ async function create(req, res, next) {
       return { id, invoiceNumber };
     });
 
+    const { rows } = await query(`${INVOICE_SELECT} WHERE i.id = $1`, [
+      result.id,
+    ]);
+    if (result.existing) return ok(res, shapeInvoice(rows[0]));
+
     await logActivity({
       entityType: 'invoice',
       entityId: result.id,
@@ -476,10 +500,6 @@ async function create(req, res, next) {
       performedBy: req.user.id,
       notes: result.invoiceNumber,
     });
-
-    const { rows } = await query(`${INVOICE_SELECT} WHERE i.id = $1`, [
-      result.id,
-    ]);
     return created(res, shapeInvoice(rows[0]));
   } catch (err) {
     next(err);
@@ -682,7 +702,34 @@ async function nextNumberPreview(req, res, next) {
   }
 }
 
+// What happened to a sale attempt whose response never arrived: 'none' (no
+// invoice yet, safe to try again), 'draft' (not completed), 'confirmed'
+// (the sale went through — show its receipt) or 'cancelled'.
+async function checkoutStatus(req, res, next) {
+  try {
+    const checkoutId = z.string().trim().min(1).max(128).parse(req.params.checkoutId);
+    const { rows } = await query(`${INVOICE_SELECT} WHERE i.checkout_id = $1`, [checkoutId]);
+    if (!rows.length) return ok(res, { status: 'none', invoice: null, warranties: [] });
+    const invoice = shapeInvoice(rows[0]);
+    let warranties = [];
+    if (invoice.status === 'confirmed') {
+      const { rows: w } = await query(
+        `SELECT id, warranty_number, product_id, end_date FROM warranties
+          WHERE invoice_id = $1 AND status = 'active' ORDER BY created_at`,
+        [invoice.id],
+      );
+      warranties = w.map((r) => ({
+        id: r.id, warrantyNumber: r.warranty_number, productId: r.product_id, endDate: r.end_date,
+      }));
+    }
+    return ok(res, { status: invoice.status, invoice, warranties });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  checkoutStatus,
   list,
   getOne,
   create,

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { newRequestKey } from '@/lib/requestKey';
 
 // Pure client-side cart store. Items only get persisted to the server when
 // the cashier confirms the invoice. This keeps every cart edit instantaneous
@@ -101,6 +102,12 @@ interface PosState {
   /** Server draft invoice backing this sale (held / resumed / failed checkout). */
   draftInvoiceId: string | null;
   draftInvoiceNumber: string | null;
+  /**
+   * This sale attempt's ID (server migration 041). Sent when the draft is
+   * created and kept, also in the sale backup, until the sale is done, so a
+   * retry reuses the same invoice and a lost response can be looked up.
+   */
+  checkoutId: string;
 
   setOffline: (flag: boolean) => void;
   setDraftInvoice: (id: string | null, invoiceNumber?: string | null) => void;
@@ -111,6 +118,8 @@ interface PosState {
     notes?: string;
     draftInvoiceId?: string | null;
     draftInvoiceNumber?: string | null;
+    checkoutId?: string | null;
+    payments?: Payment[];
   }) => void;
   setPcIdentifier: (pc: string) => void;
   setCustomer: (customer: any | null) => void;
@@ -241,6 +250,7 @@ export const usePosStore = create<PosState>()((set, get) => ({
   offlineQueue: loadOfflineQueue(),
   draftInvoiceId: null,
   draftInvoiceNumber: null,
+  checkoutId: newRequestKey(),
 
   setOffline(flag) {
     set({ isOffline: !!flag });
@@ -256,9 +266,11 @@ export const usePosStore = create<PosState>()((set, get) => ({
       selectedCustomer: sale.selectedCustomer || null,
       invoiceDiscount: round2(sale.invoiceDiscount || 0),
       notes: sale.notes || '',
-      payments: [],
+      // Restored payments keep their IDs, which are their request keys.
+      payments: Array.isArray(sale.payments) ? sale.payments : [],
       draftInvoiceId: sale.draftInvoiceId || null,
       draftInvoiceNumber: sale.draftInvoiceNumber || null,
+      checkoutId: sale.checkoutId || newRequestKey(),
     });
   },
 
@@ -488,6 +500,8 @@ export const usePosStore = create<PosState>()((set, get) => ({
       notes: '',
       draftInvoiceId: null,
       draftInvoiceNumber: null,
+      // The next sale is a new attempt.
+      checkoutId: newRequestKey(),
     });
   },
 

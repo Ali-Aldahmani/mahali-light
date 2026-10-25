@@ -38,7 +38,16 @@ import { printReceipt } from '@/services/printService';
 import { toast } from '@/store/toastStore';
 import { searchProducts } from '@/services/productService';
 import { listCategoriesFlat } from '@/services/categoryService';
-import { prepareCheckout, submitSale, checkoutErrorMessage } from '@/lib/pos/checkout';
+import {
+  prepareCheckout,
+  submitSale,
+  checkoutErrorMessage,
+  isConnectionError,
+  resolveSaleOutcome,
+  SALE_CHECKING_MESSAGE,
+  SALE_NOT_COMPLETED_MESSAGE,
+  SALE_UNKNOWN_MESSAGE,
+} from '@/lib/pos/checkout';
 import { formatCurrency } from '@/lib/utils/format';
 import { useAppSettingsStore } from '@/store/appSettingsStore';
 import { useAuthStore } from '@/store/authStore';
@@ -281,20 +290,8 @@ function POSPageContent() {
       return;
     }
     setSubmitting(true);
-    try {
-      const { invoiceId, confirmed } = await submitSale({
-        draft: {
-          items: totals.items,
-          customerId: selectedCustomer?.id || null,
-          pcIdentifier,
-          notes: usePosStore.getState().notes || null,
-          invoiceDiscount,
-        },
-        allocations: prep.allocations,
-        draftInvoiceId: usePosStore.getState().draftInvoiceId,
-        onDraftSaved: (id, number) => usePosStore.getState().setDraftInvoice(id, number),
-      });
-
+    const checkoutId = usePosStore.getState().checkoutId;
+    const finishSale = (invoiceId: string, confirmed: any) => {
       setSuccess({
         invoiceId,
         invoiceNumber: confirmed.invoice.invoiceNumber,
@@ -307,8 +304,33 @@ function POSPageContent() {
       setConfirmOpen(false);
       clearCart();
       refreshInvoiceSummary?.();
+    };
+    try {
+      const { invoiceId, confirmed } = await submitSale({
+        draft: {
+          items: totals.items,
+          customerId: selectedCustomer?.id || null,
+          pcIdentifier,
+          notes: usePosStore.getState().notes || null,
+          invoiceDiscount,
+          checkoutId,
+        },
+        allocations: prep.allocations,
+        draftInvoiceId: usePosStore.getState().draftInvoiceId,
+        onDraftSaved: (id, number) => usePosStore.getState().setDraftInvoice(id, number),
+      });
+      finishSale(invoiceId, confirmed);
     } catch (err: any) {
-      toast.error(checkoutErrorMessage(err));
+      if (!isConnectionError(err)) {
+        toast.error(checkoutErrorMessage(err));
+        return;
+      }
+      // The answer was lost, not necessarily the sale: ask the server.
+      toast.info(SALE_CHECKING_MESSAGE);
+      const outcome = await resolveSaleOutcome(checkoutId);
+      if (outcome.kind === 'completed') finishSale(outcome.invoiceId, outcome.confirmed);
+      else if (outcome.kind === 'not_completed') toast.error(SALE_NOT_COMPLETED_MESSAGE);
+      else toast.error(SALE_UNKNOWN_MESSAGE);
     } finally {
       setSubmitting(false);
     }

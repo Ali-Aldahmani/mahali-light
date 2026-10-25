@@ -38,7 +38,17 @@ import { searchProducts } from '@/services/productService';
 import { listCategoriesFlat } from '@/services/categoryService';
 import { getInvoice } from '@/services/invoiceService';
 import { printReceipt } from '@/services/printService';
-import { checkoutErrorMessage, prepareCheckout, saveDraft, submitSale } from '@/lib/pos/checkout';
+import {
+  checkoutErrorMessage,
+  isConnectionError,
+  prepareCheckout,
+  resolveSaleOutcome,
+  saveDraft,
+  submitSale,
+  SALE_CHECKING_MESSAGE,
+  SALE_NOT_COMPLETED_MESSAGE,
+  SALE_UNKNOWN_MESSAGE,
+} from '@/lib/pos/checkout';
 import { cartViolations } from '@/lib/cashier/pricing';
 import { createScanQueue, findExactCodeMatch, normalizeCode } from '@/lib/cashier/barcode';
 import type { CashierAction } from '@/lib/cashier/shortcuts';
@@ -402,19 +412,7 @@ export default function CashierTerminal() {
     }
     setSubmitting(true);
     setPayError(null);
-    try {
-      const { invoiceId, confirmed } = await submitSale({
-        draft: {
-          items: t.items,
-          customerId: state.selectedCustomer?.id || null,
-          invoiceDiscount: state.invoiceDiscount,
-          notes: state.notes || null,
-          pcIdentifier: state.pcIdentifier,
-        },
-        allocations: prep.allocations,
-        draftInvoiceId: state.draftInvoiceId,
-        onDraftSaved: (id, number) => usePosStore.getState().setDraftInvoice(id, number),
-      });
+    const finishSale = (invoiceId: string, confirmed: any) => {
       const tendered = state.payments.filter((p) => p.method === 'cash').reduce((s, p) => s + Number(p.amount || 0), 0);
       const retained = prep.allocations.filter((p) => p.method === 'cash').reduce((s, p) => s + Number(p.amount || 0), 0);
       setCompleted({
@@ -434,8 +432,36 @@ export default function CashierTerminal() {
       codeCache.current.clear();
       refreshInvoiceSummary?.();
       fetchProductsRef.current();
+    };
+    try {
+      const { invoiceId, confirmed } = await submitSale({
+        draft: {
+          items: t.items,
+          customerId: state.selectedCustomer?.id || null,
+          invoiceDiscount: state.invoiceDiscount,
+          notes: state.notes || null,
+          pcIdentifier: state.pcIdentifier,
+          checkoutId: state.checkoutId,
+        },
+        allocations: prep.allocations,
+        draftInvoiceId: state.draftInvoiceId,
+        onDraftSaved: (id, number) => usePosStore.getState().setDraftInvoice(id, number),
+      });
+      finishSale(invoiceId, confirmed);
     } catch (err: any) {
-      setPayError(checkoutErrorMessage(err));
+      if (!isConnectionError(err)) {
+        setPayError(checkoutErrorMessage(err));
+        return;
+      }
+      // The answer was lost, not necessarily the sale: ask the server.
+      setPayError(SALE_CHECKING_MESSAGE);
+      const outcome = await resolveSaleOutcome(state.checkoutId);
+      if (outcome.kind === 'completed') {
+        setPayError(null);
+        finishSale(outcome.invoiceId, outcome.confirmed);
+      } else {
+        setPayError(outcome.kind === 'not_completed' ? SALE_NOT_COMPLETED_MESSAGE : SALE_UNKNOWN_MESSAGE);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -458,6 +484,7 @@ export default function CashierTerminal() {
           invoiceDiscount: state.invoiceDiscount,
           notes: state.notes || null,
           pcIdentifier: state.pcIdentifier,
+          checkoutId: state.checkoutId,
         },
         state.draftInvoiceId,
       );
@@ -541,6 +568,7 @@ export default function CashierTerminal() {
           notes: inv.notes || '',
           draftInvoiceId: inv.id,
           draftInvoiceNumber: inv.invoiceNumber,
+          checkoutId: inv.checkoutId,
         });
         setSelectedId(lines[0]?.variantId ?? null);
         setLastScan({ tone: 'ok', text: `Resumed ${inv.invoiceNumber}` });

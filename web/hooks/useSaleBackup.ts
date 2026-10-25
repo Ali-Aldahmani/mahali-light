@@ -12,6 +12,10 @@ interface SaleBackup {
   notes: string;
   draftInvoiceId: string | null;
   draftInvoiceNumber: string | null;
+  /** The sale attempt's ID, so after a reload a lost checkout can be looked up and not repeated. */
+  checkoutId?: string | null;
+  /** Payment lines with their IDs, which double as their request keys. */
+  payments?: any[];
 }
 
 export function readSaleBackup(userId: string | number | null): SaleBackup | null {
@@ -35,7 +39,9 @@ export function clearSaleBackup() {
 }
 
 // Keeps a tab-scoped copy of the in-progress sale so a reload or an
-// accidental navigation doesn't lose the cart. Only sale intent is stored;
+// accidental navigation doesn't lose the cart — or its checkout ID and
+// payment keys, which make a checkout interrupted by the reload safe to
+// look up and retry. Only sale intent is stored;
 // prices and totals are re-derived and re-validated by the server at pay time.
 export function useSaleBackup(userId: string | number | null) {
   useEffect(() => {
@@ -51,6 +57,8 @@ export function useSaleBackup(userId: string | number | null) {
           notes: backup.notes,
           draftInvoiceId: backup.draftInvoiceId,
           draftInvoiceNumber: backup.draftInvoiceNumber,
+          checkoutId: backup.checkoutId,
+          payments: backup.payments,
         });
       }
     }
@@ -73,6 +81,8 @@ export function useSaleBackup(userId: string | number | null) {
           notes: s.notes,
           draftInvoiceId: s.draftInvoiceId,
           draftInvoiceNumber: s.draftInvoiceNumber,
+          checkoutId: s.checkoutId,
+          payments: s.payments,
         };
         sessionStorage.setItem(SALE_BACKUP_KEY, JSON.stringify(backup));
       } catch (_e) {
@@ -85,7 +95,9 @@ export function useSaleBackup(userId: string | number | null) {
         s.selectedCustomer === prev.selectedCustomer &&
         s.invoiceDiscount === prev.invoiceDiscount &&
         s.notes === prev.notes &&
-        s.draftInvoiceId === prev.draftInvoiceId
+        s.draftInvoiceId === prev.draftInvoiceId &&
+        s.checkoutId === prev.checkoutId &&
+        s.payments === prev.payments
       ) {
         return;
       }

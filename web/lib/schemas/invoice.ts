@@ -61,6 +61,8 @@ export const invoiceSchema = z.object({
   cancelledByUsername: z.string().nullable(),
   cancelReason: z.string().nullable(),
   pcIdentifier: z.string().nullable(),
+  // This sale attempt's ID (server migration 041); absent on older invoices.
+  checkoutId: z.string().nullable().optional(),
   createdAt: z.string(),
   confirmedAt: z.string().nullable(),
   cancelledAt: z.string().nullable(),

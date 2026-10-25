@@ -43,6 +43,25 @@ export async function createInvoice(body): Promise<InvoiceSummary> {
   return validateMoneyResponse(invoiceSummarySchema, data, 'POST /invoices');
 }
 
+export interface CheckoutStatus {
+  /** 'none' (no invoice yet), 'draft', 'confirmed' or 'cancelled'. */
+  status: string;
+  invoice: InvoiceSummary | null;
+  warranties: any[];
+}
+
+// What happened to a sale attempt whose response never arrived.
+export async function getCheckoutStatus(checkoutId: string): Promise<CheckoutStatus> {
+  const data: any = await apiGet(`/invoices/checkout/${encodeURIComponent(checkoutId)}`);
+  return {
+    status: data?.status || 'none',
+    invoice: data?.invoice
+      ? validateMoneyResponse(invoiceSummarySchema, data.invoice, 'GET /invoices/checkout/:id')
+      : null,
+    warranties: data?.warranties || [],
+  };
+}
+
 export function updateInvoiceItems(id, body) {
   return apiPut(`/invoices/${id}/items`, body);
 }
