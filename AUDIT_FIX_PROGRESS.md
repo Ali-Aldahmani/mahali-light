@@ -4,7 +4,7 @@
 
 This report covers the work done against the nine `*_AUDIT.md` reports in this folder, what was verified, and what is still to do. Read **"Before you deploy"** first.
 
-**Status:** Phases 0–5 are done in code and tested. What's left is listed in section 5: mostly decisions for you and your accountant, not code.
+**Status:** Phases 0–5 of the plan are done in code and tested. They cover the headline findings of every audit, not every finding. Section 5 lists what's left: open code findings, accountant checks and your decisions.
 
 ---
 
@@ -38,16 +38,18 @@ This report covers the work done against the nine `*_AUDIT.md` reports in this f
 
 All nine audits were read and the headline findings re-checked against the code (the reports cite line numbers from older commits).
 
+The plan's phases covered each audit's headline findings, not every finding. Section 5 lists the findings still open.
+
 | Audit | Result |
 |---|---|
-| Customer profile financial audit | Mostly fixed by `b14d912` before this work began |
-| PO, cash drawer & payment audit | Fixed in Phases 1–4 (cheques: your decision) |
-| Purchase order, inventory & payment audit | Fixed in Phases 1–4 |
-| Idempotency & duplicate operations audit | Fixed in Phase 3 |
-| Transaction atomicity audit | Fixed in Phase 2 |
-| Invoice financial integrity audit | Fixed in Phases 1–4 (FIFO: your decision) |
-| Warranty audit | Fixed in Phases 1, 2 and 4; per-unit warranties are your decision |
-| User presence & logout audit | Fixed in Phases 1 and 5 |
+| Customer profile financial audit | Fixed by `b14d912` before this work began (timeline, transactional audit with old/new values, net cards, edit conflicts, live sync) |
+| PO, cash drawer & payment audit | Headline findings fixed in Phases 1–4. Open: cheques (your decision) |
+| Purchase order, inventory & payment audit | Headline findings fixed in Phases 1–4. Open: draft deletion, cancelling a confirmed PO |
+| Idempotency & duplicate operations audit | Money and stock commands fixed in Phase 3. Open: a few lower-risk creates |
+| Transaction atomicity audit | Fixed in Phase 2, except database constraints (TXA-011) |
+| Invoice financial integrity audit | Main findings fixed in Phases 1–4. Several medium findings still open |
+| Warranty audit | Fixed in Phases 1, 2 and 4: sale/return consistency, permissions, invoice filter, replacement cost. Open: duplicate-replacement guard, replacement variant/serial, plus feature gaps |
+| User presence & logout audit | Fixed in Phases 1 and 5. Open: idle detection, freshness after a restart |
 | AI/ML feasibility audit | Not a defect list. No action needed now |
 
 ---
@@ -136,6 +138,20 @@ Phase 4 only fixes movements **from now on**. Both differences above stay in the
 - **One-off opening adjustment** for the historical gaps (section 4).
 - **Large drawer discrepancies need a second person.** Today the same user can `force` a close above the AED 10 tolerance. A second-person sign-in on the till is a workflow decision, so it wasn't built.
 - Not added: reconciliation checks for **accounts payable** and **inventory** against their sub-ledgers. Payables are recognised at receipt while a PO's balance includes goods not yet received (and prepayments on drafts), so the two need an agreed definition first.
+
+### Findings still open in code (not in the plan's phases)
+Checked against the code on 25 Oct 2026. These are fixable without a policy decision:
+- **Warranty F16/F17:** a warranty that already had a replacement can take another claim and be replaced again. One open claim per warranty, and a parent-state check at resolution, are needed.
+- **Warranty F18:** a replacement of a different variant, or a serialized unit, isn't recorded properly (mixed product, unknown serial).
+- **Invoice F23:** two people editing the same draft invoice: the last save silently wins (no version check).
+- **Invoice F24:** the "allow negative stock" setting conflicts with the stock service, which always blocks negative stock.
+- **Invoice F11:** an invoice doesn't keep a snapshot of the customer's name and details at the time of sale.
+- **Invoice F13:** quantity precision and limits aren't validated the same way everywhere.
+- **Invoice F14:** there's no screen to resume a draft that already has payments.
+- **PO F04:** deleting a draft PO removes it completely, yet logs it as "cancelled". There is no way to cancel a confirmed PO.
+- **Atomicity TXA-011 / Invoice F21:** the database itself doesn't enforce the key rules: non-negative stock and drawer, received ≤ ordered, balanced journals.
+- **Idempotency:** supplier-return create, return-request create, PO create, manual journal, bill create and warranty-claim create carry no request key. Each is protected by state or quantity checks, but a retried request can still create a duplicate record.
+- **Presence F08/F11/F16:** the heartbeat counts as activity, so an unattended till never shows as idle. After a server restart, sessions stay "online" until the sweeps run. Heartbeat writes are unthrottled.
 
 ### Decisions only you can make
 - **FIFO costing:** sales currently use the latest purchase cost.
