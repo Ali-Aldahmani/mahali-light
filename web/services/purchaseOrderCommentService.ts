@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiDelete } from './http';
+import { newRequestKey, withRequestKey } from '@/lib/requestKey';
 import type { CommentReaction, ThreadComment } from '@/components/purchases/CommentThread';
 
 export interface CreatePoCommentPayload {
@@ -21,7 +22,8 @@ export async function createPurchaseOrderComment(
   poId: string,
   payload: CreatePoCommentPayload,
 ): Promise<ThreadComment> {
-  const requestKey = payload.requestKey || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined);
+  // newRequestKey also works on plain-HTTP LAN pages, where crypto.randomUUID is missing.
+  const requestKey = payload.requestKey || newRequestKey();
   return apiPost<ThreadComment>(
     `/purchase-orders/${poId}/comments`,
     {
@@ -29,7 +31,7 @@ export async function createPurchaseOrderComment(
       parentId: payload.parentId || null,
       requestKey,
     },
-    requestKey ? { headers: { 'Idempotency-Key': requestKey } } : undefined,
+    withRequestKey(requestKey),
   );
 }
 

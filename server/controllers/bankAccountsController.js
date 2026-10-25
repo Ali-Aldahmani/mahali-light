@@ -124,7 +124,7 @@ async function deposit(req, res, next) {
     const { result, replayed } = await withTransaction((client) =>
       runOnce(client, {
         scope: 'bank_deposit',
-        key: requestKeyFrom(req),
+        key: requestKeyFrom(req, { required: true }),
         userId: req.user.id,
         payload: { accountId: req.params.id, ...body },
       }, async () => {
@@ -179,7 +179,7 @@ async function withdrawal(req, res, next) {
     const { result, replayed } = await withTransaction((client) =>
       runOnce(client, {
         scope: 'bank_withdrawal',
-        key: requestKeyFrom(req),
+        key: requestKeyFrom(req, { required: true }),
         userId: req.user.id,
         payload: { accountId: req.params.id, ...body },
       }, async () => {
@@ -245,7 +245,7 @@ async function transfer(req, res, next) {
     const { result, replayed } = await withTransaction((client) =>
       runOnce(client, {
         scope: 'treasury_transfer',
-        key: requestKeyFrom(req),
+        key: requestKeyFrom(req, { required: true }),
         userId: req.user.id,
         payload: { fromId, ...body },
       }, async () => {

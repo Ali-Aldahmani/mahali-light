@@ -9,8 +9,9 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 // result instead of doing the work twice. A key reused with different
 // details is refused with 409 IDEMPOTENCY_KEY_REUSED.
 //
-// Without a key the work simply runs: keys are optional while older
-// screens are being updated to send one.
+// Every screen now sends a key, so the HTTP routes ask for one with
+// `requestKeyFrom(req, { required: true })`. Without a key `runOnce` still
+// simply runs the work, for internal callers that are not retried.
 
 const MAX_KEY_LENGTH = 128;
 
@@ -29,9 +30,18 @@ function payloadHash(payload) {
 }
 
 // The key a request carries: the Idempotency-Key header, else body.requestKey.
-function requestKeyFrom(req) {
+// With `required`, a request without one is refused — a page loaded before
+// the update is the only sender left, and reloading it fixes that.
+function requestKeyFrom(req, { required = false } = {}) {
   const raw = (req.get && req.get('Idempotency-Key')) || req.body?.requestKey || null;
-  if (raw == null || raw === '') return null;
+  if (raw == null || raw === '') {
+    if (!required) return null;
+    throw new AppError(
+      ERROR_CODES.VALIDATION_FAILED,
+      'This screen is out of date. Reload the page and try again.',
+      { status: 400, details: { reason: 'missing_request_key' } },
+    );
+  }
   const key = String(raw).trim();
   if (!key || key.length > MAX_KEY_LENGTH) {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid request key.', { status: 400 });

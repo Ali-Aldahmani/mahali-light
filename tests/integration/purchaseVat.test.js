@@ -26,7 +26,7 @@ describe.skipIf(!enabled)('purchase VAT on real PostgreSQL', () => {
   let createdDatabase = false;
 
   const call = (method, path, body) =>
-    request(app)[method](path).auth(adminToken, { type: 'bearer' }).send(body || {});
+    request(app)[method](path).auth(adminToken, { type: 'bearer' }).set('Idempotency-Key', randomUUID()).send(body || {});
 
   async function newVariant(sku, cost) {
     const { rows: [v] } = await db.query(

@@ -75,7 +75,7 @@ async function createForPo(req, res, next) {
       bankAccountId: body.bankAccountId || null,
       notes: body.notes || null,
       employeeId: req.user.id,
-      requestKey: requestKeyFrom(req),
+      requestKey: requestKeyFrom(req, { required: true }),
     });
 
     // A replayed retry changed nothing, so there is nothing to announce.

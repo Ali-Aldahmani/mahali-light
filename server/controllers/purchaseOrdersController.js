@@ -533,7 +533,7 @@ async function receive(req, res, next) {
       poId: id,
       items: body.items,
       employeeId: req.user.id,
-      requestKey: requestKeyFrom(req),
+      requestKey: requestKeyFrom(req, { required: true }),
     });
 
     // Now that the transaction is committed, emit sockets and re-check reorder.

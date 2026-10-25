@@ -112,6 +112,7 @@ describe.skipIf(!enabled)('Purchase Order Comments & Discussion integration on r
   it('unauthorized user cannot create comment (403)', async () => {
     const res = await request(app)
       .post(`/purchase-orders/${poId}/comments`)
+      .set('Idempotency-Key', randomUUID())
       .set('Authorization', `Bearer ${cashierToken}`)
       .send({ body: 'Unauthorized comment attempt' });
 
@@ -131,6 +132,7 @@ describe.skipIf(!enabled)('Purchase Order Comments & Discussion integration on r
   it('authorized user can create a root comment', async () => {
     const res = await request(app)
       .post(`/purchase-orders/${poId}/comments`)
+      .set('Idempotency-Key', randomUUID())
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ body: 'Please verify the delivery date with supplier.' });
 
@@ -146,6 +148,7 @@ describe.skipIf(!enabled)('Purchase Order Comments & Discussion integration on r
   it('rejects empty or whitespace-only comment body (400)', async () => {
     const res = await request(app)
       .post(`/purchase-orders/${poId}/comments`)
+      .set('Idempotency-Key', randomUUID())
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ body: '   ' });
 
@@ -155,6 +158,7 @@ describe.skipIf(!enabled)('Purchase Order Comments & Discussion integration on r
   it('rejects oversized comment body (400)', async () => {
     const res = await request(app)
       .post(`/purchase-orders/${poId}/comments`)
+      .set('Idempotency-Key', randomUUID())
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ body: 'a'.repeat(5001) });
 
@@ -164,6 +168,7 @@ describe.skipIf(!enabled)('Purchase Order Comments & Discussion integration on r
   it('authorized user can reply to a comment', async () => {
     const res = await request(app)
       .post(`/purchase-orders/${poId}/comments`)
+      .set('Idempotency-Key', randomUUID())
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         body: 'Supplier confirmed delivery for tomorrow 10am.',
@@ -179,6 +184,7 @@ describe.skipIf(!enabled)('Purchase Order Comments & Discussion integration on r
     const fakeParentId = randomUUID();
     const res = await request(app)
       .post(`/purchase-orders/${poId}/comments`)
+      .set('Idempotency-Key', randomUUID())
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         body: 'Reply to ghost comment',
@@ -192,6 +198,7 @@ describe.skipIf(!enabled)('Purchase Order Comments & Discussion integration on r
     // Attempt to reply on po2 with a parent from po1
     const res = await request(app)
       .post(`/purchase-orders/${po2Id}/comments`)
+      .set('Idempotency-Key', randomUUID())
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         body: 'Cross-PO injection attempt',

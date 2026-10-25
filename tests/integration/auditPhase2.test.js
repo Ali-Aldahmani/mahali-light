@@ -174,7 +174,7 @@ describe.skipIf(!enabled)('audit phase 2 on real PostgreSQL', () => {
       await db.query(`CREATE TRIGGER test_fail_adjustment_trg BEFORE INSERT ON stock_adjustment_requests
         FOR EACH ROW EXECUTE FUNCTION test_fail_adjustment()`);
       try {
-        const res = await request(app).post('/stock/adjustments').send(body(v));
+        const res = await request(app).post('/stock/adjustments').set('Idempotency-Key', randomUUID()).send(body(v));
         expect(res.status).toBe(500);
       } finally {
         await db.query(`DROP TRIGGER test_fail_adjustment_trg ON stock_adjustment_requests`);
@@ -187,7 +187,7 @@ describe.skipIf(!enabled)('audit phase 2 on real PostgreSQL', () => {
 
     it('commits stock move, approval record and audit entry together', async () => {
       const v = await variant({ stock: 10 });
-      const res = await request(app).post('/stock/adjustments').send(body(v));
+      const res = await request(app).post('/stock/adjustments').set('Idempotency-Key', randomUUID()).send(body(v));
       expect(res.status).toBe(201);
       expect(await stock(v.id)).toBe(7);
       const { rows: [reqRow] } = await db.query(

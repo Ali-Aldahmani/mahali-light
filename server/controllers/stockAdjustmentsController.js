@@ -225,7 +225,7 @@ async function create(req, res, next) {
       const { result, replayed } = await withTransaction((client) =>
         runOnce(client, {
           scope: 'stock_adjustment_direct',
-          key: requestKeyFrom(req),
+          key: requestKeyFrom(req, { required: true }),
           userId: req.user.id,
           payload: {
             variantId: body.variantId, adjustmentType: body.adjustmentType,

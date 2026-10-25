@@ -105,7 +105,7 @@ async function adjust(req, res, next) {
       reason: body.reason,
       employeeId: req.user.id,
       io,
-      requestKey: requestKeyFrom(req),
+      requestKey: requestKeyFrom(req, { required: true }),
     });
     const state = await cashService.getDrawerState();
     return ok(res, state);
@@ -228,7 +228,7 @@ async function transferToBank(req, res, next) {
     const { result, replayed } = await withTransaction((client) =>
       runOnce(client, {
         scope: 'cash_transfer',
-        key: requestKeyFrom(req),
+        key: requestKeyFrom(req, { required: true }),
         userId: req.user.id,
         payload: body,
       }, async () => {

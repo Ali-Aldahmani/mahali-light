@@ -46,7 +46,7 @@ async function create(req, res, next) {
   try {
     const poId = idParamSchema.parse(req.params.id);
     const body = createCommentSchema.parse(req.body || {});
-    const requestKey = requestKeyFrom(req);
+    const requestKey = requestKeyFrom(req, { required: true });
 
     const authorName =
       req.user.full_name || req.user.username || 'Employee';

@@ -3,8 +3,8 @@
  *
  * For every command, the same request sent twice with one Idempotency-Key
  * must have exactly one effect, and the retry must get the first result back
- * (200 instead of 201). The same key with different details is refused (409);
- * requests without a key keep working as before.
+ * (200 instead of 201). The same key with different details is refused (409),
+ * and a request without a key is refused (400) before anything is recorded.
  *
  * Creates and drops its own database, mirroring the other integration suites.
  */
@@ -225,10 +225,18 @@ describe.skipIf(!enabled)('retry-safe commands on real PostgreSQL', () => {
       expect(Number((await one(`SELECT credit_balance FROM customers WHERE id = $1`, [c.id])).credit_balance)).toBe(400);
     });
 
-    it('without a key two genuine payments both go through, as before', async () => {
+    it('without a key the request is refused and nothing is recorded', async () => {
+      const c = await one(`INSERT INTO customers (name, credit_balance) VALUES ('No Key Co', 500) RETURNING id`);
+      const res = await post(`/customers/${c.id}/payments`, { amount: 100, paymentMethod: 'cash' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_FAILED');
+      expect(Number((await one(`SELECT credit_balance FROM customers WHERE id = $1`, [c.id])).credit_balance)).toBe(500);
+    });
+
+    it('two genuine payments with their own keys both go through', async () => {
       const c = await one(`INSERT INTO customers (name, credit_balance) VALUES ('Two Payments Co', 500) RETURNING id`);
-      expect((await post(`/customers/${c.id}/payments`, { amount: 100, paymentMethod: 'cash' })).status).toBe(201);
-      expect((await post(`/customers/${c.id}/payments`, { amount: 100, paymentMethod: 'cash' })).status).toBe(201);
+      expect((await post(`/customers/${c.id}/payments`, { amount: 100, paymentMethod: 'cash' }, randomUUID())).status).toBe(201);
+      expect((await post(`/customers/${c.id}/payments`, { amount: 100, paymentMethod: 'cash' }, randomUUID())).status).toBe(201);
       expect(Number((await one(`SELECT credit_balance FROM customers WHERE id = $1`, [c.id])).credit_balance)).toBe(300);
     });
   });

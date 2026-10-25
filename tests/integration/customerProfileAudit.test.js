@@ -27,7 +27,7 @@ describe.skipIf(!enabled)('customer profile audit on real PostgreSQL', () => {
   const api = () => ({
     get: (url) => request(app).get(url).auth(token, { type: 'bearer' }),
     put: (url, body) => request(app).put(url).auth(token, { type: 'bearer' }).send(body),
-    post: (url, body) => request(app).post(url).auth(token, { type: 'bearer' }).send(body),
+    post: (url, body) => request(app).post(url).auth(token, { type: 'bearer' }).set('Idempotency-Key', randomUUID()).send(body),
     del: (url) => request(app).delete(url).auth(token, { type: 'bearer' }),
   });
 

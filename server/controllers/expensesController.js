@@ -61,7 +61,7 @@ async function create(req, res, next) {
       ...body,
       userId: req.user.id,
       io,
-      requestKey: requestKeyFrom(req),
+      requestKey: requestKeyFrom(req, { required: true }),
     });
 
     // Optional receipt file under the same multipart request. The expense has
