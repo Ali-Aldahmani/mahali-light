@@ -184,22 +184,21 @@ function OverviewTab({ range }: { range: { start_date: string; end_date: string 
         />
       </div>
 
-      <div>
-        <div className="flex items-center justify-between gap-3 mb-2">
-          <h3 className="text-sm font-semibold text-ink">
-            Net profit trend{canCategories && ' & sales by category'}
-          </h3>
-          <Select
-            value={profitMonth}
-            onChange={setProfitMonth}
-            options={monthOptions}
-            className="min-w-[220px]"
-          />
-        </div>
-        <div className={canCategories ? 'grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : undefined}>
-          <NetProfitTrendChart rows={trends} period={monthOptions[profitMonth]?.name ?? ''} />
-          {canCategories && <CategorySalesDonut rows={categories} />}
-        </div>
+      {/* The month picker lives in the net profit card; the donut names the same month. */}
+      <div className={canCategories ? 'grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : undefined}>
+        <NetProfitTrendChart
+          rows={trends}
+          period={monthOptions[profitMonth]?.name ?? ''}
+          action={
+            <Select
+              value={profitMonth}
+              onChange={setProfitMonth}
+              options={monthOptions}
+              className="min-w-[210px]"
+            />
+          }
+        />
+        {canCategories && <CategorySalesDonut rows={categories} period={monthOptions[profitMonth]?.name ?? ''} />}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

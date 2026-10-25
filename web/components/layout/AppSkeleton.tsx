@@ -94,12 +94,12 @@ export function AnalyticsOverviewSkeleton() {
       </div>
 
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <Bone className="h-4 w-56" />
-          <Bone className="h-9 w-56 rounded-lg" />
-        </div>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <Bone className="h-4 w-32" />
+              <Bone className="h-9 w-52 rounded-lg" />
+            </div>
             <Bone className="h-3 w-24" />
             <Bone className="mt-2 h-7 w-20" />
             <Bone className="mt-2 h-3 w-16" />
@@ -110,6 +110,10 @@ export function AnalyticsOverviewSkeleton() {
             </div>
           </Card>
           <Card className="p-4 flex flex-wrap items-center justify-center gap-6">
+            <div className="flex w-full items-center justify-between">
+              <Bone className="h-4 w-32" />
+              <Bone className="h-6 w-20 rounded-full" />
+            </div>
             <span aria-hidden="true" className="block h-[180px] w-[180px] rounded-full border-[22px] border-border animate-pulse motion-reduce:animate-none" />
             <div className="flex-1 min-w-[180px] space-y-3">
               {[0, 1, 2].map((i) => (

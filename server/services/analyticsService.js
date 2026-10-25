@@ -1098,7 +1098,9 @@ async function getSalesTimeline({ startDate, endDate } = {}) {
     `WITH days AS (
        SELECT generate_series($1::date, $2::date, '1 day'::interval)::date AS d
      )
-     SELECT days.d AS bucket,
+     -- YYYY-MM-DD text, not a DATE: a JS Date at local midnight serialises
+     -- as the day before in timezones east of UTC.
+     SELECT to_char(days.d, 'YYYY-MM-DD') AS bucket,
             COALESCE(SUM(i.taxable_amount), 0)::float8 AS revenue,
             COUNT(i.id)::int AS invoices
        FROM days

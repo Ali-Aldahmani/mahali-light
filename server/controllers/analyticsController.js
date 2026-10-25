@@ -19,6 +19,13 @@ const rangeSchema = z.object({
   end_date: z.string().optional(),
 });
 
+// Services that destructure { startDate, endDate } need the query's
+// snake_case range renamed; handing them `parsed` as-is silently fell back
+// to the current month whatever range was asked for.
+function toRange(parsed) {
+  return { startDate: parsed.start_date, endDate: parsed.end_date };
+}
+
 // =======================================================================
 // Analytics endpoints
 // =======================================================================
@@ -192,7 +199,7 @@ async function peakHours(req, res, next) {
 async function peakDays(req, res, next) {
   try {
     const parsed = rangeSchema.parse(req.query);
-    const data = await analyticsService.getPeakDays(parsed);
+    const data = await analyticsService.getPeakDays(toRange(parsed));
     ok(res, data);
   } catch (err) {
     next(err.errors ? zodFail(err) : err);
@@ -202,7 +209,7 @@ async function peakDays(req, res, next) {
 async function peakHeatmap(req, res, next) {
   try {
     const parsed = rangeSchema.parse(req.query);
-    const data = await analyticsService.getPeakHeatmap(parsed);
+    const data = await analyticsService.getPeakHeatmap(toRange(parsed));
     ok(res, data);
   } catch (err) {
     next(err.errors ? zodFail(err) : err);
@@ -287,7 +294,7 @@ async function dailySnapshot(_req, res, next) {
 async function salesTimeline(req, res, next) {
   try {
     const parsed = rangeSchema.parse(req.query);
-    ok(res, await analyticsService.getSalesTimeline(parsed));
+    ok(res, await analyticsService.getSalesTimeline(toRange(parsed)));
   } catch (err) {
     next(err.errors ? zodFail(err) : err);
   }
@@ -320,7 +327,7 @@ async function categoryBreakdown(req, res, next) {
     const parsed = rangeSchema
       .extend({ limit: z.coerce.number().min(1).max(20).optional() })
       .parse(req.query);
-    ok(res, await analyticsService.getCategoryBreakdown(parsed));
+    ok(res, await analyticsService.getCategoryBreakdown({ ...toRange(parsed), limit: parsed.limit }));
   } catch (err) {
     next(err.errors ? zodFail(err) : err);
   }
