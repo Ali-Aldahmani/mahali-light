@@ -226,10 +226,9 @@ export default function SettingsHubPage() {
                 <input type="checkbox" checked={!!draft.pos_require_customer} onChange={(e) => patch({ pos_require_customer: e.target.checked })} disabled={!canEdit} />
                 Require customer for sales
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={!!draft.pos_allow_negative_stock} onChange={(e) => patch({ pos_allow_negative_stock: e.target.checked })} disabled={!canEdit} />
-                Allow negative stock (not recommended)
-              </label>
+              <p className="text-xs text-ink-muted">
+                Selling below zero stock is not supported: a sale needs the units in stock.
+              </p>
             </SettingsSection>
           )}
           {section === 'vat' && (

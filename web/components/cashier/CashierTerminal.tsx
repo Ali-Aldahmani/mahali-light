@@ -445,7 +445,8 @@ export default function CashierTerminal() {
         },
         allocations: prep.allocations,
         draftInvoiceId: state.draftInvoiceId,
-        onDraftSaved: (id, number) => usePosStore.getState().setDraftInvoice(id, number),
+        draftUpdatedAt: state.draftUpdatedAt,
+        onDraftSaved: (id, number, updatedAt) => usePosStore.getState().setDraftInvoice(id, number, updatedAt),
       });
       finishSale(invoiceId, confirmed);
     } catch (err: any) {
@@ -487,6 +488,7 @@ export default function CashierTerminal() {
           checkoutId: state.checkoutId,
         },
         state.draftInvoiceId,
+        state.draftUpdatedAt,
       );
       usePosStore.getState().clearCart();
       clearSaleBackup();
@@ -568,6 +570,7 @@ export default function CashierTerminal() {
           notes: inv.notes || '',
           draftInvoiceId: inv.id,
           draftInvoiceNumber: inv.invoiceNumber,
+          draftUpdatedAt: inv.updatedAt || null,
           checkoutId: inv.checkoutId,
         });
         setSelectedId(lines[0]?.variantId ?? null);

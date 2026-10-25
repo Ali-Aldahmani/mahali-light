@@ -12,6 +12,7 @@ interface SaleBackup {
   notes: string;
   draftInvoiceId: string | null;
   draftInvoiceNumber: string | null;
+  draftUpdatedAt?: string | null;
   /** The sale attempt's ID, so after a reload a lost checkout can be looked up and not repeated. */
   checkoutId?: string | null;
   /** Payment lines with their IDs, which double as their request keys. */
@@ -57,6 +58,7 @@ export function useSaleBackup(userId: string | number | null) {
           notes: backup.notes,
           draftInvoiceId: backup.draftInvoiceId,
           draftInvoiceNumber: backup.draftInvoiceNumber,
+          draftUpdatedAt: backup.draftUpdatedAt || null,
           checkoutId: backup.checkoutId,
           payments: backup.payments,
         });
@@ -81,6 +83,7 @@ export function useSaleBackup(userId: string | number | null) {
           notes: s.notes,
           draftInvoiceId: s.draftInvoiceId,
           draftInvoiceNumber: s.draftInvoiceNumber,
+          draftUpdatedAt: s.draftUpdatedAt,
           checkoutId: s.checkoutId,
           payments: s.payments,
         };
@@ -96,6 +99,7 @@ export function useSaleBackup(userId: string | number | null) {
         s.invoiceDiscount === prev.invoiceDiscount &&
         s.notes === prev.notes &&
         s.draftInvoiceId === prev.draftInvoiceId &&
+        s.draftUpdatedAt === prev.draftUpdatedAt &&
         s.checkoutId === prev.checkoutId &&
         s.payments === prev.payments
       ) {

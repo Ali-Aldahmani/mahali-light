@@ -317,7 +317,8 @@ function POSPageContent() {
         },
         allocations: prep.allocations,
         draftInvoiceId: usePosStore.getState().draftInvoiceId,
-        onDraftSaved: (id, number) => usePosStore.getState().setDraftInvoice(id, number),
+        draftUpdatedAt: usePosStore.getState().draftUpdatedAt,
+        onDraftSaved: (id, number, updatedAt) => usePosStore.getState().setDraftInvoice(id, number, updatedAt),
       });
       finishSale(invoiceId, confirmed);
     } catch (err: any) {

@@ -26,7 +26,10 @@ function shape(row) {
     invoice_auto_print: row.invoice_auto_print,
     invoice_draft_expiry_hours: row.invoice_draft_expiry_hours,
     pos_require_customer: row.pos_require_customer,
-    pos_allow_negative_stock: row.pos_allow_negative_stock,
+    // Negative stock is not supported: the stock service always refuses to
+    // go below zero and there is no costing policy for it (invoice audit
+    // F24), so the setting always reads false.
+    pos_allow_negative_stock: false,
     pos_default_payment_method: row.pos_default_payment_method,
     low_stock_threshold_default: row.low_stock_threshold_default,
     dead_stock_days: row.dead_stock_days,
@@ -167,8 +170,8 @@ async function getPublicSettings() {
     store_timezone: s.store_timezone,
     vat_enabled: s.vat_enabled,
     vat_rate: s.vat_rate,
-    // UX hint for POS stock warnings; confirmInvoice enforces it server-side.
-    pos_allow_negative_stock: !!s.pos_allow_negative_stock,
+    // Always false — see shape() above. Kept so older screens keep working.
+    pos_allow_negative_stock: false,
     language: s.language,
     // The actually-running version, not a value baked into the frontend
     // bundle at build time — a self-update swaps this file and restarts

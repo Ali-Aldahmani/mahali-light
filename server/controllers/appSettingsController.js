@@ -24,7 +24,10 @@ const patchSchema = z.object({
   invoice_auto_print: z.boolean().optional(),
   invoice_draft_expiry_hours: z.number().int().min(1).max(168).optional(),
   pos_require_customer: z.boolean().optional(),
-  pos_allow_negative_stock: z.boolean().optional(),
+  // Negative stock is not supported (invoice audit F24); only false is accepted.
+  pos_allow_negative_stock: z.literal(false, {
+    errorMap: () => ({ message: 'Negative stock is not supported.' }),
+  }).optional(),
   pos_default_payment_method: z.enum(['cash', 'bank', 'credit']).optional(),
   low_stock_threshold_default: z.number().int().min(0).optional(),
   dead_stock_days: z.number().int().min(1).optional(),

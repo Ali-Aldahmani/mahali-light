@@ -513,6 +513,10 @@ const updateItemsSchema = z.object({
   invoiceDiscount: z.number().nonnegative().optional(),
   notes: z.string().max(2000).optional().nullable(),
   items: z.array(itemSchema),
+  // The draft's updatedAt as this screen last saw it. When sent, a draft
+  // changed since (another PC resumed and edited it) is refused with 409
+  // instead of being silently overwritten (invoice audit F23).
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
 });
 
 async function updateItems(req, res, next) {
@@ -538,6 +542,16 @@ async function updateItems(req, res, next) {
           ERROR_CODES.BIZ_INVOICE_LOCKED,
           'Only draft invoices can be edited directly.',
           { status: 409 },
+        );
+      }
+      if (
+        body.expectedUpdatedAt &&
+        new Date(body.expectedUpdatedAt).getTime() !== new Date(invRows[0].updated_at).getTime()
+      ) {
+        throw new AppError(
+          ERROR_CODES.RESOURCE_CONFLICT,
+          'This sale was changed on another screen. Reload it to see the latest version before saving.',
+          { status: 409, details: { updatedAt: invRows[0].updated_at } },
         );
       }
 

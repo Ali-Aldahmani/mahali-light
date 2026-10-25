@@ -102,6 +102,8 @@ interface PosState {
   /** Server draft invoice backing this sale (held / resumed / failed checkout). */
   draftInvoiceId: string | null;
   draftInvoiceNumber: string | null;
+  /** The draft's updatedAt as last seen, sent with each save (invoice audit F23). */
+  draftUpdatedAt: string | null;
   /**
    * This sale attempt's ID (server migration 041). Sent when the draft is
    * created and kept, also in the sale backup, until the sale is done, so a
@@ -110,7 +112,7 @@ interface PosState {
   checkoutId: string;
 
   setOffline: (flag: boolean) => void;
-  setDraftInvoice: (id: string | null, invoiceNumber?: string | null) => void;
+  setDraftInvoice: (id: string | null, invoiceNumber?: string | null, updatedAt?: string | null) => void;
   loadSale: (sale: {
     cart: CartItem[];
     selectedCustomer?: any | null;
@@ -118,6 +120,7 @@ interface PosState {
     notes?: string;
     draftInvoiceId?: string | null;
     draftInvoiceNumber?: string | null;
+    draftUpdatedAt?: string | null;
     checkoutId?: string | null;
     payments?: Payment[];
   }) => void;
@@ -250,14 +253,19 @@ export const usePosStore = create<PosState>()((set, get) => ({
   offlineQueue: loadOfflineQueue(),
   draftInvoiceId: null,
   draftInvoiceNumber: null,
+  draftUpdatedAt: null,
   checkoutId: newRequestKey(),
 
   setOffline(flag) {
     set({ isOffline: !!flag });
   },
 
-  setDraftInvoice(id, invoiceNumber = null) {
-    set({ draftInvoiceId: id || null, draftInvoiceNumber: id ? invoiceNumber || null : null });
+  setDraftInvoice(id, invoiceNumber = null, updatedAt = null) {
+    set({
+      draftInvoiceId: id || null,
+      draftInvoiceNumber: id ? invoiceNumber || null : null,
+      draftUpdatedAt: id ? updatedAt || null : null,
+    });
   },
 
   loadSale(sale) {
@@ -270,6 +278,7 @@ export const usePosStore = create<PosState>()((set, get) => ({
       payments: Array.isArray(sale.payments) ? sale.payments : [],
       draftInvoiceId: sale.draftInvoiceId || null,
       draftInvoiceNumber: sale.draftInvoiceNumber || null,
+      draftUpdatedAt: sale.draftUpdatedAt || null,
       checkoutId: sale.checkoutId || newRequestKey(),
     });
   },
@@ -500,6 +509,7 @@ export const usePosStore = create<PosState>()((set, get) => ({
       notes: '',
       draftInvoiceId: null,
       draftInvoiceNumber: null,
+      draftUpdatedAt: null,
       // The next sale is a new attempt.
       checkoutId: newRequestKey(),
     });

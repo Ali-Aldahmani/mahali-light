@@ -123,6 +123,24 @@ function computeTotals({ items, payments, invoiceDiscount = 0, taxRate = DEFAULT
   };
 }
 
+// Sale quantities (invoice audit F13): stored as DECIMAL(12,2), so at most
+// two decimals, a sane upper bound, and whole units for products sold by
+// the piece. A quantity is rejected rather than silently rounded — before,
+// 0.004 rounded to a zero-quantity line.
+const MAX_SALE_QUANTITY = 1000000;
+function assertSaleQuantity(quantity, { soldBy = null, name = 'item' } = {}) {
+  const q = Number(quantity);
+  const invalid = (message) => new AppError(ERROR_CODES.VALIDATION_FAILED, message, { status: 400 });
+  if (!Number.isFinite(q) || q <= 0) throw invalid(`Quantity for ${name} must be more than zero.`);
+  if (q > MAX_SALE_QUANTITY) throw invalid(`Quantity for ${name} is too large.`);
+  if (Math.abs(q * 100 - Math.round(q * 100)) > 1e-6) {
+    throw invalid(`Quantity for ${name} can have at most two decimal places.`);
+  }
+  if ((soldBy || 'piece') === 'piece' && !Number.isInteger(Math.round(q * 100) / 100)) {
+    throw invalid(`${name} is sold by the piece, so its quantity must be a whole number.`);
+  }
+}
+
 // Compute per-line subtotal/total honouring percent OR amount discount.
 function computeLineFigures(item) {
   const qty = money(item.quantity);
@@ -163,7 +181,7 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
   const [{ rows: variantRows }, { rows: attrRows }] = await Promise.all([
     client.query(
       `SELECT v.id, v.product_id, v.sku, v.cost_price, v.selling_price,
-              p.name AS product_name, p.unit_label
+              p.name AS product_name, p.unit_label, p.sold_by
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
         WHERE v.id = ANY($1)`,
@@ -203,6 +221,8 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
       // price is. cost_price_at_time reuses the normal column so every
       // COGS-reading query (getKPIs, reports, journal COGS split) picks it
       // up with no separate code path.
+      // A custom line has no catalog unit, so only the decimal/bound rules apply.
+      assertSaleQuantity(raw.quantity, { soldBy: 'custom', name: raw.custom_description || 'custom item' });
       const item = {
         quantity: money(raw.quantity),
         unit_price: money(raw.unit_price || 0),
@@ -244,6 +264,7 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
       );
     }
     const variantAttrs = attrMap.get(raw.variant_id) || {};
+    assertSaleQuantity(raw.quantity, { soldBy: v.sold_by, name: v.product_name });
 
     // Price is server-authoritative: a client-supplied unit_price is only
     // honoured for callers holding invoice.override_price (checked by the
@@ -438,11 +459,11 @@ async function recalculateAndPersistTotals(
 
 // Verify each invoice item still has enough on-hand stock to be sold. Returns
 // a list of shortfalls so the caller can build a useful error response.
-async function posAllowsNegativeStock(client) {
-  const { rows } = await client.query(
-    `SELECT pos_allow_negative_stock FROM app_settings ORDER BY id LIMIT 1`,
-  );
-  return rows[0]?.pos_allow_negative_stock === true;
+// Negative stock is not supported (invoice audit F24): the stock service
+// refuses any movement below zero, so the confirmation precheck must agree
+// with it whatever the old setting says.
+async function posAllowsNegativeStock(_client) {
+  return false;
 }
 
 async function findMissingSerialNumbers(client, invoiceId) {
@@ -1174,7 +1195,9 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
       const editVariantIds = [...new Set(changes.items.map((i) => i.variant_id).filter(Boolean))];
       const { rows: editVariantRows } = editVariantIds.length
         ? await client.query(
-            `SELECT id, product_id, selling_price FROM product_variants WHERE id = ANY($1)`,
+            `SELECT v.id, v.product_id, v.selling_price, p.sold_by, p.name AS product_name
+               FROM product_variants v JOIN products p ON p.id = v.product_id
+              WHERE v.id = ANY($1)`,
             [editVariantIds],
           )
         : { rows: [] };
@@ -1194,6 +1217,10 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
         const newQty = money(requested.quantity);
         if (!Number.isFinite(Number(requested.quantity)) || newQty < 0) {
           throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid item quantity.');
+        }
+        if (Number(requested.quantity) > 0) {
+          const ev = editVariantPricing.get(requested.variant_id);
+          assertSaleQuantity(requested.quantity, { soldBy: ev?.sold_by, name: ev?.product_name || 'item' });
         }
         const oldQty = cur ? Number(cur.quantity) : 0;
         const delta = money(newQty - oldQty);
@@ -1534,6 +1561,7 @@ async function rejectEditRequest({ requestId, managerId, reason, io = null }) {
 
 module.exports = {
   generateInvoiceNumber,
+  assertSaleQuantity,
   computeTotals,
   computeLineFigures,
   replaceItems,

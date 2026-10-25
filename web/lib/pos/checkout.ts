@@ -99,7 +99,14 @@ export interface SaleDraft {
 }
 
 // Creates a draft, or rewrites an existing one (held / resumed sale).
-export async function saveDraft(draft: SaleDraft, draftInvoiceId?: string | null) {
+// `expectedUpdatedAt` is the draft's updatedAt as this screen last saw it:
+// if another PC changed the draft since, the server refuses the save (409)
+// rather than silently overwriting it (invoice audit F23).
+export async function saveDraft(
+  draft: SaleDraft,
+  draftInvoiceId?: string | null,
+  expectedUpdatedAt?: string | null,
+) {
   const body = {
     customerId: draft.customerId,
     invoiceDiscount: draft.invoiceDiscount,
@@ -107,8 +114,15 @@ export async function saveDraft(draft: SaleDraft, draftInvoiceId?: string | null
     items: buildInvoiceItems(draft.items),
   };
   if (draftInvoiceId) {
-    const updated: any = await updateInvoiceItems(draftInvoiceId, body);
-    return { id: draftInvoiceId, invoiceNumber: updated?.invoiceNumber ?? null };
+    const updated: any = await updateInvoiceItems(draftInvoiceId, {
+      ...body,
+      ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+    });
+    return {
+      id: draftInvoiceId,
+      invoiceNumber: updated?.invoiceNumber ?? null,
+      updatedAt: (updated?.updatedAt as string) ?? null,
+    };
   }
   // With a checkout ID the server returns this attempt's existing invoice
   // instead of creating a second one.
@@ -121,6 +135,7 @@ export async function saveDraft(draft: SaleDraft, draftInvoiceId?: string | null
     id: created.id as string,
     invoiceNumber: created.invoiceNumber ?? null,
     status: (created.status as string) || 'draft',
+    updatedAt: (created.updatedAt as string) ?? null,
   };
 }
 
@@ -142,12 +157,14 @@ export async function submitSale({
   draft,
   allocations,
   draftInvoiceId = null,
+  draftUpdatedAt = null,
   onDraftSaved,
 }: {
   draft: SaleDraft;
   allocations: CheckoutPayment[];
   draftInvoiceId?: string | null;
-  onDraftSaved?: (id: string, invoiceNumber: string | null) => void;
+  draftUpdatedAt?: string | null;
+  onDraftSaved?: (id: string, invoiceNumber: string | null, updatedAt: string | null) => void;
 }): Promise<CompletedSale> {
   // A retry of an attempt that already reached the server: if it actually
   // went through, show that sale instead of trying to edit a confirmed one.
@@ -159,8 +176,8 @@ export async function submitSale({
     if (known.status === 'cancelled') throw cancelledSaleError();
   }
 
-  const saved = await saveDraft(draft, draftInvoiceId);
-  onDraftSaved?.(saved.id, saved.invoiceNumber);
+  const saved = await saveDraft(draft, draftInvoiceId, draftUpdatedAt);
+  onDraftSaved?.(saved.id, saved.invoiceNumber, saved.updatedAt ?? null);
   if ((saved as any).status && (saved as any).status !== 'draft') {
     const known = await getCheckoutStatus(draft.checkoutId as string);
     if (known.status === 'confirmed' && known.invoice) {
@@ -234,6 +251,8 @@ export function checkoutErrorMessage(err: any): string {
       return err.message || 'A price or discount is not allowed for one of the products.';
     case 'AUTH_NO_PERMISSION':
       return err.message || 'You do not have permission for this action.';
+    case 'RESOURCE_CONFLICT':
+      return err.message || 'This sale was changed on another screen. Reload it before saving.';
     case 'NETWORK_ERROR':
     case 'NETWORK_TIMEOUT':
       // Never "not completed": the server may have confirmed the sale.
