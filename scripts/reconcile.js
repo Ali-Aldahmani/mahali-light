@@ -216,14 +216,20 @@ const CHECKS = [
   },
 ];
 
+// Each check runs on its own savepoint: one that fails (say, a column from
+// a migration not applied yet) is reported and the others still run,
+// instead of aborting the whole read-only transaction.
 async function runChecks(client) {
   const results = [];
   for (const check of CHECKS) {
+    await client.query('SAVEPOINT reconcile_check');
     try {
       const { rows } = await client.query(check.sql);
       results.push({ id: check.id, title: check.title, differences: rows });
+      await client.query('RELEASE SAVEPOINT reconcile_check');
     } catch (err) {
       results.push({ id: check.id, title: check.title, error: err.message });
+      await client.query('ROLLBACK TO SAVEPOINT reconcile_check');
     }
   }
   return results;
@@ -259,7 +265,8 @@ function printReport(results) {
     }
     if (r.differences.length > 20) console.log(`     … and ${r.differences.length - 20} more`);
   }
-  console.log(`\n${total} difference(s) across ${results.length} checks.`);
+  const failed = results.filter((r) => r.error).length;
+  console.log(`\n${total} difference(s) across ${results.length} checks.${failed ? ` ${failed} check(s) could not run.` : ''}`);
   return total;
 }
 

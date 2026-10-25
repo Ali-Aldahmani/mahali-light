@@ -102,4 +102,16 @@ describe.skipIf(!enabled)('reconciliation report on real PostgreSQL', () => {
       client.release();
     }
   });
+  it('keeps running the other checks when one of them fails', async () => {
+    const { CHECKS } = require('../../scripts/reconcile');
+    const broken = { id: 'broken', title: 'Broken check', sql: 'SELECT no_such_column FROM customers' };
+    CHECKS.unshift(broken);
+    try {
+      const results = await reconcile(db.getPool());
+      expect(results[0].error).toMatch(/no_such_column/);
+      expect(results.slice(1).every((r) => !r.error)).toBe(true);
+    } finally {
+      CHECKS.splice(CHECKS.indexOf(broken), 1);
+    }
+  });
 });
