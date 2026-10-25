@@ -96,10 +96,13 @@ async function salesSummary(params) {
     [startDate, endDate],
   );
   const a = agg[0] || {};
-  // "Total Collected" is actual cash received (sum of invoice_payments), not
-  // invoiced revenue — a confirmed invoice can be partially paid or fully on
-  // credit, so it must NOT be SUM(invoices.total).
-  const totalCollected = money(byMethod.reduce((s, r) => s + Number(r.amount), 0));
+  // "Total Collected" is money actually received (cash, bank, card), not
+  // invoiced revenue — and not the part put on a customer's account: a
+  // credit "payment" settles the invoice but nothing was collected (audit
+  // F04). That part is reported separately as onAccount.
+  const collected = byMethod.filter((r) => r.method !== 'credit');
+  const onAccount = money(byMethod.filter((r) => r.method === 'credit').reduce((s, r) => s + Number(r.amount), 0));
+  const totalCollected = money(collected.reduce((s, r) => s + Number(r.amount), 0));
   const netRevenue = money((a.net_sales || 0) - (a.refunds_taxable || 0));
   return {
     type: 'sales_summary',
@@ -112,6 +115,7 @@ async function salesSummary(params) {
       netSales: money(a.net_sales || 0),
       vat: money(a.vat || 0),
       totalCollected,
+      onAccount,
       refunds: money(a.refunds || 0),
       netRevenue,
     },
@@ -121,7 +125,7 @@ async function salesSummary(params) {
       { key: 'amount', label: 'Amount', type: 'currency', align: 'right' },
       { key: 'share', label: 'Share %', type: 'percent', align: 'right' },
     ],
-    rows: byMethod.map((r) => ({
+    rows: collected.map((r) => ({
       method: r.method,
       payments: r.payments,
       amount: money(r.amount),
@@ -131,7 +135,7 @@ async function salesSummary(params) {
           : 0,
     })),
     totals: {
-      payments: byMethod.reduce((s, r) => s + r.payments, 0),
+      payments: collected.reduce((s, r) => s + r.payments, 0),
       amount: totalCollected,
       share: 100,
     },
@@ -960,33 +964,59 @@ async function customerSummary(params) {
 }
 
 async function customerReceivables(_params) {
-  // Aging keyed off invoice confirmed_at for the customer's open balance.
-  // We approximate per-customer aging using the *oldest* unpaid invoice and
-  // the total credit_balance — fine for the report layer.
-  const { rows } = await query(
-    `WITH c AS (
-       SELECT c.id, c.name, c.phone, c.credit_balance,
-              (SELECT MIN(confirmed_at)
-                 FROM invoices i
-                WHERE i.customer_id = c.id
-                  AND i.status = 'confirmed'
-                  AND i.balance_due > 0) AS oldest_open
-         FROM customers c
-        WHERE c.credit_balance > 0
+  // Aging from the credit sales that make up each customer's open balance
+  // (audit F04/F20). A credit sale settles its invoice and moves the debt
+  // to the customer, so invoice balance_due can't show it. Collections pay
+  // the oldest debt first, so the open balance is the customer's most
+  // recent credit sales: walk them newest-first until the balance is
+  // covered and age each part by its sale date. Any balance left over (an
+  // opening balance entered directly) has no date and counts as 60+ days.
+  const { rows: parts } = await query(
+    `WITH credit_sales AS (
+       SELECT i.customer_id, i.confirmed_at, i.id, SUM(ip.amount) AS amount
+         FROM invoice_payments ip
+         JOIN invoices i ON i.id = ip.invoice_id
+        WHERE ip.method = 'credit' AND i.status = 'confirmed' AND i.customer_id IS NOT NULL
+        GROUP BY i.id, i.customer_id, i.confirmed_at
+     ),
+     newest_first AS (
+       SELECT cs.*,
+              SUM(cs.amount) OVER (PARTITION BY cs.customer_id
+                                   ORDER BY cs.confirmed_at DESC, cs.id DESC
+                                   ROWS UNBOUNDED PRECEDING) - cs.amount AS newer
+         FROM credit_sales cs
      )
-     SELECT *,
+     SELECT nf.customer_id,
+            LEAST(nf.amount, c.credit_balance - nf.newer)::float8 AS open_amount,
             CASE
-              WHEN oldest_open IS NULL OR oldest_open::date >= CURRENT_DATE THEN 'current'
-              WHEN oldest_open::date >= CURRENT_DATE - INTERVAL '30 days' THEN '1_30'
-              WHEN oldest_open::date >= CURRENT_DATE - INTERVAL '60 days' THEN '31_60'
+              WHEN nf.confirmed_at::date >= CURRENT_DATE THEN 'current'
+              WHEN nf.confirmed_at::date >= CURRENT_DATE - INTERVAL '30 days' THEN '1_30'
+              WHEN nf.confirmed_at::date >= CURRENT_DATE - INTERVAL '60 days' THEN '31_60'
               ELSE 'over_60'
             END AS bucket
-       FROM c
+       FROM newest_first nf
+       JOIN customers c ON c.id = nf.customer_id
+      WHERE c.credit_balance > 0 AND c.credit_balance - nf.newer > 0`,
+  );
+  const { rows: customers } = await query(
+    `SELECT id, name, phone, credit_balance FROM customers
+      WHERE credit_balance > 0
       ORDER BY credit_balance DESC`,
   );
-  function bucketAmt(row, bucket) {
-    return row.bucket === bucket ? money(row.credit_balance) : 0;
+  const byCustomer = new Map();
+  for (const p of parts) {
+    const b = byCustomer.get(p.customer_id) || { current: 0, '1_30': 0, '31_60': 0, over_60: 0 };
+    b[p.bucket] = money(b[p.bucket] + Number(p.open_amount));
+    byCustomer.set(p.customer_id, b);
   }
+  const rows = customers.map((c) => {
+    const b = byCustomer.get(c.id) || { current: 0, '1_30': 0, '31_60': 0, over_60: 0 };
+    const dated = money(b.current + b['1_30'] + b['31_60'] + b.over_60);
+    const undated = money(Number(c.credit_balance) - dated);
+    if (undated > 0) b.over_60 = money(b.over_60 + undated);
+    return { ...c, buckets: b };
+  });
+  const bucketAmt = (row, bucket) => row.buckets[bucket];
   return {
     type: 'customer_receivables',
     title: 'Customer Receivables (Aging)',
@@ -1010,6 +1040,10 @@ async function customerReceivables(_params) {
       total: money(r.credit_balance),
     })),
     totals: {
+      current_amount: money(rows.reduce((s, r) => s + r.buckets.current, 0)),
+      overdue_30: money(rows.reduce((s, r) => s + r.buckets['1_30'], 0)),
+      overdue_60: money(rows.reduce((s, r) => s + r.buckets['31_60'], 0)),
+      overdue_90: money(rows.reduce((s, r) => s + r.buckets.over_60, 0)),
       total: money(rows.reduce((s, r) => s + Number(r.credit_balance), 0)),
     },
   };

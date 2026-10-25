@@ -860,7 +860,11 @@ async function getKPIs(params = {}) {
        SELECT i.*,
               COALESCE((SELECT SUM(ii.quantity * ii.cost_price_at_time)
                           FROM invoice_items ii
-                         WHERE ii.invoice_id = i.id), 0) AS cogs
+                         WHERE ii.invoice_id = i.id), 0) AS cogs,
+              -- The part put on the customer's account: it settles the
+              -- invoice but is not money collected.
+              COALESCE((SELECT SUM(ip.amount) FROM invoice_payments ip
+                         WHERE ip.invoice_id = i.id AND ip.method = 'credit'), 0) AS on_account
          FROM invoices i
         WHERE i.status = 'confirmed'
      ),
@@ -870,6 +874,7 @@ async function getKPIs(params = {}) {
               COALESCE(SUM(cogs), 0)::float8 AS cogs,
               COALESCE(SUM(total), 0)::float8 AS gross,
               COALESCE(SUM(balance_due), 0)::float8 AS balance_due,
+              COALESCE(SUM(on_account), 0)::float8 AS on_account,
               COALESCE(AVG(total), 0)::float8 AS avg_order
          FROM inv
         WHERE confirmed_at::date BETWEEN $1::date AND $2::date
@@ -993,9 +998,11 @@ async function getKPIs(params = {}) {
   // unscoped, current, all-customer AR snapshot; using it here previously
   // divided a period figure by an all-time one, producing a nonsensical
   // (often deeply negative) rate for any window other than "all time".
+  // Sold on credit is not collected: a credit sale has no balance due on
+  // the invoice (the debt sits on the customer), so it is taken out here.
   const collectionRate =
     totalInvoicedGross > 0
-      ? ((totalInvoicedGross - Number(r.balance_due || 0)) / totalInvoicedGross) * 100
+      ? ((totalInvoicedGross - Number(r.balance_due || 0) - Number(r.on_account || 0)) / totalInvoicedGross) * 100
       : 0;
   const returnRate =
     totalInvoicedGross > 0
