@@ -6,6 +6,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { ok } = require('../utils/response');
 const { logActivity } = require('../utils/activityLog');
 const attendanceService = require('../services/attendanceService');
+const presenceService = require('../services/presenceService');
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_WINDOW_MINUTES = 15;
@@ -105,16 +106,17 @@ async function login(req, res, next) {
     const user = await loadUserContext(userRow.id);
     const token = signToken({ sub: user.id, username: user.username });
 
-    await withTransaction(async (client) => {
+    const replaced = await withTransaction(async (client) => {
       // Close any session already open for this user on this PC (e.g. a
       // second tab logging in independently, or a crashed session that
       // never called logout) before opening a new one — otherwise both
       // stay "online" forever and the same person shows up twice in the
       // presence list.
-      await client.query(
+      const { rows: closed } = await client.query(
         `UPDATE user_sessions
             SET logout_at = NOW(), logout_type = 'replaced', status = 'offline'
-          WHERE user_id = $1 AND pc_identifier = $2 AND logout_at IS NULL`,
+          WHERE user_id = $1 AND pc_identifier = $2 AND logout_at IS NULL
+          RETURNING id`,
         [user.id, pcIdentifier],
       );
       await client.query(
@@ -132,6 +134,7 @@ async function login(req, res, next) {
                last_seen = NOW()`,
         [pcIdentifier, hostname, ipAddress],
       );
+      return closed.map((r) => r.id);
     });
 
     await recordAttempt({ username, ipAddress, pcIdentifier, success: true });
@@ -169,15 +172,12 @@ async function login(req, res, next) {
       notes: `Login from ${pcIdentifier}`,
     });
 
-    // Broadcast presence over websocket.
-    if (io) {
-      io.emit('user_online', {
-        userId: user.id,
-        username: user.username,
-        role: user.role_name,
-        pcIdentifier,
-      });
-    }
+    // The replaced sessions' sockets (an old tab on this PC) are cut so they
+    // stop receiving events; then the presence viewers get the new state.
+    presenceService.disconnectSessions(io, replaced, {
+      reason: 'Signed in again on this PC',
+    });
+    await presenceService.publishUserPresence(io, user.id);
 
     return ok(res, { token, user: sanitizeUser(user) });
   } catch (err) {
@@ -187,22 +187,21 @@ async function login(req, res, next) {
 
 async function logout(req, res, next) {
   try {
-    await query(
+    const { rows } = await query(
       `UPDATE user_sessions
           SET logout_at = NOW(),
               logout_type = 'manual',
               status = 'offline'
-        WHERE id = $1`,
-      [req.sessionId],
-    );
-
-    const { rows } = await query(
-      'SELECT pc_identifier FROM user_sessions WHERE id = $1',
+        WHERE id = $1
+        RETURNING pc_identifier`,
       [req.sessionId],
     );
     const pcIdentifier = rows[0]?.pc_identifier;
 
+    // The session's sockets are cut by the server, not left to the client:
+    // a tab that missed the logout must not keep receiving events.
     const io = req.app.get('io');
+    presenceService.disconnectSessions(io, [req.sessionId]);
 
     // Attendance auto check-out — only fires if no other live session for
     // the same employee. Multi-PC users stay checked in until the last
@@ -235,13 +234,7 @@ async function logout(req, res, next) {
       notes: `Manual logout (PC ${pcIdentifier || 'unknown'})`,
     });
 
-    if (io) {
-      io.emit('user_offline', {
-        userId: req.user.id,
-        pcIdentifier,
-        logoutType: 'manual',
-      });
-    }
+    await presenceService.publishUserPresence(io, req.user.id);
 
     return ok(res, { loggedOut: true });
   } catch (err) {

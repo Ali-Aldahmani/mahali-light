@@ -17,7 +17,7 @@ vi.mock('@/services/presenceService', () => ({
 
 describe('PresenceWidget permission gating', () => {
   beforeEach(() => {
-    usePresenceStore.setState({ onlineUsers: [] });
+    usePresenceStore.setState({ onlineUsers: [], revision: 0 });
   });
 
   it('renders nothing for a user without user.edit or user.force_logout', () => {
@@ -41,7 +41,7 @@ describe('PresenceWidget permission gating', () => {
 
 describe('PresenceWidget names', () => {
   beforeEach(() => {
-    usePresenceStore.setState({ onlineUsers: [] });
+    usePresenceStore.setState({ onlineUsers: [], revision: 0 });
     useAuthStore.setState({ permissions: ['user.edit'] });
   });
 
@@ -56,12 +56,38 @@ describe('PresenceWidget names', () => {
     expect(screen.getByText(/cashier1 ·/)).toBeInTheDocument();
   });
 
-  it('a later presence event without a name keeps the name already known', () => {
-    const { upsertUser } = usePresenceStore.getState();
-    upsertUser({ userId: 'u2', pcIdentifier: 'web-b', username: 'sales2', employeeName: 'Omar Khalid' });
-    upsertUser({ userId: 'u2', pcIdentifier: 'web-b', username: 'sales2' });
+  it('a presence update replaces the whole entry for that user, and null removes them', () => {
+    const { applyUpdate } = usePresenceStore.getState();
+    applyUpdate({ userId: 'u2', entry: { userId: 'u2', username: 'sales2', employeeName: 'Omar Khalid', status: 'online' } });
+    applyUpdate({ userId: 'u2', entry: { userId: 'u2', username: 'sales2', employeeName: 'Omar Khalid', status: 'idle' } });
     expect(usePresenceStore.getState().onlineUsers).toEqual([
-      expect.objectContaining({ userId: 'u2', employeeName: 'Omar Khalid', status: 'online' }),
+      expect.objectContaining({ userId: 'u2', employeeName: 'Omar Khalid', status: 'idle' }),
     ]);
+    applyUpdate({ userId: 'u2', entry: null });
+    expect(usePresenceStore.getState().onlineUsers).toEqual([]);
+  });
+
+  it('a snapshot answered after a live update is read again instead of undoing it', async () => {
+    let call = 0;
+    vi.mocked(listOnline).mockImplementation(async () => {
+      call += 1;
+      if (call === 1) {
+        // An update lands while the first snapshot is in flight.
+        usePresenceStore.getState().applyUpdate({ userId: 'u9', entry: null });
+        return [{ userId: 'u9', username: 'gone', status: 'online' }];
+      }
+      return [];
+    });
+    await usePresenceStore.getState().refresh();
+    expect(call).toBe(2);
+    expect(usePresenceStore.getState().onlineUsers).toEqual([]);
+    vi.mocked(listOnline).mockReset();
+  });
+
+  it('says so when the list cannot be loaded', async () => {
+    vi.mocked(listOnline).mockRejectedValueOnce(new Error('offline'));
+    render(<PresenceWidget />);
+    fireEvent.click(await screen.findByRole('button'));
+    expect(await screen.findByText(/Couldn.t load who is online/)).toBeInTheDocument();
   });
 });

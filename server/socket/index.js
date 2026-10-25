@@ -3,6 +3,7 @@ const { verifyToken, hashToken, loadUserContext } = require('../middleware/auth'
 const { query } = require('../db/postgres');
 const attendanceService = require('../services/attendanceService');
 const { isAllowedOrigin } = require('../utils/corsOrigins');
+const presenceService = require('../services/presenceService');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
@@ -42,7 +43,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
            JOIN users u ON u.id = s.user_id
            LEFT JOIN roles r ON r.id = u.role_id
            LEFT JOIN employees e ON e.id = u.employee_id
-          WHERE s.token_hash = $1 AND s.logout_at IS NULL
+          WHERE s.token_hash = $1 AND s.logout_at IS NULL AND u.is_active
           ORDER BY s.login_at DESC LIMIT 1`,
         [hashToken(token)],
       );
@@ -54,6 +55,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       socket.data.role = rows[0].role_name;
       socket.data.sessionId = rows[0].session_id;
       socket.data.pcIdentifier = rows[0].pc_identifier;
+      socket.data.tokenExpMs = payload.exp ? payload.exp * 1000 : null;
 
       next();
     } catch (err) {
@@ -72,14 +74,50 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
     if (role) socket.join(`role:${role}`);
 
     socket.emit('connected', { userId, username, role });
-    socket.broadcast.emit('user_online', { userId, username, employeeName, role, pcIdentifier });
 
+    // Presence viewers get live updates; the permission is read now, and a
+    // permission change drops the socket so it is read again on reconnect.
+    loadUserContext(userId)
+      .then((user) => {
+        if (user?.is_active && presenceService.canViewPresence(user.permissions)) {
+          socket.join(presenceService.OBSERVERS_ROOM);
+        }
+      })
+      .catch(() => {});
+
+    // A (re)connect is activity: mark the session online straight away
+    // rather than at the next heartbeat, then tell the viewers.
+    query(
+      `UPDATE user_sessions SET status = 'online', last_activity_at = NOW()
+        WHERE id = $1 AND logout_at IS NULL`,
+      [sessionId],
+    )
+      .then(() => presenceService.publishUserPresence(io, userId))
+      .catch(() => {});
+
+    // A heartbeat only refreshes a session that is still open and a token
+    // that has not expired; otherwise the socket is cut, so a closed session
+    // can never be brought back to "online" by a client that kept running.
     socket.on('heartbeat', async () => {
       try {
-        await query(
-          `UPDATE user_sessions SET last_activity_at = NOW(), status = 'online' WHERE id = $1`,
+        if (socket.data.tokenExpMs && Date.now() >= socket.data.tokenExpMs) {
+          socket.disconnect(true);
+          return;
+        }
+        const { rows: live } = await query(
+          `UPDATE user_sessions s SET last_activity_at = NOW(), status = 'online'
+             FROM user_sessions prev
+            WHERE s.id = $1 AND prev.id = s.id AND s.logout_at IS NULL
+            RETURNING prev.status AS previous_status`,
           [sessionId],
         );
+        if (!live.length) {
+          socket.disconnect(true);
+          return;
+        }
+        if (live[0].previous_status !== 'online') {
+          await presenceService.publishUserPresence(io, userId);
+        }
       } catch (err) {
         // ignore; heartbeats are best-effort
       }
@@ -129,13 +167,19 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
 
     socket.on('disconnect', async () => {
       try {
+        // Another tab can share this session: it stays online while any of
+        // its sockets is still connected.
+        const remaining = await io.in(`session:${sessionId}`).fetchSockets();
+        if (remaining.length) return;
         // Mark session offline but do NOT set logout_at — the user may still
-        // be authenticated; explicit logout is required for that.
-        await query(
-          `UPDATE user_sessions SET status = 'offline' WHERE id = $1`,
+        // be authenticated; explicit logout is required for that. A closed
+        // session was already published by whatever closed it.
+        const { rowCount } = await query(
+          `UPDATE user_sessions SET status = 'offline'
+            WHERE id = $1 AND logout_at IS NULL AND status <> 'offline'`,
           [sessionId],
         );
-        io.emit('user_offline', { userId, pcIdentifier, logoutType: 'disconnect' });
+        if (rowCount) await presenceService.publishUserPresence(io, userId);
       } catch (err) {
         // ignore
       }
@@ -145,26 +189,27 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
   // Idle-timeout sweeper — sessions inactive past TIMEOUT_LOGOUT_MS get a
   // hard logout AND an attendance check-out with method='timeout'. This is
   // the safety net for users who close their app without signing out.
+  // The UPDATE re-checks the cutoff itself, so a heartbeat landing after
+  // the session was picked can't be logged out by a stale selection.
   setInterval(async () => {
     try {
       const cutoffMin = Math.floor(TIMEOUT_LOGOUT_MS / 60000);
       const { rows } = await query(
-        `SELECT s.id, s.user_id, s.pc_identifier, u.employee_id
-           FROM user_sessions s
-           JOIN users u ON u.id = s.user_id
-          WHERE s.logout_at IS NULL
-            AND s.last_activity_at < NOW() - make_interval(mins => $1)`,
+        `UPDATE user_sessions s
+            SET logout_at = NOW(),
+                logout_type = 'timeout',
+                status = 'offline'
+           FROM users u
+          WHERE u.id = s.user_id
+            AND s.logout_at IS NULL
+            AND s.last_activity_at < NOW() - make_interval(mins => $1)
+          RETURNING s.id, s.user_id, u.employee_id`,
         [cutoffMin],
       );
+      presenceService.disconnectSessions(io, rows.map((r) => r.id), {
+        reason: 'Signed out after inactivity',
+      });
       for (const r of rows) {
-        await query(
-          `UPDATE user_sessions
-              SET logout_at = NOW(),
-                  logout_type = 'timeout',
-                  status = 'offline'
-            WHERE id = $1`,
-          [r.id],
-        );
         if (r.employee_id) {
           // Only close attendance if this was the last live session for
           // the employee — multi-PC users stay checked in.
@@ -184,39 +229,33 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
             });
           }
         }
-        io.emit('user_offline', {
-          userId: r.user_id,
-          pcIdentifier: r.pc_identifier,
-          logoutType: 'timeout',
-        });
+      }
+      for (const userId of new Set(rows.map((r) => r.user_id))) {
+        await presenceService.publishUserPresence(io, userId);
       }
     } catch (err) {
       // ignore — best-effort
     }
-  }, IDLE_CHECK_INTERVAL_MS);
+  }, IDLE_CHECK_INTERVAL_MS).unref();
 
-  // Periodic idle sweeper.
+  // Periodic idle sweeper. Same conditional UPDATE, so newer activity is
+  // never overwritten with 'idle'.
   setInterval(async () => {
     try {
       const { rows } = await query(
-        `SELECT id, user_id FROM user_sessions
+        `UPDATE user_sessions SET status = 'idle'
           WHERE logout_at IS NULL
             AND status = 'online'
-            AND last_activity_at < NOW() - INTERVAL '5 minutes'`,
+            AND last_activity_at < NOW() - INTERVAL '5 minutes'
+          RETURNING user_id`,
       );
-      if (!rows.length) return;
-      await query(
-        `UPDATE user_sessions SET status = 'idle'
-          WHERE id = ANY($1)`,
-        [rows.map((r) => r.id)],
-      );
-      for (const r of rows) {
-        io.emit('user_idle', { userId: r.user_id });
+      for (const userId of new Set(rows.map((r) => r.user_id))) {
+        await presenceService.publishUserPresence(io, userId);
       }
     } catch (err) {
       // ignore
     }
-  }, IDLE_CHECK_INTERVAL_MS);
+  }, IDLE_CHECK_INTERVAL_MS).unref();
 
   return io;
 }

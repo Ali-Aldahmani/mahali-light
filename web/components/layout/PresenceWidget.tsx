@@ -2,41 +2,32 @@ import { useEffect, useState } from 'react';
 import { Users } from 'lucide-react';
 import { usePresenceStore } from '@/store/presenceStore';
 import { useAuthStore } from '@/store/authStore';
-import { listOnline } from '@/services/presenceService';
 import Avatar from '../ui/Avatar';
 import { timeAgo } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 
 export default function PresenceWidget() {
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
-  const setOnlineUsers = usePresenceStore((s) => s.setOnlineUsers);
+  const refresh = usePresenceStore((s) => s.refresh);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const [open, setOpen] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
+  // Same rule as the server's presence feed (user.edit or user.force_logout).
   const canSeeAll = hasPermission('user.edit') || hasPermission('user.force_logout');
 
+  // The socket store re-reads the list on every (re)connect; this covers the
+  // widget appearing after the socket is already up.
   useEffect(() => {
     if (!canSeeAll) return;
     let cancelled = false;
-    listOnline()
-      .then((rows) => {
-        if (cancelled) return;
-        const mapped = (rows || []).map((r) => ({
-          userId: r.userId,
-          username: r.username,
-          employeeName: r.employeeName,
-          role: r.role,
-          pcIdentifier: r.pcIdentifier,
-          status: r.status,
-          lastActivityAt: r.lastActivityAt,
-        }));
-        setOnlineUsers(mapped);
-      })
-      .catch(() => {});
+    refresh()
+      .then(() => { if (!cancelled) setLoadFailed(false); })
+      .catch(() => { if (!cancelled) setLoadFailed(true); });
     return () => {
       cancelled = true;
     };
-  }, [canSeeAll, setOnlineUsers]);
+  }, [canSeeAll, refresh]);
 
   if (!canSeeAll) return null;
 
@@ -61,7 +52,7 @@ export default function PresenceWidget() {
             <div className="flex -space-x-2">
               {visible.map((u) => (
                 <Avatar
-                  key={`${u.userId}-${u.pcIdentifier}`}
+                  key={String(u.userId)}
                   name={displayName(u)}
                   size="xs"
                   online
@@ -86,14 +77,18 @@ export default function PresenceWidget() {
               </h3>
             </div>
             <div className="max-h-80 overflow-y-auto">
-              {onlineUsers.length === 0 ? (
+              {loadFailed ? (
+                <p className="px-4 py-6 text-sm text-error text-center">
+                  Couldn&apos;t load who is online. It updates again when the connection is back.
+                </p>
+              ) : onlineUsers.length === 0 ? (
                 <p className="px-4 py-6 text-sm text-ink-muted text-center">
                   Nobody is signed in right now.
                 </p>
               ) : (
                 onlineUsers.map((u) => (
                   <div
-                    key={`${u.userId}-${u.pcIdentifier}`}
+                    key={String(u.userId)}
                     className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2"
                   >
                     <Avatar name={displayName(u)} size="sm" online status={u.status} />

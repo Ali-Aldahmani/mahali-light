@@ -17,9 +17,9 @@ export default function MobileAccount() {
     if (busy) return;
     setBusy(true);
     try {
+      // Clears this PC's session either way and reports whether the server
+      // confirmed it.
       await logout();
-    } catch (_e) {
-      // logout() already cleared the local session in its finally block.
     } finally {
       disconnect();
       router.replace('/login');

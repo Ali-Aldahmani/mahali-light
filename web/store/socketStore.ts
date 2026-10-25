@@ -113,11 +113,19 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
     socket.on('connect', () => {
       const wasConnected = get().isConnected;
       set({ isConnected: true });
+      // Presence events sent while this PC was offline are never replayed,
+      // so every connect re-reads the list (presence viewers only).
+      const auth = useAuthStore.getState();
+      if (auth.hasPermission?.('user.edit') || auth.hasPermission?.('user.force_logout')) {
+        usePresenceStore.getState().refresh().catch(() => {});
+      }
       // First connect is handled by initStockCache() in AppLayout. Re-sync
       // only on subsequent connections (i.e. socket reconnects).
       if (!firstConnect) {
         syncOnReconnect().catch(() => {});
         customerChangedBus.emit({ reconnected: true });
+        // Notifications sent while disconnected are not replayed either.
+        useNotificationStore.getState().fetchNotifications({ append: false }).catch(() => {});
       }
       firstConnect = false;
       if (wasConnected) {
@@ -125,7 +133,16 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
         stockBus.emit({ reconnected: true });
       }
     });
-    socket.on('disconnect', () => set({ isConnected: false }));
+    socket.on('disconnect', (reason) => {
+      set({ isConnected: false });
+      // The server cuts sockets after a role/permission change (so rooms are
+      // rebuilt) and when it ends a session. Socket.IO does not reconnect
+      // after a server-side cut, so do it here: a live session comes straight
+      // back, an ended one is refused and handled by connect_error below.
+      if (reason === 'io server disconnect' && useAuthStore.getState().token === token) {
+        socket.connect();
+      }
+    });
 
     socket.on('connect_error', (err) => {
       if (err.message === 'AUTH_SESSION_EXPIRED' || err.message === 'AUTH_TOKEN_INVALID') {
@@ -139,14 +156,9 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       }
     });
 
-    socket.on('user_online', (payload) => {
-      usePresenceStore.getState().upsertUser(payload);
-    });
-    socket.on('user_offline', (payload) => {
-      usePresenceStore.getState().removeUser(payload);
-    });
-    socket.on('user_idle', (payload) => {
-      usePresenceStore.getState().setIdle(payload);
+    // One event per user carrying their whole current entry (or null).
+    socket.on('presence_update', (payload) => {
+      if (payload?.userId) usePresenceStore.getState().applyUpdate(payload);
     });
     socket.on('force_logout', (payload) => {
       toast.error(`You were signed out: ${payload?.reason || 'forced by admin'}`);
@@ -557,6 +569,7 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
     }
+    usePresenceStore.getState().clear();
     set({ socket: null, isConnected: false });
   },
 }));

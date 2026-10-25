@@ -4,6 +4,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const presenceService = require('../services/presenceService');
 const {
   assertCanAssignRole,
   assertCanChangeRole,
@@ -257,6 +258,25 @@ async function update(req, res, next) {
     params.push(id);
     await query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
 
+    // Security changes take effect on live connections too. Deactivation or
+    // a new password ends the user's sessions (keeping the one making the
+    // change when users edit themselves); a role change drops their sockets
+    // so they reconnect into the new role's rooms.
+    const io = req.app.get('io');
+    if (body.isActive === false || body.password) {
+      await presenceService.revokeUserSessions(io, {
+        userId: id,
+        logoutType: body.isActive === false ? 'deactivated' : 'password_changed',
+        exceptSessionId: id === req.user.id ? req.sessionId : null,
+        reason: body.isActive === false ? 'Account deactivated' : 'Password changed',
+      });
+    } else if (body.roleId && body.roleId !== existing[0].role_id) {
+      presenceService.refreshUserSockets(io, id);
+    }
+    if (body.username !== undefined || body.employeeId !== undefined) {
+      await presenceService.publishUserPresence(io, id);
+    }
+
     if (body.roleId && body.roleId !== existing[0].role_id) {
       await logActivity({
         entityType: 'user',
@@ -315,13 +335,13 @@ async function softDelete(req, res, next) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
 
-    // Also kill any active sessions for the deactivated user.
-    await query(
-      `UPDATE user_sessions
-          SET logout_at = NOW(), logout_type = 'deactivated', status = 'offline'
-        WHERE user_id = $1 AND logout_at IS NULL`,
-      [id],
-    );
+    // Also kill any active sessions — and their live sockets — for the
+    // deactivated user.
+    await presenceService.revokeUserSessions(req.app.get('io'), {
+      userId: id,
+      logoutType: 'deactivated',
+      reason: 'Account deactivated',
+    });
 
     await logActivity({
       entityType: 'user',
@@ -360,24 +380,17 @@ async function forceLogout(req, res, next) {
       targetUserId: id,
     });
 
-    const { rows: sessions } = await query(
-      `SELECT id, pc_identifier FROM user_sessions
-        WHERE user_id = $1 AND logout_at IS NULL`,
-      [id],
-    );
+    // Closing the sessions also disconnects their sockets server-side, so a
+    // client that ignores the force_logout message is cut off anyway.
+    const sessions = await presenceService.revokeUserSessions(req.app.get('io'), {
+      userId: id,
+      logoutType: 'forced',
+      reason: `Forced by ${req.user.username}`,
+    });
 
     if (!sessions.length) {
       return ok(res, { id, sessionsClosed: 0 });
     }
-
-    await query(
-      `UPDATE user_sessions
-          SET logout_at = NOW(),
-              logout_type = 'forced',
-              status = 'offline'
-        WHERE user_id = $1 AND logout_at IS NULL`,
-      [id],
-    );
 
     await logActivity({
       entityType: 'user',
@@ -386,21 +399,6 @@ async function forceLogout(req, res, next) {
       performedBy: req.user.id,
       notes: `Force-logged ${sessions.length} session(s)`,
     });
-
-    const io = req.app.get('io');
-    if (io) {
-      for (const s of sessions) {
-        io.to(`session:${s.id}`).emit('force_logout', {
-          reason: 'Forced by administrator',
-          by: req.user.username,
-        });
-        io.emit('user_offline', {
-          userId: id,
-          pcIdentifier: s.pc_identifier,
-          logoutType: 'forced',
-        });
-      }
-    }
 
     return ok(res, { id, sessionsClosed: sessions.length });
   } catch (err) {
@@ -556,6 +554,9 @@ async function setPermissions(req, res, next) {
       performedBy: req.user.id,
       newValue: { overridesCount: overrides.length },
     });
+
+    // Live sockets reconnect so their rooms (e.g. presence) follow the change.
+    presenceService.refreshUserSockets(req.app.get('io'), id);
 
     return ok(res, { updated: true, overridesCount: overrides.length });
   } catch (err) {

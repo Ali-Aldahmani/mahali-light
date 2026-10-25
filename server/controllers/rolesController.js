@@ -3,6 +3,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const presenceService = require('../services/presenceService');
 const { ROLE_RANK, assertCanAssignPermissionKeys } = require('../../shared/authzPolicy');
 
 // System role names ("Admin" chief among them) are trusted by name in
@@ -275,6 +276,8 @@ async function setPermissions(req, res, next) {
     });
 
     const role = await loadRoleWithPermissions(id);
+    // Everyone in the role reconnects so their rooms follow the change.
+    presenceService.refreshRoleSockets(req.app.get('io'), role?.name);
     return ok(res, role);
   } catch (err) {
     next(err);
