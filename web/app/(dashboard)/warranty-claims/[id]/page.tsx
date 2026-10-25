@@ -12,6 +12,7 @@ import {
   Replace,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import Button from '@/components/ui/Button';
 import PermissionGate from '@/components/ui/PermissionGate';
 import ClaimResolutionBadge, { ClaimStatusBadge } from '@/components/ui/ClaimResolutionBadge';
@@ -110,6 +111,7 @@ function WarrantyClaimDetailPageContent() {
         }
         action={
           <div className="flex items-center gap-2">
+            <AuditLogButton entityType="warranty_claim" entityId={claim.id} recordLabel={claim.claimNumber} />
             <Button variant="ghost" onClick={() => router.back()}>
               <ArrowLeft className="h-4 w-4 mr-1" /> Back
             </Button>

@@ -2,6 +2,7 @@
 // Frontend uses this for static permission gating; server is the source of truth.
 
 const PERMISSIONS = {
+  audit: { view: 'audit.view' },
   invoice: {
     view: 'invoice.view',
     create: 'invoice.create',
@@ -152,6 +153,7 @@ const PERMISSIONS = {
 const ROLE_DEFAULTS = {
   Admin: '*', // wildcard — assign every permission key in DB
   Manager: [
+    'audit.view',
     'invoice.view', 'invoice.create', 'invoice.edit_approve', 'invoice.cancel',
     'invoice.refund', 'invoice.print', 'invoice.download', 'invoice.custom_item',
     'product.view', 'product.create', 'product.edit', 'product.adjust_stock', 'product.view_cost',

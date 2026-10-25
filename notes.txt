@@ -1,0 +1,2 @@
+Discussion section in Purchase orders page, should add scrollable features, and defualt scrolled to last comment there.
+Notification system not working until I pressed on notification icon.

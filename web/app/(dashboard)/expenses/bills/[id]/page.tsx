@@ -12,6 +12,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import Button from '@/components/ui/Button';
 import Skeleton from '@/components/ui/skeleton';
 import BillStatusBadge from '@/components/ui/BillStatusBadge';
@@ -103,6 +104,7 @@ function BillDetailPageInner() {
         }`}
         action={
           <div className="flex items-center gap-2">
+            <AuditLogButton entityType="bill" entityId={bill.id} recordLabel={bill.name} />
             <Button
               size="sm"
               variant="secondary"

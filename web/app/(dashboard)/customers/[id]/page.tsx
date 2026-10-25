@@ -57,6 +57,7 @@ import { formatCurrency, formatDate, formatDateTime, storeDate } from '@/lib/uti
 import { onCustomerBalanceUpdate, onCustomerChanged } from '@/store/socketStore';
 import RowActions from '@/components/ui/RowActions';
 import { viewColumn } from '@/components/ui/viewColumn';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 
 interface CustomerProfile extends CustomerRecord {
   /** Net: grossSpent - refundedTotal. */
@@ -261,6 +262,7 @@ function CustomerProfilePageContent() {
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-2">
+          <AuditLogButton entityType="customer" entityId={String(customer.id)} recordLabel={customer.name} />
           {canEdit && (
             <Button
               variant="secondary"

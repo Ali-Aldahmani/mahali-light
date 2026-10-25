@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import Table from '@/components/ui/Table';
@@ -368,6 +369,7 @@ function StockCountDetailPageContent() {
           </span>
         }
         subtitle={`Initiated ${formatRelativeTime(count.initiatedAt)} by ${count.initiatedByUsername || '—'}`}
+        action={<AuditLogButton entityType="stock_count" entityId={count.id} recordLabel={TYPE_LABELS[count.countType] || count.countType} />}
       />
 
       <div className="grid grid-cols-4 gap-4">

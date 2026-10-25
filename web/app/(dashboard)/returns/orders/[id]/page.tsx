@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Banknote, CreditCard, Landmark } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import Button from '@/components/ui/Button';
 import ReturnTypeBadge from '@/components/ui/ReturnTypeBadge';
 import ReturnStatusBadge from '@/components/ui/ReturnStatusBadge';
@@ -59,13 +60,13 @@ function ReturnOrderDetailPageContent() {
         title={order.returnOrderNumber}
         subtitle="Executed return order details."
         action={
-          <Button
+          <div className="flex items-center gap-2"><AuditLogButton entityType="return_order" entityId={order.id} recordLabel={order.returnOrderNumber} /><Button
             variant="ghost"
             onClick={() => router.push('/returns')}
             leftIcon={<ArrowLeft className="h-4 w-4" />}
           >
             Back to returns
-          </Button>
+          </Button></div>
         }
       />
 

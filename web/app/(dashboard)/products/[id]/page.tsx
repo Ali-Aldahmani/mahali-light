@@ -16,6 +16,7 @@ import {
   Warehouse,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Tabs from '@/components/ui/Tabs';
@@ -241,6 +242,7 @@ function ProductDetailPageContent() {
         subtitle={product.categoryPath || '—'}
         action={
           <>
+            <AuditLogButton entityType="product" entityId={product.id} recordLabel={product.name} />
             <PermissionGate permission="product.edit">
               <Button leftIcon={<Pencil size={14} />} onClick={() => setEditOpen(true)}>
                 Edit product

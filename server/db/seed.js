@@ -11,6 +11,7 @@ const SYSTEM_ROLES = [
 ];
 
 const ALL_PERMISSIONS = [
+  ['audit.view', 'View Record Audit Logs', 'audit'],
   ['invoice.view', 'View Invoices', 'invoice'],
   ['invoice.create', 'Create Invoice', 'invoice'],
   ['invoice.edit_request', 'Request Invoice Edit', 'invoice'],

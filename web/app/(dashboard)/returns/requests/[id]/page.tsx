@@ -12,6 +12,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import Button from '@/components/ui/Button';
 import Textarea from '@/components/ui/Textarea';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -148,13 +149,13 @@ function ReturnRequestDetailPageContent() {
         title={request.requestNumber}
         subtitle="Return request details and history."
         action={
-          <Button
+          <div className="flex items-center gap-2"><AuditLogButton entityType="return_request" entityId={request.id} recordLabel={request.requestNumber} /><Button
             variant="ghost"
             onClick={() => router.push('/returns')}
             leftIcon={<ArrowLeft className="h-4 w-4" />}
           >
             Back to returns
-          </Button>
+          </Button></div>
         }
       />
 

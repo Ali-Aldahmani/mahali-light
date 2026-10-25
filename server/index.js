@@ -70,6 +70,7 @@ const telegramRouter = require('./routes/telegram');
 const setupRouter = require('./routes/setup');
 const searchRouter = require('./routes/search');
 const updatesRouter = require('./routes/updates');
+const auditRouter = require('./routes/audit');
 const { isServerMode } = require('./utils/serverMode');
 const setupTokenService = require('./services/setupTokenService');
 
@@ -369,6 +370,7 @@ async function bootstrap() {
   app.use('/api/setup', setupRouter);
   app.use('/api/search', searchRouter);
   app.use('/api/app-updates', updatesRouter);
+  app.use('/api/audit', auditRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

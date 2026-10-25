@@ -18,6 +18,7 @@ import Select from '@/components/ui/Select';
 import Pagination from '@/components/ui/pagination/Pagination';
 import DateRangeField from '@/components/ui/DateRangeField';
 import RowActions from '@/components/ui/RowActions';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 
 export default function JournalPage() {
   const router = useRouter();
@@ -84,11 +85,11 @@ export default function JournalPage() {
           title={detail?.entryNumber || 'Journal Entry'}
           subtitle={detail?.description || ''}
           action={
-            <Link href="/finance/journal">
+            <div className="flex items-center gap-2">{detail && <AuditLogButton entityType="journal_entry" entityId={detail.id} recordLabel={detail.entryNumber} />}<Link href="/finance/journal">
               <Button variant="secondary" size="sm" leftIcon={<ArrowLeft size={14} />}>
                 Back to journal
               </Button>
-            </Link>
+            </Link></div>
           }
         />
         {detailLoading && <Skeleton lines={5} className="rounded-card border border-border bg-surface p-5" />}

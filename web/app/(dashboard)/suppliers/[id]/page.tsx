@@ -23,6 +23,7 @@ import {
   ListChecks,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import Button from '@/components/ui/Button';
 import Tabs from '@/components/ui/Tabs';
 import Skeleton from '@/components/ui/skeleton';
@@ -146,6 +147,7 @@ function SupplierProfilePageContent() {
         }
         action={
           <div className="flex items-center gap-2">
+            <AuditLogButton entityType="supplier" entityId={supplier.id} recordLabel={supplier.name} />
             {canEdit && (
               <Button
                 variant="secondary"

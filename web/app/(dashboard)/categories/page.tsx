@@ -14,24 +14,27 @@ import Button from '@/components/ui/Button';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PermissionGate from '@/components/ui/PermissionGate';
+import InlineEdit from '@/components/ui/InlineEdit';
 import Skeleton from '@/components/ui/skeleton';
 import Badge from '@/components/ui/Badge';
 import RequirePermission from '@/components/guards/RequirePermission';
 import CategoryFormSlideOver from '@/components/products/CategoryFormSlideOver';
 import CategoryAttributesPanel from '@/components/products/CategoryAttributesPanel';
-import { deleteCategory, listCategoriesTree } from '@/services/categoryService';
+import { deleteCategory, listCategoriesTree, updateCategory } from '@/services/categoryService';
 import { listAttributes } from '@/services/attributeService';
 import { toast } from '@/store/toastStore';
 import { useProductStore } from '@/store/productStore';
 import { cn } from '@/lib/utils/cn';
+import { renameCategoryInTree, type CategoryId } from '@/lib/categories/tree';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 
 function CategoriesPageContent() {
   const [tree, setTree] = useState<any[]>([]);
   const [attributes, setAttributes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [selectedId, setSelectedId] = useState<CategoryId | null>(null);
+  const [expanded, setExpanded] = useState<Set<CategoryId>>(new Set());
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -40,6 +43,7 @@ function CategoriesPageContent() {
   const [delLoading, setDelLoading] = useState(false);
 
   const refreshStore = useProductStore((s) => s.refreshAll);
+  const refreshCategoryCache = useProductStore((s) => s.fetchCategories);
 
   const fetch = useCallback(async () => {
     setLoading(true);
@@ -61,7 +65,7 @@ function CategoriesPageContent() {
   // Compute breadcrumb paths for selection display.
   const { byId } = useMemo(() => {
     const flat: any[] = [];
-    const byId = new Map<number, any>();
+    const byId = new Map<CategoryId, any>();
     function walk(nodes: any[], parents: string[]) {
       for (const n of nodes) {
         const path = [...parents, n.name];
@@ -77,7 +81,7 @@ function CategoriesPageContent() {
 
   const selected = selectedId ? byId.get(selectedId) : null;
 
-  function toggleNode(id: number) {
+  function toggleNode(id: CategoryId) {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -87,7 +91,7 @@ function CategoriesPageContent() {
   }
 
   function expandAll() {
-    const all = new Set<number>();
+    const all = new Set<CategoryId>();
     function walk(nodes: any[]) {
       for (const n of nodes) {
         if (n.children?.length) {
@@ -101,6 +105,15 @@ function CategoriesPageContent() {
   }
   function collapseAll() {
     setExpanded(new Set());
+  }
+
+  async function renameCategory(category: any, nextName: string) {
+    const saved = await updateCategory(category.id, { name: nextName });
+    const confirmedName = saved?.name || nextName;
+    setTree((current) => renameCategoryInTree(current, category.id, confirmedName));
+    // Keep product/category selectors in other mounted surfaces coherent. This
+    // does not refetch or replace the hierarchy currently being edited.
+    void refreshCategoryCache(true);
   }
 
   async function confirmDelete() {
@@ -148,7 +161,9 @@ function CategoriesPageContent() {
               'h-5 w-5 inline-flex items-center justify-center text-ink-muted',
               !hasChildren && 'opacity-0 pointer-events-none',
             )}
-            tabIndex={-1}
+            aria-label={hasChildren ? `${isOpen ? 'Collapse' : 'Expand'} ${n.name}` : undefined}
+            aria-expanded={hasChildren ? isOpen : undefined}
+            tabIndex={hasChildren ? 0 : -1}
           >
             {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
@@ -157,20 +172,36 @@ function CategoriesPageContent() {
           ) : (
             <FolderTree size={14} className="text-ink-muted" />
           )}
-          <span
-            className={cn(
-              'flex-1 text-sm truncate',
-              isSelected ? 'text-accent font-semibold' : 'text-ink',
-            )}
-          >
-            {n.name}
-          </span>
+          <div className={cn(
+            'min-w-0 flex-1 text-sm',
+            isSelected ? 'text-accent font-semibold' : 'text-ink',
+          )}>
+            <PermissionGate
+              permission="product.edit"
+              fallback={<span className="block truncate px-1">{n.name}</span>}
+            >
+              <InlineEdit
+                value={n.name}
+                onSave={(name) => renameCategory(n, name)}
+                label={`Category name for ${n.name}`}
+                validate={(name) => {
+                  if (!name) return 'Category name is required.';
+                  if (name.length > 100) return 'Category name must be 100 characters or fewer.';
+                  return null;
+                }}
+                variant="body"
+                as="span"
+                className="max-w-full"
+              />
+            </PermissionGate>
+          </div>
           {n.productCount > 0 && (
             <Badge tone="muted" size="sm">
               {n.productCount}
             </Badge>
           )}
           <div className="hidden group-hover:flex items-center gap-1 ml-1">
+            <AuditLogButton entityType="category" entityId={n.id} recordLabel={n.name} compact />
             <PermissionGate permission="product.edit">
               <button
                 type="button"

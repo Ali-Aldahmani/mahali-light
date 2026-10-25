@@ -5,7 +5,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 
 const createSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().trim().min(1).max(100),
   parentId: z.string().uuid().nullable().optional(),
   description: z.string().max(1000).nullable().optional(),
   requiresSerial: z.boolean().optional().default(false),

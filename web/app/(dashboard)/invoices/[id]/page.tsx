@@ -46,6 +46,7 @@ import { listWarranties } from '@/services/warrantyService';
 import WarrantyStatusBadge from '@/components/ui/WarrantyStatusBadge';
 import DaysRemainingBadge from '@/components/ui/DaysRemainingBadge';
 import ActionButtons from '@/components/ui/ActionButtons';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import { useInvoiceActions } from '@/components/invoices/useInvoiceActions';
 import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
@@ -158,7 +159,7 @@ function InvoiceDetailPageContent() {
             )}
           </span>
         }
-        action={<ActionButtons actions={invoiceActions.actionsFor(inv)} />}
+        action={<><AuditLogButton entityType="invoice" entityId={inv.id} recordLabel={inv.invoiceNumber} /><ActionButtons actions={invoiceActions.actionsFor(inv)} /></>}
       />
 
       <div className="flex flex-wrap items-center gap-2">

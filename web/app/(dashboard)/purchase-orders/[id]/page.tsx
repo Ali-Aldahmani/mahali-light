@@ -12,6 +12,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
+import AuditLogButton from '@/components/audit/AuditLogButton';
 import Button from '@/components/ui/Button';
 import Skeleton from '@/components/ui/skeleton';
 import POStatusBadge from '@/components/ui/POStatusBadge';
@@ -208,6 +209,7 @@ function PurchaseOrderDetailPageContent() {
         }
         action={
           <div className="flex items-center gap-2 flex-wrap">
+            <AuditLogButton entityType="purchase_order" entityId={po.id} recordLabel={po.poNumber} />
             <POStatusBadge status={po.status} />
             <PaymentStatusBadge status={po.paymentStatus} />
             <Button

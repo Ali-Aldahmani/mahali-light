@@ -20,9 +20,10 @@ function flatten(obj, acc = []) {
 describe('permission catalog contract', () => {
   const keys = flatten(PERMISSIONS);
 
-  it('exposes 113 unique permission keys', () => {
-    expect(keys).toHaveLength(113);
-    expect(new Set(keys).size).toBe(113);
+  it('exposes 114 unique permission keys', () => {
+    expect(keys).toHaveLength(114);
+    expect(new Set(keys).size).toBe(114);
+    expect(keys).toContain('audit.view');
   });
 
   it('lets Cashier create warranties but not edit or void them', () => {
