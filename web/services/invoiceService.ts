@@ -3,6 +3,7 @@ import {
   apiGetWithMeta,
   apiPost,
   apiPut,
+  apiDelete,
 } from './http';
 import {
   invoiceDetailSchema,
@@ -79,6 +80,12 @@ export async function cancelInvoice(id, reason): Promise<InvoiceSummary> {
 export async function addInvoicePayment(id, body): Promise<InvoicePayment> {
   const data = await apiPost(`/invoices/${id}/payments`, body);
   return validateMoneyResponse(invoicePaymentSchema, data, `POST /invoices/${id}/payments`);
+}
+
+// Takes an allocation off a draft (it has no financial effect until the
+// invoice is confirmed); the server refuses it on a confirmed invoice.
+export function removeInvoicePayment(id: string, paymentId: string) {
+  return apiDelete(`/invoices/${id}/payments/${paymentId}`);
 }
 
 export async function getInvoicePayments(id): Promise<InvoicePayment[]> {

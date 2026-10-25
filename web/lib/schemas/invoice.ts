@@ -44,6 +44,7 @@ export const invoicePaymentSchema = z.object({
   employeeUsername: z.string().nullable(),
   timestamp: z.string(),
   notes: z.string().nullable(),
+  idempotencyKey: z.string().nullable().optional(),
 });
 
 export const invoiceSchema = z.object({

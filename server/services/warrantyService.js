@@ -6,6 +6,7 @@ const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('./notificationService');
 const journalService = require('./journalService');
+const { snapshotInvoiceCustomer } = require('../utils/customerSnapshot');
 
 // Normalizes a Date object or date-like string to a plain YYYY-MM-DD. A
 // Date from the pg driver represents LOCAL midnight for a DATE column, so
@@ -613,6 +614,7 @@ async function buildReplacementInvoice(
     ],
   );
   const invoice = inv[0];
+  await snapshotInvoiceCustomer(client, invoice.id);
 
   // Insert the zero-value replacement line.
   const { rows: attrRows } = await client.query(

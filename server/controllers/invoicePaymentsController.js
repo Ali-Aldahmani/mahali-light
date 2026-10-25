@@ -26,6 +26,9 @@ function shape(row) {
     employeeUsername: row.employee_username || null,
     timestamp: row.timestamp,
     notes: row.notes,
+    // The key the screen sent it with, so a resumed sale reuses it and a
+    // retry can't record the allocation twice.
+    idempotencyKey: row.idempotency_key || null,
   };
 }
 
@@ -158,4 +161,61 @@ async function create(req, res, next) {
   }
 }
 
-module.exports = { list, create };
+// Remove an allocation from a draft (invoice audit F14). A draft's
+// allocations have no financial effect until the invoice is confirmed, so
+// taking one off is safe; it is recorded in the invoice history. Lets a
+// resumed or retried sale replace an allocation whose amount or method
+// changed, instead of leaving the draft stuck.
+async function remove(req, res, next) {
+  try {
+    const { id: invoiceId, paymentId } = req.params;
+    await withTransaction(async (client) => {
+      const { rows: invRows } = await client.query(
+        `SELECT status FROM invoices WHERE id = $1 FOR UPDATE`,
+        [invoiceId],
+      );
+      if (!invRows.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      if (invRows[0].status !== 'draft') {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVOICE_LOCKED,
+          'Payments can only be removed from a draft invoice.',
+          { status: 409 },
+        );
+      }
+      const { rows } = await client.query(
+        `DELETE FROM invoice_payments WHERE id = $1 AND invoice_id = $2
+         RETURNING method, amount`,
+        [paymentId, invoiceId],
+      );
+      if (!rows.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      await recalculateAndPersistTotals(client, invoiceId);
+      await client.query(
+        `INSERT INTO invoice_history (invoice_id, action, performed_by, old_snapshot, notes)
+         VALUES ($1, 'payment_removed', $2, $3::jsonb, $4)`,
+        [
+          invoiceId,
+          req.user.id,
+          JSON.stringify({ method: rows[0].method, amount: Number(rows[0].amount) }),
+          `-${Number(rows[0].amount).toFixed(2)} via ${rows[0].method}`,
+        ],
+      );
+      await logActivity({
+        client,
+        entityType: 'invoice',
+        entityId: invoiceId,
+        action: 'invoice.payment_removed',
+        performedBy: req.user.id,
+        oldValue: { method: rows[0].method, amount: Number(rows[0].amount) },
+      });
+    });
+    return ok(res, { removed: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { list, create, remove };

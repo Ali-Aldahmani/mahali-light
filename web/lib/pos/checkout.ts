@@ -4,6 +4,8 @@ import {
   addInvoicePayment,
   confirmInvoice,
   getCheckoutStatus,
+  getInvoicePayments,
+  removeInvoicePayment,
 } from '@/services/invoiceService';
 
 // Shared checkout for the admin POS page and Cashier Mode. The client only
@@ -184,6 +186,22 @@ export async function submitSale({
       return { invoiceId: known.invoice.id, confirmed: { invoice: known.invoice, warranties: known.warranties } };
     }
     throw cancelledSaleError();
+  }
+  // A draft that already has allocations (resumed sale, or a retry after the
+  // cart changed): keep the ones this payment plan still has unchanged —
+  // they replay by key — and take off any that no longer match, so the
+  // draft can't be stuck with an allocation it can't use (invoice audit F14).
+  if (draftInvoiceId) {
+    const planned = new Map(
+      allocations.filter((a) => Number(a.amount) > 0).map((a) => [a.id, a]),
+    );
+    const existing = await getInvoicePayments(saved.id);
+    for (const p of existing) {
+      const want = p.idempotencyKey ? planned.get(p.idempotencyKey) : undefined;
+      const same = want && want.method === p.method
+        && Math.round(Number(want.amount) * 100) === Math.round(Number(p.amount) * 100);
+      if (!same) await removeInvoicePayment(saved.id, p.id);
+    }
   }
   for (const pm of allocations) {
     if (!pm.amount || Number(pm.amount) <= 0) continue;

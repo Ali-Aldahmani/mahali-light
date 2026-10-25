@@ -26,6 +26,7 @@ describe.skipIf(!enabled)('draft invoice rules on real PostgreSQL', () => {
     get: (url) => request(app).get(url).auth(token, { type: 'bearer' }),
     post: (url, body) => request(app).post(url).auth(token, { type: 'bearer' }).send(body),
     put: (url, body) => request(app).put(url).auth(token, { type: 'bearer' }).send(body),
+    del: (url) => request(app).delete(url).auth(token, { type: 'bearer' }),
   });
   async function variant(soldBy = 'piece') {
     const { rows: [p] } = await db.query(`INSERT INTO products (name, sold_by) VALUES ('Cable', $1) RETURNING id`, [soldBy]);
@@ -115,5 +116,40 @@ describe.skipIf(!enabled)('draft invoice rules on real PostgreSQL', () => {
     const confirm = await api().post(`/invoices/${draft.body.data.id}/confirm`, {});
     expect(confirm.status).toBeGreaterThanOrEqual(400);
     expect(confirm.body.code).toBe('BIZ_INSUFFICIENT_STOCK');
+  });
+  it('F11 a confirmed invoice keeps the customer details it was issued to', async () => {
+    const v = await variant();
+    const { rows: [c] } = await db.query(
+      `INSERT INTO customers (name, phone, trn_number) VALUES ('Al Noor Trading', '0501234567', 'TRN-1') RETURNING id`);
+    const draft = await api().post('/invoices', { customerId: c.id, items: [{ variantId: v, quantity: 1 }] });
+    await api().post(`/invoices/${draft.body.data.id}/payments`, {
+      amount: Number(draft.body.data.total), method: 'cash', idempotencyKey: randomUUID(),
+    });
+    expect((await api().post(`/invoices/${draft.body.data.id}/confirm`, {})).status).toBe(200);
+
+    await db.query(`UPDATE customers SET name = 'Renamed LLC', phone = '0509999999', trn_number = 'TRN-2' WHERE id = $1`, [c.id]);
+    const after = await api().get(`/invoices/${draft.body.data.id}`);
+    expect(after.body.data.invoice.customerName).toBe('Al Noor Trading');
+    expect(after.body.data.invoice.customerPhone).toBe('0501234567');
+    const { rows: [snap] } = await db.query(`SELECT customer_snapshot FROM invoices WHERE id = $1`, [draft.body.data.id]);
+    expect(snap.customer_snapshot).toMatchObject({ name: 'Al Noor Trading', trn: 'TRN-1' });
+  });
+  it('F14 an allocation can be taken off a draft, never off a confirmed invoice', async () => {
+    const v = await variant();
+    const draft = await api().post('/invoices', { items: [{ variantId: v, quantity: 1 }] });
+    const id = draft.body.data.id;
+    const total = Number(draft.body.data.total);
+    const key = randomUUID();
+    const wrong = await api().post(`/invoices/${id}/payments`, { amount: 1, method: 'cash', idempotencyKey: key });
+    expect(wrong.body.data.idempotencyKey).toBe(key);
+
+    expect((await api().del(`/invoices/${id}/payments/${wrong.body.data.id}`)).status).toBe(200);
+    const { rows: [h] } = await db.query(
+      `SELECT 1 FROM invoice_history WHERE invoice_id = $1 AND action = 'payment_removed'`, [id]);
+    expect(h).toBeTruthy();
+
+    const right = await api().post(`/invoices/${id}/payments`, { amount: total, method: 'cash', idempotencyKey: randomUUID() });
+    expect((await api().post(`/invoices/${id}/confirm`, {})).status).toBe(200);
+    expect((await api().del(`/invoices/${id}/payments/${right.body.data.id}`)).status).toBe(409);
   });
 });

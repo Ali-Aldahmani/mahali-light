@@ -3,6 +3,7 @@ const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { snapshotField } = require('../utils/customerSnapshot');
 const {
   generateInvoiceNumber,
   replaceItems,
@@ -150,15 +151,16 @@ function shapePayment(row) {
     employeeUsername: row.employee_username || null,
     timestamp: row.timestamp,
     notes: row.notes,
+    idempotencyKey: row.idempotency_key || null,
   };
 }
 
 // SELECT join used by list/getOne to attach customer + user labels.
 const INVOICE_SELECT = `
   SELECT i.*,
-         c.name AS customer_name,
-         c.phone AS customer_phone,
-         c.company_name AS customer_company,
+         ${snapshotField('name', 'name')} AS customer_name,
+         ${snapshotField('phone', 'phone')} AS customer_phone,
+         ${snapshotField('company', 'company_name')} AS customer_company,
          c.credit_balance AS customer_credit_balance,
          u1.username AS created_by_username,
          u2.username AS confirmed_by_username,
@@ -183,7 +185,8 @@ async function list(req, res, next) {
       params.push(`%${req.query.search}%`);
       const i = params.length;
       where.push(
-        `(i.invoice_number ILIKE $${i} OR c.name ILIKE $${i} OR c.phone ILIKE $${i})`,
+        `(i.invoice_number ILIKE $${i} OR c.name ILIKE $${i} OR c.phone ILIKE $${i}
+          OR i.customer_snapshot->>'name' ILIKE $${i} OR i.customer_snapshot->>'phone' ILIKE $${i})`,
       );
     }
     if (req.query.status) {

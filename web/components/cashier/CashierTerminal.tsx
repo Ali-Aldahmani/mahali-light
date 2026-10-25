@@ -520,10 +520,6 @@ export default function CashierTerminal() {
           toast.error('This sale is no longer on hold.');
           return;
         }
-        if ((detail.payments || []).length) {
-          toast.error('This draft already has payments recorded — finish it from the Invoices page.');
-          return;
-        }
         const items: any[] = detail.items || [];
         const catalog = await Promise.all(
           items.map((it) =>
@@ -572,6 +568,14 @@ export default function CashierTerminal() {
           draftInvoiceNumber: inv.invoiceNumber,
           draftUpdatedAt: inv.updatedAt || null,
           checkoutId: inv.checkoutId,
+          // Payments already on the draft come back with their keys, so
+          // completing the sale replays them instead of adding them twice;
+          // any the cashier changes are replaced at checkout (F14).
+          payments: (detail.payments || []).map((p: any) => ({
+            id: p.idempotencyKey || p.id,
+            method: p.method,
+            amount: Number(p.amount),
+          })),
         });
         setSelectedId(lines[0]?.variantId ?? null);
         setLastScan({ tone: 'ok', text: `Resumed ${inv.invoiceNumber}` });

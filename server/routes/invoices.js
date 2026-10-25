@@ -23,6 +23,7 @@ router.post('/:id/cancel', requirePermission('invoice.cancel'), invoices.cancel)
 
 router.get('/:id/payments', requirePermission('invoice.view'), payments.list);
 router.post('/:id/payments', requirePermission('invoice.create'), payments.create);
+router.delete('/:id/payments/:paymentId', requirePermission('invoice.create'), payments.remove);
 
 // PDF / receipt routes — gated on view (anyone who can see the invoice can
 // download), with manual force regeneration gated on print.

@@ -3,6 +3,7 @@ const { todayStoreDate } = require('../utils/dates');
 const path = require('path');
 const QRCode = require('qrcode');
 const { query } = require('../db/postgres');
+const { snapshotField } = require('../utils/customerSnapshot');
 const {
   ensurePdfDir,
   getUploadsRoot,
@@ -160,9 +161,12 @@ function logoBlock(settings) {
 async function fetchInvoice(invoiceId) {
   const { rows } = await query(
     `SELECT i.*,
-            c.name AS customer_name, c.phone AS customer_phone,
-            c.company_name AS customer_company, c.trn_number AS customer_trn,
-            c.email AS customer_email, c.address AS customer_address,
+            ${snapshotField('name', 'name')} AS customer_name,
+            ${snapshotField('phone', 'phone')} AS customer_phone,
+            ${snapshotField('company', 'company_name')} AS customer_company,
+            ${snapshotField('trn', 'trn_number')} AS customer_trn,
+            ${snapshotField('email', 'email')} AS customer_email,
+            ${snapshotField('address', 'address')} AS customer_address,
             u1.username AS created_by_username,
             u2.username AS confirmed_by_username
        FROM invoices i

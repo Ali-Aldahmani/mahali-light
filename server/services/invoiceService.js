@@ -6,6 +6,7 @@ const { applyStockMovement } = require('./stockService');
 const { assertWithinCreditLimit } = require('./customerService');
 const { emitCustomerChanged } = require('../utils/customerEvents');
 const { logActivity } = require('../utils/activityLog');
+const { snapshotInvoiceCustomer } = require('../utils/customerSnapshot');
 const { getStoreSettings } = require('../config/storeSettings');
 const {
   createWarrantiesFromInvoice,
@@ -716,6 +717,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
         WHERE id = $2`,
       [employeeId, invoiceId],
     );
+    await snapshotInvoiceCustomer(client, invoiceId);
 
     await client.query(
       `INSERT INTO invoice_history (invoice_id, action, performed_by, new_snapshot, notes)

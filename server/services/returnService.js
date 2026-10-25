@@ -7,6 +7,7 @@ const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
+const { snapshotInvoiceCustomer } = require('../utils/customerSnapshot');
 const journalService = require('./journalService');
 const notificationService = require('./notificationService');
 
@@ -1395,6 +1396,7 @@ async function buildReplacementInvoice(
     ],
   );
   const invoiceId = inv[0].id;
+  await snapshotInvoiceCustomer(client, invoiceId);
 
   const stockEmits = [];
   let cogsAmount = 0;
