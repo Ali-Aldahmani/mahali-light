@@ -47,7 +47,12 @@ describe.skipIf(!enabled)('supplier rankings on real PostgreSQL', () => {
   const database = `supplier_rankings_${randomUUID().replaceAll('-', '')}`;
   let createdDatabase = false;
   const ids = {};
-  const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  // Days counted from the store's date (Asia/Dubai), like the server does —
+  // the UTC date is a day behind every evening from 20:00 UTC.
+  const day = (offset) => {
+    const today = require('../../server/utils/dates').todayStoreDate();
+    return new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+  };
   const range = { startDate: day(-60), endDate: day(0) };
   let poSeq = 0;
 

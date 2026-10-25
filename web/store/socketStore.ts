@@ -13,6 +13,20 @@ type Unsubscribe = () => void;
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
+// Whether anyone touched this screen since the last heartbeat. The server
+// counts only that as activity, so an unattended till shows as idle while
+// it stays connected (presence audit F08).
+let userActiveSinceBeat = true;
+let activityListening = false;
+function listenForActivity() {
+  if (activityListening || typeof window === 'undefined') return;
+  activityListening = true;
+  const mark = () => { userActiveSinceBeat = true; };
+  for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
+    window.addEventListener(ev, mark, { passive: true, capture: true });
+  }
+}
+
 // Generic subscriber bus for stock/product realtime events. Pages use this to
 // re-fetch their data without each having to wire onto the socket directly.
 function makeBus() {
@@ -550,9 +564,12 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       useBackupStore.getState().onDiskWarning(payload);
     });
 
+    listenForActivity();
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     heartbeatTimer = setInterval(() => {
-      if (socket.connected) socket.emit('heartbeat');
+      if (!socket.connected) return;
+      socket.emit('heartbeat', { active: userActiveSinceBeat });
+      userActiveSinceBeat = false;
     }, 30000);
 
     set({ socket });

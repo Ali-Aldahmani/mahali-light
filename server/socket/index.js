@@ -26,6 +26,14 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
     },
   });
 
+  // After a restart no socket is connected yet, so no session is "online"
+  // until its screen reconnects (presence audit F11). Sessions stay signed
+  // in; reconnecting marks them online again.
+  query(
+    `UPDATE user_sessions SET status = 'offline'
+      WHERE logout_at IS NULL AND status <> 'offline'`,
+  ).catch(() => {});
+
   // Authenticate the socket via JWT in handshake.auth.token.
   io.use(async (socket, next) => {
     try {
@@ -88,7 +96,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
     // A (re)connect is activity: mark the session online straight away
     // rather than at the next heartbeat, then tell the viewers.
     query(
-      `UPDATE user_sessions SET status = 'online', last_activity_at = NOW()
+      `UPDATE user_sessions SET status = 'online', last_activity_at = NOW(), last_seen_at = NOW()
         WHERE id = $1 AND logout_at IS NULL`,
       [sessionId],
     )
@@ -98,24 +106,42 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
     // A heartbeat only refreshes a session that is still open and a token
     // that has not expired; otherwise the socket is cut, so a closed session
     // can never be brought back to "online" by a client that kept running.
-    socket.on('heartbeat', async () => {
+    //
+    // `active` says whether the screen saw real input since the last beat
+    // (presence audit F08): only then is it activity that keeps the user
+    // online rather than idle. Every beat marks the connection as seen.
+    // Older screens send no payload and count as active, as before.
+    // Writes are skipped when nothing changed in the last 20 seconds, so
+    // many open tabs don't each write every beat (F16).
+    socket.on('heartbeat', async (payload) => {
       try {
         if (socket.data.tokenExpMs && Date.now() >= socket.data.tokenExpMs) {
           socket.disconnect(true);
           return;
         }
+        const active = payload?.active !== false;
         const { rows: live } = await query(
-          `UPDATE user_sessions s SET last_activity_at = NOW(), status = 'online'
+          `UPDATE user_sessions s
+              SET last_seen_at = NOW(),
+                  last_activity_at = CASE WHEN $2 THEN NOW() ELSE s.last_activity_at END,
+                  status = CASE WHEN $2 THEN 'online' ELSE s.status END
              FROM user_sessions prev
             WHERE s.id = $1 AND prev.id = s.id AND s.logout_at IS NULL
+              AND (s.last_seen_at IS NULL OR s.last_seen_at < NOW() - INTERVAL '20 seconds'
+                   OR ($2 AND s.status <> 'online'))
             RETURNING prev.status AS previous_status`,
-          [sessionId],
+          [sessionId, active],
         );
         if (!live.length) {
-          socket.disconnect(true);
+          // Either throttled, or the session is closed: only the latter cuts.
+          const { rows: open } = await query(
+            `SELECT 1 FROM user_sessions WHERE id = $1 AND logout_at IS NULL`,
+            [sessionId],
+          );
+          if (!open.length) socket.disconnect(true);
           return;
         }
-        if (live[0].previous_status !== 'online') {
+        if (active && live[0].previous_status !== 'online') {
           await presenceService.publishUserPresence(io, userId);
         }
       } catch (err) {
@@ -202,7 +228,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
            FROM users u
           WHERE u.id = s.user_id
             AND s.logout_at IS NULL
-            AND s.last_activity_at < NOW() - make_interval(mins => $1)
+            AND COALESCE(s.last_seen_at, s.last_activity_at) < NOW() - make_interval(mins => $1)
           RETURNING s.id, s.user_id, u.employee_id`,
         [cutoffMin],
       );

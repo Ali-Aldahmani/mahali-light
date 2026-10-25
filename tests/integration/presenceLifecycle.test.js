@@ -221,4 +221,54 @@ describe.skipIf(!enabled)('presence and logout on real PostgreSQL', () => {
     await login(cashier, 'till-7');
     expect(await until(() => reasons.includes('io server disconnect'))).toBe(true);
   });
+  it('an unattended screen goes idle while staying connected (F08)', async () => {
+    const cashier = await makeUser('Cashier');
+    const token = await login(cashier);
+    const tab = await connect(token);
+    const { id } = await sessionRow(token);
+    // Ten minutes without input, but the app is still open.
+    await db.query(`UPDATE user_sessions SET last_activity_at = NOW() - INTERVAL '10 minutes',
+                      last_seen_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, [id]);
+    tab.emit('heartbeat', { active: false });
+    await wait(200);
+    const { rows: [after] } = await db.query(
+      `SELECT last_activity_at < NOW() - INTERVAL '9 minutes' AS stale, last_seen_at > NOW() - INTERVAL '10 seconds' AS seen
+         FROM user_sessions WHERE id = $1`, [id]);
+    expect(after).toEqual({ stale: true, seen: true });
+
+    // Real input brings it back to fresh activity.
+    await db.query(`UPDATE user_sessions SET status = 'idle', last_seen_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, [id]);
+    tab.emit('heartbeat', { active: true });
+    expect(await until(async () => (await db.query(`SELECT status FROM user_sessions WHERE id = $1`, [id])).rows[0].status === 'online')).toBe(true);
+  });
+
+  it('heartbeats from many tabs are not each written (F16)', async () => {
+    const cashier = await makeUser('Cashier');
+    const token = await login(cashier);
+    const tab = await connect(token);
+    const { id } = await sessionRow(token);
+    const read = async () => (await db.query(`SELECT last_activity_at, last_seen_at FROM user_sessions WHERE id = $1`, [id])).rows[0];
+    const before = await read();
+    await wait(50);
+    // The connect just wrote the session, so a beat inside 20s writes nothing.
+    tab.emit('heartbeat', { active: true });
+    await wait(200);
+    const after = await read();
+    expect(new Date(after.last_activity_at).getTime()).toBe(new Date(before.last_activity_at).getTime());
+    expect(tab.connected).toBe(true);
+  });
+
+  it('after a restart no session is shown online until it reconnects (F11)', async () => {
+    const cashier = await makeUser('Cashier');
+    const token = await login(cashier);
+    const tab = await connect(token);
+    tab.disconnect();
+    await db.query(`UPDATE user_sessions SET status = 'online' WHERE token_hash IS NOT NULL AND logout_at IS NULL`);
+    const http = require('node:http');
+    const other = http.createServer();
+    require('../../server/socket').attachSocket(other);
+    expect(await until(async () => Number((await db.query(
+      `SELECT COUNT(*) AS n FROM user_sessions WHERE logout_at IS NULL AND status = 'online'`)).rows[0].n) === 0)).toBe(true);
+    other.close();
+  });
 });
