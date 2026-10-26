@@ -13,7 +13,7 @@ This report covers the work done against the nine `*_AUDIT.md` reports in this f
    docker compose up -d --build express-api nextjs
    ```
    The API applies the new database migrations on start (039, 040, 041). All three are additive (new columns, a new table, new permissions) and safe on the existing data.
-2. **The checkout server tests have not run yet.** Docker Desktop was stopped when the last piece (checkout recovery) was finished, so `tests/integration/checkoutRecovery.test.js` and the full server suite were not run against that change. The web side of it was tested. Run the server suite (section 6) before deploying to the shop.
+2. **All tests pass, including checkout.** The checkout server test was run on 26 Oct 2026: 6/6 pass, and 5 of them fail against the old code (the sixth is the no-checkout-ID control). Full server suite: 483 pass.
 3. **Behaviour your staff will notice:**
    - Paying a supplier in cash needs the cash drawer **opened first** (it no longer opens itself).
    - A sale whose serial number is already under an active warranty is **blocked** instead of going through without a warranty.
@@ -86,7 +86,7 @@ All nine audits were read and the headline findings re-checked against the code 
 ## 4. How it was verified
 
 - Every fix has a test that **fails on the old code and passes on the new** (checked by running the tests with the old files restored).
-- Server: **477 tests pass** as of Phase 3 commands (the checkout piece not yet run — see section 1).
+- Server: **483 tests pass** (26 Oct 2026, including the checkout recovery suite).
 - Web: **172 tests pass**; TypeScript check clean.
 - Reconciliation on a copy of live data was **unchanged** before and after every phase.
 - The full server run occasionally dies with `Error: Channel closed` during the migration-upgrade test. That is the test runner, not a failing test; a rerun passes.
@@ -101,7 +101,6 @@ Two known differences, both explained — compare future runs against these:
 ## 5. What is still to do
 
 ### Finish Phase 3
-- Run the server suite against the checkout change (section 6), then deploy.
 - Make request keys **required** once every screen sends them (they are optional today so older clients keep working).
 
 ### Phase 4 — make treasury, stock and the ledger agree (needs your accountant)
