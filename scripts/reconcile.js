@@ -214,6 +214,27 @@ const CHECKS = [
                            JOIN chart_of_accounts a ON a.id = l.account_id WHERE a.code = '1002'), 0)
                 - COALESCE((SELECT SUM(current_balance) FROM bank_accounts), 0)) > 0.005`,
   },
+  {
+    id: 'barcode_collisions',
+    title: 'Barcodes that belong to more than one active product (a scan can pick the wrong one)',
+    // Any of the three barcode columns counts, compared the way migration 052
+    // does (trimmed, upper case). Resolve these before upgrading: the oldest
+    // product keeps the code, and the others' copies stop matching a scan.
+    sql: `
+      SELECT code || ': ' || string_agg(DISTINCT name, ', ') AS item,
+             COUNT(DISTINCT variant_id)::float8 AS recorded,
+             1::float8 AS expected
+        FROM (
+          SELECT upper(btrim(c.code)) AS code, v.id AS variant_id,
+                 p.name || COALESCE(' (' || v.sku || ')', '') AS name
+            FROM product_variants v
+            JOIN products p ON p.id = v.product_id
+            CROSS JOIN LATERAL (VALUES (v.internal_barcode), (v.barcode), (v.supplier_barcode)) c(code)
+           WHERE v.is_active AND p.is_active AND NULLIF(btrim(c.code), '') IS NOT NULL
+        ) codes
+       GROUP BY code
+      HAVING COUNT(DISTINCT variant_id) > 1`,
+  },
 ];
 
 // Each check runs on its own savepoint: one that fails (say, a column from

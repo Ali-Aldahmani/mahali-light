@@ -191,6 +191,23 @@ function classifyError(err) {
     };
   }
 
+  // One barcode, one product (migration 052): the database refuses a code
+  // another active product already has, from any screen or import.
+  if (err?.code === '23505' && err?.constraint === 'uq_variant_barcodes_code') {
+    const message = /^Barcode .+ is already used by .+\.$/.test(err.message || '')
+      ? err.message
+      : 'This barcode is already used by another product.';
+    return {
+      code: ERROR_CODES.RESOURCE_CONFLICT,
+      message,
+      status: 409,
+      details: { field: 'barcode', value: err.detail || null },
+      field: 'barcode',
+      severity: 'warning',
+      stack: err.stack,
+    };
+  }
+
   if (err?.name === 'JsonWebTokenError' || err?.name === 'TokenExpiredError') {
     const code =
       err.name === 'TokenExpiredError'

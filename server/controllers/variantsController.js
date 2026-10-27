@@ -12,6 +12,8 @@ const {
 const { saveProductImage, deleteImageFile } = require('../utils/upload');
 const { emitProductChange } = require('./productsController');
 const { applyStockMovement } = require('../services/stockService');
+const { checkVariants } = require('../services/reorderService');
+const { emitEvent } = require('../socket/events');
 
 // Upper bounds catch fat-finger data entry (e.g. typing 999999 into opening
 // stock instead of 9) before it silently inflates inventory value / KPI
@@ -246,7 +248,7 @@ async function update(req, res, next) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
 
-    await withTransaction(async (client) => {
+    const newAlerts = await withTransaction(async (client) => {
       if (body.sku && body.sku !== existing[0].sku) {
         const { rows: dup } = await client.query(
           `SELECT id FROM product_variants WHERE sku = $1 AND id <> $2`,
@@ -320,7 +322,15 @@ async function update(req, res, next) {
           );
         }
       }
+
+      // Inventory audit INV-006: a new reorder level re-evaluates this
+      // variant's low-stock alert now, not at the next stock movement.
+      if (body.reorderThreshold !== undefined || body.isActive !== undefined) {
+        return (await checkVariants([vid], client)).created;
+      }
+      return [];
     });
+    for (const payload of newAlerts) emitEvent(req.app.get('io'), 'reorder_alert_created', payload);
 
     const variant = await loadVariantWithAttributes(vid, includeCost);
     await logActivity({
@@ -430,12 +440,11 @@ async function findByBarcode(req, res, next) {
   try {
     const includeCost = canSeeCost(req);
     const { barcode } = req.params;
+    // One code, one active product (migration 052), so a scan can't pick
+    // between two.
     const { rows } = await query(
-      `SELECT v.id FROM product_variants v
-         JOIN products p ON p.id = v.product_id
-        WHERE v.is_active = true AND p.is_active = true
-          AND (v.barcode = $1 OR v.internal_barcode = $1 OR v.supplier_barcode = $1)
-        LIMIT 1`,
+      `SELECT vb.variant_id AS id FROM variant_barcodes vb
+        WHERE vb.code = normalize_barcode($1::text)`,
       [barcode],
     );
     if (!rows.length) {

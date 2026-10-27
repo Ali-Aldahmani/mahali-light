@@ -14,6 +14,7 @@ const {
   deleteImageFile,
 } = require('../utils/upload');
 const { applyStockMovement } = require('../services/stockService');
+const { checkVariants } = require('../services/reorderService');
 const {
   loadCategoryPath,
   loadCategoryPathBatch,
@@ -433,14 +434,27 @@ async function update(req, res, next) {
         sets.push(`${col} = $${params.length}`);
       }
     }
+    // Inventory audit INV-006: a new reorder level (or switching the product
+    // on or off) re-evaluates its variants' low-stock alerts in the same
+    // transaction, instead of waiting for the next stock movement.
+    const alertsChange = body.reorderThreshold !== undefined || body.isActive !== undefined;
+    let newAlerts = [];
     if (sets.length) {
       sets.push('updated_at = NOW()');
       params.push(id);
-      await query(
-        `UPDATE products SET ${sets.join(', ')} WHERE id = $${params.length}`,
-        params,
-      );
+      newAlerts = await withTransaction(async (client) => {
+        await client.query(
+          `UPDATE products SET ${sets.join(', ')} WHERE id = $${params.length}`,
+          params,
+        );
+        if (!alertsChange) return [];
+        const { rows: vs } = await client.query(
+          `SELECT id FROM product_variants WHERE product_id = $1`, [id],
+        );
+        return (await checkVariants(vs.map((v) => v.id), client)).created;
+      });
     }
+    for (const payload of newAlerts) emitEvent(req.app.get('io'), 'reorder_alert_created', payload);
 
     await logActivity({
       entityType: 'product',
@@ -650,6 +664,10 @@ async function search(req, res, next) {
       params.push(categoryId);
       filters.push(`p.category_id = $${params.length}`);
     }
+    // A scanned code first lists the product that owns it (migration 052),
+    // so the till's "first exact match" is always the right product.
+    params.push(q || null);
+    const ownerOrder = `(v.id = (SELECT variant_id FROM variant_barcodes WHERE code = normalize_barcode($${params.length}::text))) DESC NULLS LAST, `;
     params.push(limit);
 
     const { rows } = await query(
@@ -664,7 +682,7 @@ async function search(req, res, next) {
          LEFT JOIN product_categories c ON c.id = p.category_id
          LEFT JOIN pricing_restrictions pr ON pr.product_id = p.id
         WHERE ${filters.join(' AND ')}
-        ORDER BY p.name ASC, v.sku ASC
+        ORDER BY ${ownerOrder}p.name ASC, v.sku ASC
         LIMIT $${params.length}`,
       params,
     );

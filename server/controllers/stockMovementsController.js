@@ -39,9 +39,15 @@ function shape(row, { includeCost }) {
     variantSku: row.variant_sku,
     variantBarcode: row.variant_barcode,
   };
-  if (includeCost && row.cost_price != null) {
-    out.costPrice = Number(row.cost_price);
-    out.valueImpact = Number(row.quantity) * Number(row.cost_price);
+  // The cost stored on the movement when it happened (inventory audit
+  // INV-007), not today's cost. Movements from before migration 053 have
+  // none: costRecorded is false and no value is shown for them.
+  if (includeCost) {
+    out.costRecorded = row.unit_cost != null;
+    out.costPrice = row.unit_cost != null ? Number(row.unit_cost) : null;
+    out.valueImpact = row.unit_cost != null
+      ? Math.round(Number(row.quantity) * Number(row.unit_cost) * 100) / 100
+      : null;
   }
   return out;
 }
@@ -52,8 +58,7 @@ const LIST_SQL = `
          p.name AS product_name,
          p.image_path AS product_image,
          v.sku AS variant_sku,
-         v.internal_barcode AS variant_barcode,
-         v.cost_price
+         v.internal_barcode AS variant_barcode
     FROM stock_movements m
     LEFT JOIN users u ON u.id = m.employee_id
     LEFT JOIN products p ON p.id = m.product_id

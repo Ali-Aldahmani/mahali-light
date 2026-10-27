@@ -168,7 +168,12 @@ function StockMovementsPageContent() {
         align: 'right' as const,
         render: (r: any) =>
           r.valueImpact == null ? (
-            <span className="text-xs text-ink-muted">—</span>
+            <span
+              className="text-xs text-ink-muted"
+              title="Recorded before movements kept their own cost"
+            >
+              {r.costRecorded === false ? 'Not recorded' : '—'}
+            </span>
           ) : (
             <span
               className={

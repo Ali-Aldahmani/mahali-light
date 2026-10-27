@@ -83,6 +83,7 @@ const {
 const { authLimiter, apiLimiter, setupLimiter } = require('./middleware/rateLimiter');
 const { requestId } = require('./middleware/requestId');
 const { startOverduePoJob } = require('./jobs/overduePurchaseOrders');
+const { startReorderAlertSweepJob } = require('./jobs/reorderAlertSweep');
 const { startStaleDraftInvoiceJob } = require('./jobs/staleDraftInvoices');
 const { startDbCleanupJob } = require('./jobs/dbCleanup');
 const { startPdfCleanupJob } = require('./jobs/pdfCleanup');
@@ -391,6 +392,7 @@ async function bootstrap() {
   if (isServerMode()) {
     startDbCleanupJob();
     startOverduePoJob(io);
+    startReorderAlertSweepJob(io);
     startStaleDraftInvoiceJob();
     startPdfCleanupJob();
     startWarrantyExpiryJob(io);

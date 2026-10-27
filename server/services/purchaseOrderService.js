@@ -177,6 +177,7 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
         productId: item.product_id,
         type: 'purchase',
         quantity: recvQty,
+        unitCost: item.cost_price_per_unit,
         referenceType: 'purchase_order',
         referenceId: poId,
         employeeId,

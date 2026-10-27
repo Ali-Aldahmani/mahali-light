@@ -103,6 +103,10 @@ async function applyStockMovement(params) {
     notes = null,
     io = null,
     skipReorderCheck = false,
+    // What one unit of this movement is worth (inventory audit INV-007): the
+    // receipt cost, or the cost a sale was booked at. Defaults to the
+    // product's cost right now.
+    unitCost = null,
   } = params;
 
   if (!variantId) {
@@ -122,7 +126,7 @@ async function applyStockMovement(params) {
   const doWork = async (client) => {
     // Lock the variant row to prevent concurrent updates.
     const { rows: lockRows } = await client.query(
-      `SELECT id, product_id, stock_qty, quarantine_qty
+      `SELECT id, product_id, stock_qty, quarantine_qty, cost_price
          FROM product_variants
         WHERE id = $1
         FOR UPDATE`,
@@ -134,6 +138,7 @@ async function applyStockMovement(params) {
       });
     }
     const row = lockRows[0];
+    const movementCost = Math.round(Number(unitCost ?? row.cost_price ?? 0) * 100) / 100;
     const productId = paramProductId || row.product_id;
 
     // Read product unit_label for the movement record.
@@ -223,8 +228,8 @@ async function applyStockMovement(params) {
     const { rows: movementRows } = await client.query(
       `INSERT INTO stock_movements
          (product_id, variant_id, movement_type, quantity, qty_before, qty_after,
-          reference_type, reference_id, unit_label, employee_id, notes, timestamp)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, clock_timestamp())
+          reference_type, reference_id, unit_label, employee_id, notes, unit_cost, timestamp)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, clock_timestamp())
        RETURNING *`,
       [
         productId,
@@ -238,16 +243,14 @@ async function applyStockMovement(params) {
         unitLabel,
         employeeId,
         notes,
+        movementCost,
       ],
     );
 
-    // Stock adjustments + count corrections post inventory ↔ equity.
+    // Stock adjustments + count corrections post inventory ↔ equity, at the
+    // same cost the movement records, so the two always agree.
     if (ADJUSTMENT_JOURNAL_TYPES.has(type) && Math.abs(movementQuantity) > 0) {
-      const { rows: costRows } = await client.query(
-        `SELECT cost_price FROM product_variants WHERE id = $1`,
-        [variantId],
-      );
-      const costPrice = Number(costRows[0]?.cost_price || 0);
+      const costPrice = movementCost;
       if (costPrice > 0) {
         await journalService.postStockAdjustmentEntry(client, {
           movementId: movementRows[0].id,

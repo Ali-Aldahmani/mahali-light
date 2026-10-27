@@ -2,7 +2,8 @@ const { query } = require('../db/postgres');
 const { ok } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
-const { checkReorderThreshold } = require('../services/reorderService');
+const { checkAllVariants } = require('../services/reorderService');
+const { emitEvent } = require('../socket/events');
 
 function shape(row) {
   return {
@@ -115,21 +116,11 @@ async function dismiss(req, res, next) {
 // Re-evaluate alerts across all active variants (manual trigger).
 async function checkAll(req, res, next) {
   try {
-    const { rows: variants } = await query(
-      `SELECT v.id FROM product_variants v
-         JOIN products p ON p.id = v.product_id
-        WHERE v.is_active = true AND p.is_active = true`,
-    );
-
-    let created = 0;
-    let resolved = 0;
-    for (const v of variants) {
-      const r = await checkReorderThreshold(v.id);
-      if (r?.created) created++;
-      if (r?.resolved) resolved += r.resolved;
+    const result = await checkAllVariants();
+    for (const payload of result.created) {
+      emitEvent(req.app.get('io'), 'reorder_alert_created', payload);
     }
-
-    return ok(res, { scanned: variants.length, created, resolved });
+    return ok(res, { scanned: result.scanned, created: result.created.length, resolved: result.resolved });
   } catch (err) {
     next(err);
   }

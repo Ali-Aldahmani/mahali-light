@@ -150,4 +150,28 @@ async function autoResolvePending(variantId, client) {
   return rows.length;
 }
 
-module.exports = { checkReorderThreshold };
+// Re-evaluate several variants (inventory audit INV-006): after a product's
+// or variant's reorder level changes, or as the hourly backstop for checks
+// that failed after a receipt or count. Returns the alerts it created, for
+// the caller to announce once its transaction has committed.
+async function checkVariants(variantIds, client) {
+  const created = [];
+  let resolved = 0;
+  for (const id of variantIds) {
+    const r = await checkReorderThreshold(id, client);
+    if (r?.created && r.payload) created.push(r.payload);
+    if (r?.resolved) resolved += r.resolved;
+  }
+  return { scanned: variantIds.length, created, resolved };
+}
+
+async function checkAllVariants() {
+  const { rows } = await query(
+    `SELECT v.id FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+      WHERE v.is_active = true AND p.is_active = true`,
+  );
+  return checkVariants(rows.map((r) => r.id));
+}
+
+module.exports = { checkReorderThreshold, checkVariants, checkAllVariants };

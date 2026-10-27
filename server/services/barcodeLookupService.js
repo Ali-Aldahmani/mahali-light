@@ -22,10 +22,10 @@ async function lookupInternal(barcode) {
        pv.barcode,
        pv.internal_barcode,
        pv.supplier_barcode
-     FROM product_variants pv
+     FROM variant_barcodes vb
+     JOIN product_variants pv ON pv.id = vb.variant_id
      JOIN products p ON p.id = pv.product_id
-     WHERE pv.barcode = $1 OR pv.internal_barcode = $1 OR pv.supplier_barcode = $1
-     LIMIT 1`,
+     WHERE vb.code = normalize_barcode($1::text)`,
     [barcode],
   );
   return rows[0] || null;
