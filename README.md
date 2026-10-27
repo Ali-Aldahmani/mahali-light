@@ -242,11 +242,8 @@ The repository includes several audit reports documenting system integrity and c
 
 - **POS Invoice Financial Integrity Audit** (`POS_INVOICE_FINANCIAL_INTEGRITY_AUDIT.md`) - Detailed analysis of invoice data integrity, payment idempotency, and financial consistency
 - **POS Transaction Atomicity Audit** (`POS_TRANSACTION_ATOMICITY_AUDIT.md`) - Transaction atomicity and data consistency analysis
-- **POS Idempotency & Duplicate Operations Audit** (`POS_IDEMPOTENCY_DUPLICATE_OPERATIONS_AUDIT.md`) - Idempotency mechanisms and duplicate operation prevention
 - **POS Warranty Audit** (`POS_WARRANTY_AUDIT.md`) - Warranty system review and validation
-- **Purchase Order Inventory Payment Audit** (`PURCHASE_ORDER_INVENTORY_PAYMENT_AUDIT.md`) - PO financial integrity and inventory updates
 - **Cash Drawer Payment Audit** (`PO_CASH_DRAWER_PAYMENT_AUDIT.md`) - Cash drawer payment flow analysis
-- **Customer Profile Financial Audit** (`CUSTOMER_PROFILE_FINANCIAL_AUDIT.md`) - Customer credit and payment profile integrity
 - **User Presence and Logout Audit** (`USER_PRESENCE_AND_LOGOUT_AUDIT.md`) - Session management and logout mechanisms
 - **AI/ML Feasibility Audit** (`AI_ML_FEASIBILITY_AUDIT.md`) - Assessment of ML/AI integration possibilities
 - **Audit Fix Progress** (`AUDIT_FIX_PROGRESS.md`) - Status of audit findings and remediation
