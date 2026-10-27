@@ -5,6 +5,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const {
   recalculateAndPersistTotals,
+  assertDraftOwner,
 } = require('../services/invoiceService');
 
 const createSchema = z.object({
@@ -91,6 +92,7 @@ async function create(req, res, next) {
           { status: 409 },
         );
       }
+      await assertDraftOwner(client, inv, req.user.id);
 
       const totals = await recalculateAndPersistTotals(client, invoiceId);
       if (Math.round(body.amount * 100) > Math.round(totals.balanceDue * 100)) {
@@ -171,7 +173,7 @@ async function remove(req, res, next) {
     const { id: invoiceId, paymentId } = req.params;
     await withTransaction(async (client) => {
       const { rows: invRows } = await client.query(
-        `SELECT status FROM invoices WHERE id = $1 FOR UPDATE`,
+        `SELECT status, owner_id FROM invoices WHERE id = $1 FOR UPDATE`,
         [invoiceId],
       );
       if (!invRows.length) {
@@ -184,6 +186,7 @@ async function remove(req, res, next) {
           { status: 409 },
         );
       }
+      await assertDraftOwner(client, invRows[0], req.user.id);
       const { rows } = await client.query(
         `DELETE FROM invoice_payments WHERE id = $1 AND invoice_id = $2
          RETURNING method, amount`,

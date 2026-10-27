@@ -20,9 +20,9 @@ function flatten(obj, acc = []) {
 describe('permission catalog contract', () => {
   const keys = flatten(PERMISSIONS);
 
-  it('exposes 114 unique permission keys', () => {
-    expect(keys).toHaveLength(114);
-    expect(new Set(keys).size).toBe(114);
+  it('exposes 117 unique permission keys', () => {
+    expect(keys).toHaveLength(117);
+    expect(new Set(keys).size).toBe(117);
     expect(keys).toContain('audit.view');
   });
 

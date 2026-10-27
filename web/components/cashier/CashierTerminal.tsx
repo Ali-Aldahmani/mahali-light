@@ -36,7 +36,7 @@ import { onPrintRequest, onStockUpdate } from '@/store/socketStore';
 import { toast } from '@/store/toastStore';
 import { searchProducts } from '@/services/productService';
 import { listCategoriesFlat } from '@/services/categoryService';
-import { getInvoice } from '@/services/invoiceService';
+import { getInvoice, takeOverInvoice } from '@/services/invoiceService';
 import { printReceipt } from '@/services/printService';
 import {
   checkoutErrorMessage,
@@ -520,6 +520,12 @@ export default function CashierTerminal() {
           toast.error('This sale is no longer on hold.');
           return;
         }
+        // Another cashier's sale: resuming it takes it over, which the
+        // server logs (sales audit SI-02).
+        if (inv.ownerId && inv.ownerId !== user?.id) {
+          await takeOverInvoice(invoiceId);
+          toast.info(`You took over this sale from ${inv.ownerName || 'another cashier'}.`);
+        }
         const items: any[] = detail.items || [];
         const catalog = await Promise.all(
           items.map((it) =>
@@ -586,7 +592,7 @@ export default function CashierTerminal() {
         setResumingId(null);
       }
     },
-    [holdSale, closeDialog],
+    [holdSale, closeDialog, user?.id],
   );
 
   // ---- Exit --------------------------------------------------------------

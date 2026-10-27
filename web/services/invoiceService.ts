@@ -67,6 +67,11 @@ export function updateInvoiceItems(id, body) {
   return apiPut(`/invoices/${id}/items`, body);
 }
 
+// Makes another cashier's draft sale this user's (logged on the server).
+export function takeOverInvoice(id: string) {
+  return apiPost(`/invoices/${id}/take-over`, {});
+}
+
 export async function confirmInvoice(id): Promise<InvoiceConfirmResult> {
   const data = await apiPost(`/invoices/${id}/confirm`, {});
   return validateMoneyResponse(invoiceConfirmSchema, data, `POST /invoices/${id}/confirm`);

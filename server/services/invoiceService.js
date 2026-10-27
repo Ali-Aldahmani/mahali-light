@@ -126,6 +126,24 @@ function computeTotals({ items, payments, invoiceDiscount = 0, taxRate = DEFAULT
   };
 }
 
+// Sales audit SI-02: a draft sale belongs to the cashier who started it
+// (owner_id). Only the owner changes, pays or confirms it; anyone else takes
+// it over first (POST /invoices/:id/take-over), which is logged. Drafts the
+// system made itself (replacements) have no owner. Call under the invoice's
+// row lock.
+async function assertDraftOwner(client, invoice, userId) {
+  if (invoice.status !== 'draft' || !invoice.owner_id || invoice.owner_id === userId) return;
+  const { rows } = await client.query(
+    `SELECT COALESCE(e.name, u.username) AS name FROM users u
+       LEFT JOIN employees e ON e.id = u.employee_id WHERE u.id = $1`,
+    [invoice.owner_id],
+  );
+  const owner = rows[0]?.name || 'another cashier';
+  throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED,
+    `This sale belongs to ${owner}. Take it over to continue.`,
+    { status: 409, details: { reason: 'draft_owned_by_other', ownerId: invoice.owner_id, ownerName: owner } });
+}
+
 // Sale quantities (invoice audit F13) follow the shared stock quantity rule.
 function assertSaleQuantity(quantity, { soldBy = null, name = 'item' } = {}) {
   assertQuantity(quantity, { soldBy, name });
@@ -538,6 +556,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
         `Only draft invoices can be confirmed (current: ${invoice.status}).`,
       );
     }
+    await assertDraftOwner(client, invoice, employeeId);
 
     const items = await loadItemsForInvoice(client, invoiceId);
     if (!items.length) {
@@ -1570,6 +1589,7 @@ module.exports = {
   computeLineFigures,
   replaceItems,
   assertInvoiceDiscountAllowed,
+  assertDraftOwner,
   recalculateAndPersistTotals,
   resolveInvoiceTaxRate,
   findStockShortfalls,

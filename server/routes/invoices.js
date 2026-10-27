@@ -19,6 +19,7 @@ router.post('/', requirePermission('invoice.create'), invoices.create);
 router.get('/:id', requirePermission('invoice.view'), invoices.getOne);
 router.put('/:id/items', requirePermission('invoice.create'), invoices.updateItems);
 router.post('/:id/confirm', requirePermission('invoice.create'), invoices.confirm);
+router.post('/:id/take-over', requirePermission('invoice.take_over'), invoices.takeOver);
 router.post('/:id/cancel', requirePermission('invoice.cancel'), invoices.cancel);
 
 router.get('/:id/payments', requirePermission('invoice.view'), payments.list);

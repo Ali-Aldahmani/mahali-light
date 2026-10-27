@@ -8,6 +8,7 @@ const {
   generateInvoiceNumber,
   replaceItems,
   assertInvoiceDiscountAllowed,
+  assertDraftOwner,
   recalculateAndPersistTotals,
   resolveInvoiceTaxRate,
   confirmInvoice,
@@ -85,6 +86,9 @@ function shapeInvoice(row, opts = {}) {
     customerCompany: row.customer_company || null,
     createdBy: row.created_by,
     createdByUsername: row.created_by_username || null,
+    // Who a draft sale belongs to (sales audit SI-02).
+    ownerId: row.owner_id || null,
+    ownerName: row.owner_name || null,
     confirmedBy: row.confirmed_by,
     confirmedByUsername: row.confirmed_by_username || null,
     cancelledBy: row.cancelled_by,
@@ -163,12 +167,15 @@ const INVOICE_SELECT = `
          ${snapshotField('company', 'company_name')} AS customer_company,
          c.credit_balance AS customer_credit_balance,
          u1.username AS created_by_username,
+         COALESCE(eo.name, uo.username) AS owner_name,
          u2.username AS confirmed_by_username,
          u3.username AS cancelled_by_username,
          (SELECT COUNT(*)::int FROM invoice_items it WHERE it.invoice_id = i.id) AS item_count
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
     LEFT JOIN users u1 ON u1.id = i.created_by
+    LEFT JOIN users uo ON uo.id = i.owner_id
+    LEFT JOIN employees eo ON eo.id = uo.employee_id
     LEFT JOIN users u2 ON u2.id = i.confirmed_by
     LEFT JOIN users u3 ON u3.id = i.cancelled_by
 `;
@@ -444,9 +451,9 @@ async function create(req, res, next) {
 
       const { rows } = await client.query(
         `INSERT INTO invoices (
-          invoice_number, customer_id, created_by, status,
+          invoice_number, customer_id, created_by, owner_id, status,
           invoice_discount, tax_rate, pc_identifier, notes, checkout_id
-        ) VALUES ($1,$2,$3,'draft',$4,$5,$6,$7,$8)
+        ) VALUES ($1,$2,$3,$3,'draft',$4,$5,$6,$7,$8)
         RETURNING id`,
         [
           invoiceNumber,
@@ -547,6 +554,7 @@ async function updateItems(req, res, next) {
           { status: 409 },
         );
       }
+      await assertDraftOwner(client, invRows[0], req.user.id);
       if (
         body.expectedUpdatedAt &&
         new Date(body.expectedUpdatedAt).getTime() !== new Date(invRows[0].updated_at).getTime()
@@ -745,6 +753,48 @@ async function checkoutStatus(req, res, next) {
   }
 }
 
+// Take over another cashier's draft sale (sales audit SI-02): it becomes
+// this user's, so they can change, pay and confirm it. Logged with who had it.
+async function takeOver(req, res, next) {
+  try {
+    const { id } = req.params;
+    const previous = await withTransaction(async (client) => {
+      const { rows } = await client.query(`SELECT * FROM invoices WHERE id = $1 FOR UPDATE`, [id]);
+      if (!rows.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      if (rows[0].status !== 'draft') {
+        throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED,
+          'Only a draft sale can be taken over.', { status: 409 });
+      }
+      if (rows[0].owner_id === req.user.id) return null;
+      await client.query(
+        `UPDATE invoices SET owner_id = $1, updated_by = $1, updated_at = NOW() WHERE id = $2`,
+        [req.user.id, id],
+      );
+      await client.query(
+        `INSERT INTO invoice_history (invoice_id, action, performed_by, old_snapshot, new_snapshot, notes)
+         VALUES ($1, 'taken_over', $2, $3::jsonb, $4::jsonb, 'Draft taken over')`,
+        [id, req.user.id, JSON.stringify({ ownerId: rows[0].owner_id }), JSON.stringify({ ownerId: req.user.id })],
+      );
+      await logActivity({
+        client,
+        entityType: 'invoice',
+        entityId: id,
+        action: 'invoice.taken_over',
+        performedBy: req.user.id,
+        oldValue: { ownerId: rows[0].owner_id },
+        newValue: { ownerId: req.user.id },
+      });
+      return rows[0].owner_id;
+    });
+    const { rows } = await query(`${INVOICE_SELECT} WHERE i.id = $1`, [id]);
+    return ok(res, { ...shapeInvoice(rows[0]), previousOwnerId: previous });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   checkoutStatus,
   list,
@@ -753,6 +803,7 @@ module.exports = {
   updateItems,
   confirm,
   cancel,
+  takeOver,
   nextNumberPreview,
   computeLineFigures,
 };

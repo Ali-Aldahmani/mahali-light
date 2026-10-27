@@ -381,6 +381,9 @@ describe.skipIf(!enabled)('pricing restrictions on real PostgreSQL', () => {
       .send({ items: [{ variantId: v.id, quantity: 1 }] });
     expect(created.status).toBe(201);
     const invoiceId = created.body.data.id;
+    // The draft is the cashier's (SI-02); clear the owner so the discounter
+    // can edit it, which is what a take-over allows.
+    await db.query(`UPDATE invoices SET owner_id = NULL WHERE id = $1`, [invoiceId]);
 
     const bumped = await request(app)
       .put(`/invoices/${invoiceId}/items`)
