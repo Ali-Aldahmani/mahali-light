@@ -2,12 +2,14 @@ const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { quantitySchema } = require('../utils/quantity');
 const { logActivity } = require('../utils/activityLog');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
 const notificationService = require('../services/notificationService');
 const {
   applyStockMovement,
   isVariantUnderActiveCount,
+  lockStockCounts,
 } = require('../services/stockService');
 
 const REASONS = new Set([
@@ -22,7 +24,7 @@ const REASONS = new Set([
 const createSchema = z.object({
   variantId: z.string().uuid(),
   adjustmentType: z.enum(['add', 'remove']),
-  quantity: z.number().finite().positive(),
+  quantity: quantitySchema,
   reason: z.string().refine((r) => REASONS.has(r), 'Invalid reason.'),
   note: z.string().min(10, 'Please add a note (at least 10 characters).').max(1000),
   applyDirectly: z.boolean().optional().default(false),
@@ -232,6 +234,14 @@ async function create(req, res, next) {
             quantity: body.quantity, reason: body.reason, note: body.note,
           },
         }, async () => {
+          await lockStockCounts(client);
+          if (await isVariantUnderActiveCount(body.variantId, client)) {
+            throw new AppError(
+              ERROR_CODES.BIZ_STOCK_COUNT_IN_PROGRESS,
+              `${variant.product_name} is part of an active stock count.`,
+              { status: 409 },
+            );
+          }
           const { rows: lockedRows } = await client.query(
             `SELECT stock_qty FROM product_variants WHERE id = $1 FOR UPDATE`,
             [body.variantId],
@@ -401,7 +411,8 @@ async function approve(req, res, next) {
       }
 
       // Make sure we don't apply during an active count.
-      if (await isVariantUnderActiveCount(reqRow.variant_id)) {
+      await lockStockCounts(client);
+      if (await isVariantUnderActiveCount(reqRow.variant_id, client)) {
         throw new AppError(
           ERROR_CODES.BIZ_STOCK_COUNT_IN_PROGRESS,
           'A stock count is currently in progress for this product.',
@@ -504,37 +515,42 @@ async function reject(req, res, next) {
     const body = rejectSchema.parse(req.body || {});
     const { id } = req.params;
 
-    const { rows } = await query(
-      `SELECT * FROM stock_adjustment_requests WHERE id = $1`,
-      [id],
-    );
-    if (!rows.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
-    }
-    if (rows[0].status !== 'pending') {
-      throw new AppError(
-        ERROR_CODES.BIZ_INVALID_STATE,
-        `This request is already ${rows[0].status}.`,
-        { status: 409 },
+    // Locked like approve(), so a rejection can't land on a request that an
+    // approval has already applied to stock.
+    const rows = await withTransaction(async (client) => {
+      const { rows: found } = await client.query(
+        `SELECT * FROM stock_adjustment_requests WHERE id = $1 FOR UPDATE`,
+        [id],
       );
-    }
+      if (!found.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      const { rowCount } = await client.query(
+        `UPDATE stock_adjustment_requests
+            SET status = 'rejected',
+                reviewed_by = $1,
+                reviewed_at = NOW(),
+                rejection_reason = $2
+          WHERE id = $3 AND status = 'pending'`,
+        [req.user.id, body.rejectionReason, id],
+      );
+      if (rowCount !== 1) {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          `This request is already ${found[0].status}.`,
+          { status: 409 },
+        );
+      }
 
-    await query(
-      `UPDATE stock_adjustment_requests
-          SET status = 'rejected',
-              reviewed_by = $1,
-              reviewed_at = NOW(),
-              rejection_reason = $2
-        WHERE id = $3`,
-      [req.user.id, body.rejectionReason, id],
-    );
-
-    await logActivity({
-      entityType: 'stock_adjustment',
-      entityId: id,
-      action: 'stock.adjustment_rejected',
-      performedBy: req.user.id,
-      notes: body.rejectionReason,
+      await logActivity({
+        entityType: 'stock_adjustment',
+        entityId: id,
+        action: 'stock.adjustment_rejected',
+        performedBy: req.user.id,
+        notes: body.rejectionReason,
+        client,
+      });
+      return found;
     });
 
     const io = req.app.get('io');

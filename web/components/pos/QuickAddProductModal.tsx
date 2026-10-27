@@ -10,6 +10,7 @@ import { listCategoriesTree } from '@/services/categoryService';
 import { buildSimpleProductPayload } from '@/lib/products/quickCreate';
 import { toast } from '@/store/toastStore';
 import { useAuthStore } from '@/store/authStore';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 function variantFromCreated(created: any) {
   const v = created?.variants?.[0];
@@ -57,6 +58,7 @@ export default function QuickAddProductModal({
 }: QuickAddProductModalProps) {
   const permissions = useAuthStore((s) => s.permissions);
   const canSeeCost = permissions.includes('product.view_cost');
+  const createKey = useRequestKey(open);
 
   const [tree, setTree] = useState<any[]>([]);
   const [loadingTree, setLoadingTree] = useState(false);
@@ -126,7 +128,7 @@ export default function QuickAddProductModal({
         openingStock: Number(openingStock || 0),
         barcode,
       });
-      const created = await createProduct(payload);
+      const created = await createProduct(payload, createKey.current());
       toast.success(`“${created.name}” added to your catalog.`);
 
       onRefreshProducts?.();

@@ -13,6 +13,7 @@ router.get('/:id', requirePermission('user.edit'), ctrl.getOne);
 router.put('/:id', requirePermission('user.edit'), ctrl.update);
 router.delete('/:id', requirePermission('user.edit'), ctrl.softDelete);
 router.post('/:id/force-logout', requirePermission('user.force_logout'), ctrl.forceLogout);
+router.post('/:id/unlock-login', requirePermission('user.edit'), ctrl.unlockLogin);
 router.get('/:id/permissions',  requirePermission('user.change_role'), ctrl.getPermissions);
 router.put('/:id/permissions',  requirePermission('user.change_role'), ctrl.setPermissions);
 

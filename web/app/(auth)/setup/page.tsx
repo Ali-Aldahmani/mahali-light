@@ -88,7 +88,7 @@ export default function SetupWizardPage() {
     const p = admin.password;
     if (!p) return 0;
     let s = 0;
-    if (p.length >= 8) s++;
+    if (p.length >= 12) s++;
     if (/[A-Z]/.test(p)) s++;
     if (/[0-9]/.test(p)) s++;
     if (/[^A-Za-z0-9]/.test(p)) s++;
@@ -336,13 +336,13 @@ export default function SetupWizardPage() {
         nextDisabled={
           !admin.full_name ||
           !admin.username ||
-          admin.password.length < 6 ||
+          admin.password.length < 12 ||
           admin.password !== admin.confirm
         }
       >
         <Input label="Full name" value={admin.full_name} onChange={(e: any) => setAdmin({ ...admin, full_name: e.target.value })} />
         <Input label="Username" value={admin.username} onChange={(e: any) => setAdmin({ ...admin, username: e.target.value })} />
-        <Input label="Password" type="password" value={admin.password} onChange={(e: any) => setAdmin({ ...admin, password: e.target.value })} />
+        <Input label="Password" type="password" hint="At least 12 characters. A short phrase is easiest to remember." value={admin.password} onChange={(e: any) => setAdmin({ ...admin, password: e.target.value })} />
         <div className="h-1 rounded bg-surface-2">
           <div className="h-1 rounded bg-accent" style={{ width: `${(passwordStrength / 4) * 100}%` }} />
         </div>

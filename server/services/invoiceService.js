@@ -2,7 +2,8 @@ const { query, withTransaction } = require('../db/postgres');
 const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nextDocumentNumber } = require('../utils/docNumbers');
-const { applyStockMovement } = require('./stockService');
+const { applyStockMovement, lockVariants } = require('./stockService');
+const { assertQuantity } = require('../utils/quantity');
 const { assertWithinCreditLimit } = require('./customerService');
 const { emitCustomerChanged } = require('../utils/customerEvents');
 const { logActivity } = require('../utils/activityLog');
@@ -124,22 +125,9 @@ function computeTotals({ items, payments, invoiceDiscount = 0, taxRate = DEFAULT
   };
 }
 
-// Sale quantities (invoice audit F13): stored as DECIMAL(12,2), so at most
-// two decimals, a sane upper bound, and whole units for products sold by
-// the piece. A quantity is rejected rather than silently rounded — before,
-// 0.004 rounded to a zero-quantity line.
-const MAX_SALE_QUANTITY = 1000000;
+// Sale quantities (invoice audit F13) follow the shared stock quantity rule.
 function assertSaleQuantity(quantity, { soldBy = null, name = 'item' } = {}) {
-  const q = Number(quantity);
-  const invalid = (message) => new AppError(ERROR_CODES.VALIDATION_FAILED, message, { status: 400 });
-  if (!Number.isFinite(q) || q <= 0) throw invalid(`Quantity for ${name} must be more than zero.`);
-  if (q > MAX_SALE_QUANTITY) throw invalid(`Quantity for ${name} is too large.`);
-  if (Math.abs(q * 100 - Math.round(q * 100)) > 1e-6) {
-    throw invalid(`Quantity for ${name} can have at most two decimal places.`);
-  }
-  if ((soldBy || 'piece') === 'piece' && !Number.isInteger(Math.round(q * 100) / 100)) {
-    throw invalid(`${name} is sold by the piece, so its quantity must be a whole number.`);
-  }
+  assertQuantity(quantity, { soldBy, name });
 }
 
 // Compute per-line subtotal/total honouring percent OR amount discount.
@@ -362,8 +350,14 @@ async function assertInvoiceDiscountAllowed(client, invoiceId) {
       WHERE it.invoice_id = $1`,
     [invoiceId],
   );
-  const base = items.reduce((s, it) => s + Number(it.line_total || 0), 0);
-  if (base <= 0) return;
+  const base = money(items.reduce((s, it) => s + Number(it.line_total || 0), 0));
+  // Sales audit SI-04: computeTotals would clamp the taxable amount at zero
+  // and still store the oversized discount, so refuse it here instead.
+  if (invDisc > base + 0.001) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+      `The invoice discount can't be more than the items' total (AED ${base.toFixed(2)}).`,
+      { status: 400, details: { maxInvoiceDiscount: base } });
+  }
 
   const restrictions = await pricingRestrictionService.getRestrictionsMap(
     client,
@@ -486,11 +480,7 @@ async function findMissingSerialNumbers(client, invoiceId) {
 
 async function findStockShortfalls(client, items, { allowNegative = false } = {}) {
   if (allowNegative || !items.length) return [];
-  const ids = items.map((i) => i.variant_id);
-  const { rows } = await client.query(
-    `SELECT id, product_id, stock_qty FROM product_variants WHERE id = ANY($1) FOR UPDATE`,
-    [ids],
-  );
+  const rows = await lockVariants(client, items.map((i) => i.variant_id));
   const stockMap = new Map(rows.map((r) => [r.id, Number(r.stock_qty)]));
   const shortfalls = [];
   for (const it of items) {
@@ -762,7 +752,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       treasuryPostings,
       warranties,
     };
-  });
+  }, { retryOnDeadlock: true });
 
   // Deferred socket emits. Stock first, then invoice_confirmed, then credit
   // delta if any.
@@ -916,6 +906,13 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     if (!['draft', 'confirmed'].includes(invoice.status)) {
       throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED, 'This invoice cannot be cancelled.', { status: 409 });
     }
+    // Sales audit SI-07: undoing a confirmed sale reverses stock, cash and the
+    // ledger, so it needs a written reason. Abandoning a draft doesn't.
+    const trimmedReason = (reason || '').trim();
+    if (invoice.status === 'confirmed' && (trimmedReason.length < 5 || trimmedReason.length > 500)) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+        'Give a reason for cancelling this invoice (5 to 500 characters).', { status: 400 });
+    }
     await assertNoCommittedReturns(client, invoiceId);
 
     const stockEmits = [];
@@ -925,6 +922,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
       // Custom/third-party lines never left stock at confirm (see
       // confirmInvoice's catalogItems), so there is nothing to put back.
       const catalogItems = items.filter((it) => !it.is_custom);
+      await lockVariants(client, catalogItems.map((it) => it.variant_id));
       for (const it of catalogItems) {
         const { variant } = await applyStockMovement({
           client,
@@ -1058,7 +1056,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     });
 
     return { invoice, stockEmits, treasuryPostings, voidedWarranties };
-  });
+  }, { retryOnDeadlock: true });
 
   if (io) {
     for (const e of result.stockEmits) io.emit(e.event, e.payload);
@@ -1208,6 +1206,7 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
         client,
         editVariantRows.map((v) => v.product_id),
       );
+      if (invoice.status === 'confirmed') await lockVariants(client, editVariantIds);
       for (const requested of changes.items) {
         if (requestedVariants.has(requested.variant_id) ||
             currentItems.filter((it) => it.variant_id === requested.variant_id).length > 1) {
@@ -1403,7 +1402,7 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
     );
 
     return { request: req, invoice, totals, stockEmits };
-  });
+  }, { retryOnDeadlock: true });
 
   await logActivity({
     entityType: 'invoice',
@@ -1489,47 +1488,51 @@ async function assertNoCommittedReturns(client, invoiceId) {
   }
 }
 
-// Reject an edit request.
+// Reject an edit request. Locks the request like applyEditRequest, so an
+// approval and a rejection of the same request can't both win.
 async function rejectEditRequest({ requestId, managerId, reason, io = null }) {
-  const { rows } = await query(
-    `SELECT status, invoice_id, requested_by FROM invoice_edit_requests WHERE id = $1`,
-    [requestId],
-  );
-  if (!rows.length) {
-    throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, {
-      status: 404,
-    });
-  }
-  if (rows[0].status !== 'pending') {
-    throw new AppError(
-      ERROR_CODES.BIZ_EDIT_REQUEST_ALREADY_REVIEWED,
-      undefined,
-      { status: 409 },
+  const rows = await withTransaction(async (client) => {
+    const { rows: found } = await client.query(
+      `SELECT status, invoice_id, requested_by FROM invoice_edit_requests WHERE id = $1 FOR UPDATE`,
+      [requestId],
     );
-  }
+    if (!found.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, {
+        status: 404,
+      });
+    }
+    const { rowCount } = await client.query(
+      `UPDATE invoice_edit_requests
+          SET status = 'rejected',
+              reviewed_by = $1,
+              reviewed_at = NOW(),
+              rejection_reason = $2
+        WHERE id = $3 AND status = 'pending'`,
+      [managerId, reason || null, requestId],
+    );
+    if (rowCount !== 1) {
+      throw new AppError(
+        ERROR_CODES.BIZ_EDIT_REQUEST_ALREADY_REVIEWED,
+        undefined,
+        { status: 409 },
+      );
+    }
 
-  await query(
-    `UPDATE invoice_edit_requests
-        SET status = 'rejected',
-            reviewed_by = $1,
-            reviewed_at = NOW(),
-            rejection_reason = $2
-      WHERE id = $3`,
-    [managerId, reason || null, requestId],
-  );
+    await client.query(
+      `INSERT INTO invoice_history (invoice_id, action, performed_by, notes)
+       VALUES ($1, 'edit_rejected', $2, $3)`,
+      [found[0].invoice_id, managerId, reason || 'Edit request rejected.'],
+    );
 
-  await query(
-    `INSERT INTO invoice_history (invoice_id, action, performed_by, notes)
-     VALUES ($1, 'edit_rejected', $2, $3)`,
-    [rows[0].invoice_id, managerId, reason || 'Edit request rejected.'],
-  );
-
-  await logActivity({
-    entityType: 'invoice',
-    entityId: rows[0].invoice_id,
-    action: 'invoice.edit_rejected',
-    performedBy: managerId,
-    notes: reason || null,
+    await logActivity({
+      entityType: 'invoice',
+      entityId: found[0].invoice_id,
+      action: 'invoice.edit_rejected',
+      performedBy: managerId,
+      notes: reason || null,
+      client,
+    });
+    return found;
   });
 
   if (io) {

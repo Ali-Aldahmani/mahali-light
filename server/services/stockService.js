@@ -1,6 +1,7 @@
 const { query, withTransaction } = require('../db/postgres');
 const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { assertQuantity } = require('../utils/quantity');
 const { checkReorderThreshold } = require('./reorderService');
 const journalService = require('./journalService');
 const notificationService = require('./notificationService');
@@ -136,10 +137,15 @@ async function applyStockMovement(params) {
 
     // Read product unit_label for the movement record.
     const { rows: prodRows } = await client.query(
-      `SELECT unit_label FROM products WHERE id = $1`,
+      `SELECT name, unit_label, sold_by FROM products WHERE id = $1`,
       [productId],
     );
     const unitLabel = prodRows[0]?.unit_label || null;
+    // Inventory audit INV-004: every stock change follows the sales quantity
+    // rule, whichever screen it came from.
+    assertQuantity(Math.abs(delta), {
+      soldBy: prodRows[0]?.sold_by, name: prodRows[0]?.name || 'item', allowZero: true,
+    });
 
     const before = Number(row.stock_qty);
     const beforeQuarantine = Number(row.quarantine_qty);
@@ -188,8 +194,8 @@ async function applyStockMovement(params) {
       }
     }
 
-    // Round to 4 decimals to avoid floating-point drift.
-    const rounded = (n) => Math.round(n * 10000) / 10000;
+    // Round to the columns' two decimals to avoid floating-point drift.
+    const rounded = (n) => Math.round(n * 100) / 100;
     const finalAfter = rounded(after);
     const finalQuarantine = rounded(newQuarantine);
 
@@ -358,11 +364,37 @@ function emitDeferred(io, payloads = []) {
 }
 
 /**
- * Check whether a stock count is currently active for the given variant. The
- * spec blocks adjustments while a count is pending approval.
+ * Lock several variants in one fixed order (by id). Every transaction that
+ * moves stock on more than one variant calls this first, so two of them can't
+ * each hold one variant while waiting for the other's.
  */
-async function isVariantUnderActiveCount(variantId) {
-  const { rows } = await query(
+async function lockVariants(client, variantIds) {
+  const ids = [...new Set(variantIds.filter(Boolean))];
+  if (!ids.length) return [];
+  const { rows } = await client.query(
+    `SELECT id, product_id, stock_qty FROM product_variants
+      WHERE id = ANY($1) ORDER BY id FOR UPDATE`,
+    [ids],
+  );
+  return rows;
+}
+
+/**
+ * Serialises starting a stock count against applying an adjustment. Both take
+ * this transaction lock before their check, so a count can't start between an
+ * adjustment's check and its stock move, and two counts can't both start.
+ */
+async function lockStockCounts(client) {
+  await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('stock_counts', 0))`);
+}
+
+/**
+ * Check whether a stock count is currently active for the given variant. The
+ * spec blocks adjustments while a count is pending approval. Pass the
+ * transaction client (after lockStockCounts) when the answer guards a write.
+ */
+async function isVariantUnderActiveCount(variantId, client = null) {
+  const { rows } = await (client ? client.query.bind(client) : query)(
     `SELECT 1
        FROM stock_count_items ci
        JOIN stock_counts c ON c.id = ci.stock_count_id
@@ -378,4 +410,6 @@ module.exports = {
   applyStockMovement,
   emitDeferred,
   isVariantUnderActiveCount,
+  lockStockCounts,
+  lockVariants,
 };

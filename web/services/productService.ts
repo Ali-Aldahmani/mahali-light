@@ -1,4 +1,5 @@
 import http, { apiDelete, apiGet, apiGetWithMeta, apiPost, apiPut, uploadConfig, type UploadOptions } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 export async function listProducts({
   page = 1,
@@ -36,8 +37,8 @@ export function getProduct(id: string | number) {
   return apiGet(`/products/${id}`);
 }
 
-export function createProduct(payload: any) {
-  return apiPost('/products', payload);
+export function createProduct(payload: any, requestKey?: string) {
+  return apiPost('/products', payload, withRequestKey(requestKey));
 }
 
 export function updateProduct(id: string | number, payload: any) {

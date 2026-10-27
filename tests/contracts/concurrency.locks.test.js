@@ -17,9 +17,10 @@ describe('locking present in critical writers', () => {
   it('confirmInvoice locks invoice and variants FOR UPDATE', () => {
     const src = read('server/services/invoiceService.js');
     expect(src).toMatch(/SELECT \* FROM invoices WHERE id = \$1 FOR UPDATE/);
-    expect(src).toMatch(
-      /SELECT id, product_id, stock_qty FROM product_variants WHERE id = ANY\(\$1\) FOR UPDATE/,
-    );
+    // Variants are locked through lockVariants, in id order (sales audit SI-08).
+    expect(src).toMatch(/const rows = await lockVariants\(client, items\.map/);
+    const stockSrc = read('server/services/stockService.js');
+    expect(stockSrc).toMatch(/WHERE id = ANY\(\$1\) ORDER BY id FOR UPDATE/);
   });
 
   it('applyStockMovement locks the variant FOR UPDATE', () => {

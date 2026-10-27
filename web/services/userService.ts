@@ -36,6 +36,11 @@ export function forceLogout(id: string | number) {
   return apiPost(`/users/${id}/force-logout`);
 }
 
+// Clears a sign-in lockout after too many wrong passwords.
+export function unlockLogin(id: string | number) {
+  return apiPost(`/users/${id}/unlock-login`);
+}
+
 export function getUserPermissions(id: string | number) {
   return apiGet(`/users/${id}/permissions`);
 }

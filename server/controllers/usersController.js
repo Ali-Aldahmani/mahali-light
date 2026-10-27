@@ -1,4 +1,4 @@
-const bcrypt = require('bcrypt');
+const { assertPasswordAllowed, hashPassword, MAX_LENGTH } = require('../utils/password');
 const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
@@ -24,7 +24,7 @@ const createSchema = z.object({
     .min(3, 'Username must be at least 3 characters')
     .max(50)
     .regex(/^[a-zA-Z0-9_.-]+$/, 'Only letters, numbers, dot, underscore, hyphen'),
-  password: z.string().min(6, 'Password must be at least 6 characters').max(200),
+  password: z.string().min(1, 'Enter a password').max(MAX_LENGTH),
   roleId: z.string().uuid(),
   employeeId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional().default(true),
@@ -32,7 +32,7 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   username: z.string().min(3).max(50).optional(),
-  password: z.string().min(6).max(200).optional(),
+  password: z.string().min(1).max(MAX_LENGTH).optional(),
   roleId: z.string().uuid().optional(),
   employeeId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
@@ -140,8 +140,8 @@ async function create(req, res, next) {
       newRoleIsSystem: Boolean(newRole.is_system),
     });
 
-    const rounds = Number(process.env.BCRYPT_ROUNDS || 12);
-    const hash = await bcrypt.hash(body.password, rounds);
+    assertPasswordAllowed(body.password, { roleName: newRole.name, username: body.username });
+    const hash = await hashPassword(body.password);
 
     const { rows } = await query(
       `INSERT INTO users (username, password_hash, role_id, employee_id, is_active)
@@ -247,8 +247,14 @@ async function update(req, res, next) {
     if (body.employeeId !== undefined) add('employee_id', body.employeeId);
     if (body.isActive !== undefined) add('is_active', body.isActive);
     if (body.password) {
-      const rounds = Number(process.env.BCRYPT_ROUNDS || 12);
-      const hash = await bcrypt.hash(body.password, rounds);
+      // The rule for the role the user ends up with, after this update.
+      const { rows: [finalRole] } = await query(
+        'SELECT name FROM roles WHERE id = $1', [body.roleId || existing[0].role_id],
+      );
+      assertPasswordAllowed(body.password, {
+        roleName: finalRole?.name, username: body.username || existing[0].username,
+      });
+      const hash = await hashPassword(body.password);
       add('password_hash', hash);
     }
     if (!sets.length) {
@@ -564,4 +570,42 @@ async function setPermissions(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, create, update, softDelete, forceLogout, getPermissions, setPermissions };
+// Clear a login lockout (authentication audit AUTH-05) so the person can sign
+// in again before the 15 minutes are up. Same hierarchy rule as force logout.
+async function unlockLogin(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { rows: targetRows } = await query(
+      `SELECT u.username, r.name AS role_name FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.id = $1`,
+      [id],
+    );
+    if (!targetRows.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
+    assertCanManageTarget({
+      actor: req.user,
+      targetRoleName: targetRows[0].role_name || null,
+      targetUserId: id,
+    });
+    const { rowCount } = await query(
+      `DELETE FROM login_lockouts WHERE username = $1`,
+      [targetRows[0].username],
+    );
+    await logActivity({
+      entityType: 'user',
+      entityId: id,
+      action: 'user.login_unlocked',
+      performedBy: req.user.id,
+      notes: `Cleared ${rowCount} lockout(s)`,
+    });
+    return ok(res, { id, lockoutsCleared: rowCount });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  list, getOne, create, update, softDelete, forceLogout, unlockLogin, getPermissions, setPermissions,
+};

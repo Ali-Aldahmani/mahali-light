@@ -100,7 +100,7 @@ describe.skipIf(!enabled)('trust boundary on real PostgreSQL', () => {
       },
       vat: { vat_enabled: true, vat_rate: 5 },
       network: { mode: 'server' },
-      admin: { full_name: 'Owner', username: 'owner1', password: 'secret12' },
+      admin: { full_name: 'Owner', username: 'owner1', password: 'copper-lamp-harbor' },
     });
     expect(res.status).toBe(403);
   });

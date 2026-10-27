@@ -34,6 +34,7 @@ import { getCategoryAttributes } from '@/services/categoryService';
 import { toast } from '@/store/toastStore';
 import { cn } from '@/lib/utils/cn';
 import { useBarcodeListener } from '@/hooks/useBarcodeListener';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const SOLD_BY = [
   { value: 'piece', label: 'Piece (whole units)' },
@@ -81,6 +82,7 @@ const EMPTY_SIMPLE = {
 };
 
 function NewProductPageContent() {
+  const createKey = useRequestKey();
   const router = useRouter();
   const tree = useProductStore((s) => s.categoriesTree);
   const fetchCategories = useProductStore((s) => s.fetchCategories);
@@ -309,7 +311,7 @@ function NewProductPageContent() {
         };
       }
 
-      const created = await createProduct(payload);
+      const created = await createProduct(payload, createKey.current());
 
       if (basic.imageFile) {
         try {

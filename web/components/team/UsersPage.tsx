@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Pencil, Plus, Search, Shield, UserCog, UserX } from 'lucide-react';
+import { LockOpen, LogOut, Pencil, Plus, Search, Shield, UserCog, UserX } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -13,7 +13,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PermissionGate from '@/components/ui/PermissionGate';
 import UserFormSlideOver from './UserFormSlideOver';
-import { deactivateUser, forceLogout, listUsers } from '@/services/userService';
+import { deactivateUser, forceLogout, listUsers, unlockLogin } from '@/services/userService';
 import { listRoles } from '@/services/roleService';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
@@ -158,6 +158,24 @@ export default function UsersPage() {
                   hidden: !hasPermission('user.force_logout'),
                   disabled: !row.isOnline || isMe,
                   onClick: () => setConfirm({ type: 'force_logout', user: row }),
+                },
+                {
+                  id: 'unlock',
+                  label: 'Unlock sign-in',
+                  icon: <LockOpen />,
+                  hidden: !hasPermission('user.edit') || isMe,
+                  onClick: async () => {
+                    try {
+                      const res = await unlockLogin(row.id);
+                      toast.success(
+                        res?.lockoutsCleared
+                          ? `${row.username} can sign in again.`
+                          : `${row.username} wasn't locked out.`,
+                      );
+                    } catch (err: any) {
+                      toast.error(err?.message || 'Could not unlock sign-in.');
+                    }
+                  },
                 },
                 {
                   id: 'deactivate',

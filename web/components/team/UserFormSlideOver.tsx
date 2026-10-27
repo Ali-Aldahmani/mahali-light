@@ -81,10 +81,13 @@ export default function UserFormSlideOver({
     } else if (!/^[a-zA-Z0-9_.-]+$/.test(form.username)) {
       errs.username = 'Only letters, numbers, dot, underscore, hyphen.';
     }
-    if (!isEdit && (!form.password || form.password.length < 6)) {
-      errs.password = 'Password must be at least 6 characters.';
-    } else if (isEdit && form.password && form.password.length < 6) {
-      errs.password = 'Password must be at least 6 characters.';
+    // Same minimums as the server (server/utils/password.js): 12 for Admin, 10 otherwise.
+    const roleName = roles.find((r: any) => r.id === form.roleId)?.name;
+    const minLength = String(roleName || '').toLowerCase() === 'admin' ? 12 : 10;
+    if (!isEdit && (!form.password || form.password.length < minLength)) {
+      errs.password = `Password must be at least ${minLength} characters.`;
+    } else if (isEdit && form.password && form.password.length < minLength) {
+      errs.password = `Password must be at least ${minLength} characters.`;
     }
     if (!form.roleId) errs.roleId = 'Select a role.';
     setErrors(errs);
@@ -168,7 +171,7 @@ export default function UserFormSlideOver({
         <Input
           label={isEdit ? 'New password' : 'Password'}
           type="password"
-          placeholder={isEdit ? 'Leave blank to keep current password' : 'Minimum 6 characters'}
+          placeholder={isEdit ? 'Leave blank to keep current password' : 'At least 10 characters (12 for Admin)'}
           required={!isEdit}
           value={form.password}
           onChange={(e: any) => setForm((f) => ({ ...f, password: e.target.value }))}

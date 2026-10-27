@@ -2,8 +2,9 @@ const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { nonNegativeQuantitySchema } = require('../utils/quantity');
 const { logActivity } = require('../utils/activityLog');
-const { applyStockMovement } = require('../services/stockService');
+const { applyStockMovement, lockStockCounts } = require('../services/stockService');
 const { checkReorderThreshold } = require('../services/reorderService');
 const notificationService = require('../services/notificationService');
 
@@ -19,7 +20,7 @@ const itemsSchema = z.object({
     .array(
       z.object({
         id: z.string().uuid(),
-        countedQty: z.number().nullable().optional(),
+        countedQty: nonNegativeQuantitySchema.nullable().optional(),
         notes: z.string().max(500).optional().nullable(),
       }),
     )
@@ -261,6 +262,20 @@ async function create(req, res, next) {
     }
 
     const countId = await withTransaction(async (client) => {
+      // Re-check under the shared lock: the check above is only a fast path.
+      await lockStockCounts(client);
+      const { rows: active } = await client.query(
+        `SELECT id FROM stock_counts
+          WHERE status IN ('draft','in_progress','pending_approval')
+          LIMIT 1`,
+      );
+      if (active.length) {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          'Another stock count is already in progress. Finish it first.',
+          { status: 409, details: { activeCountId: active[0].id } },
+        );
+      }
       const { rows: inserted } = await client.query(
         `INSERT INTO stock_counts
            (count_type, category_id, status, initiated_by, notes, total_products)
@@ -691,34 +706,41 @@ async function reject(req, res, next) {
     const body = rejectSchema.parse(req.body || {});
     const { id } = req.params;
 
-    const { rows } = await query(`SELECT * FROM stock_counts WHERE id = $1`, [id]);
-    if (!rows.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
-    }
-    if (rows[0].status !== 'pending_approval') {
-      throw new AppError(
-        ERROR_CODES.BIZ_INVALID_STATE,
-        `Cannot reject a count in status "${rows[0].status}".`,
-        { status: 409 },
+    // Locked like approve(), so a rejection can't land on a count whose
+    // corrections an approval has already applied.
+    const rows = await withTransaction(async (client) => {
+      const { rows: found } = await client.query(
+        `SELECT * FROM stock_counts WHERE id = $1 FOR UPDATE`, [id],
       );
-    }
+      if (!found.length) {
+        throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      }
+      const { rowCount } = await client.query(
+        `UPDATE stock_counts
+            SET status = 'rejected',
+                approved_by = $1,
+                approved_at = NOW(),
+                rejection_reason = $2
+          WHERE id = $3 AND status = 'pending_approval'`,
+        [req.user.id, body.rejectionReason, id],
+      );
+      if (rowCount !== 1) {
+        throw new AppError(
+          ERROR_CODES.BIZ_INVALID_STATE,
+          `Cannot reject a count in status "${found[0].status}".`,
+          { status: 409 },
+        );
+      }
 
-    await query(
-      `UPDATE stock_counts
-          SET status = 'rejected',
-              approved_by = $1,
-              approved_at = NOW(),
-              rejection_reason = $2
-        WHERE id = $3`,
-      [req.user.id, body.rejectionReason, id],
-    );
-
-    await logActivity({
-      entityType: 'stock_count',
-      entityId: id,
-      action: 'stock.count_rejected',
-      performedBy: req.user.id,
-      notes: body.rejectionReason,
+      await logActivity({
+        entityType: 'stock_count',
+        entityId: id,
+        action: 'stock.count_rejected',
+        performedBy: req.user.id,
+        notes: body.rejectionReason,
+        client,
+      });
+      return found;
     });
 
     const io = req.app.get('io');

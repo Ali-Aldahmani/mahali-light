@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle } from 'lucide-react';
 import Button from './Button';
@@ -13,6 +13,9 @@ export interface ConfirmDialogProps {
   cancelLabel?: string;
   variant?: 'primary' | 'danger';
   loading?: boolean;
+  /** Ask for a written reason; onConfirm then receives the trimmed text. */
+  reasonLabel?: string;
+  reasonMinLength?: number;
 }
 
 export default function ConfirmDialog({
@@ -25,7 +28,15 @@ export default function ConfirmDialog({
   cancelLabel = 'Cancel',
   variant = 'primary',
   loading = false,
+  reasonLabel,
+  reasonMinLength = 5,
 }: ConfirmDialogProps) {
+  const [reason, setReason] = useState('');
+  useEffect(() => {
+    if (open) setReason('');
+  }, [open]);
+  const reasonMissing = !!reasonLabel && reason.trim().length < reasonMinLength;
+
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => e.key === 'Escape' && onClose?.();
@@ -56,11 +67,30 @@ export default function ConfirmDialog({
             )}
           </div>
         </div>
+        {reasonLabel && (
+          <label htmlFor="confirm-dialog-reason" className="mt-4 block text-sm">
+            <span className="text-ink">{reasonLabel}</span>
+            <textarea
+              id="confirm-dialog-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              maxLength={500}
+              rows={3}
+              className="mt-1 w-full rounded-input border border-border px-3 py-2 text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+            />
+            <span className="text-xs text-ink-muted">At least {reasonMinLength} characters.</span>
+          </label>
+        )}
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={loading}>
             {cancelLabel}
           </Button>
-          <Button variant={variant} onClick={onConfirm} loading={loading}>
+          <Button
+            variant={variant}
+            onClick={reasonLabel ? () => onConfirm?.(reason.trim()) : onConfirm}
+            loading={loading}
+            disabled={reasonMissing}
+          >
             {confirmLabel}
           </Button>
         </div>

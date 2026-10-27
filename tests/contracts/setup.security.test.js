@@ -80,7 +80,7 @@ describe('setup POST /complete lifecycle', () => {
     },
     vat: { vat_enabled: true, vat_rate: 5 },
     network: { mode: 'server' },
-    admin: { full_name: 'Owner', username: 'admin', password: 'secret1' },
+    admin: { full_name: 'Owner', username: 'admin', password: 'copper-lamp-harbor' },
   };
 
   function run(body, headers = { 'x-setup-token': 'test-token' }) {

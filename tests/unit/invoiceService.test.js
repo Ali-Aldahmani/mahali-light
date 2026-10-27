@@ -22,6 +22,7 @@ vi.mock('../../server/services/stockService', () => ({
   applyStockMovement: vi.fn(),
   emitDeferred: vi.fn(),
   isVariantUnderActiveCount: vi.fn().mockResolvedValue(false),
+  lockVariants: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('../../server/services/customerService', () => ({
   assertWithinCreditLimit: vi.fn(),

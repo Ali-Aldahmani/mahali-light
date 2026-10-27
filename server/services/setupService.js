@@ -1,4 +1,4 @@
-const bcrypt = require('bcrypt');
+const { hashPassword } = require('../utils/password');
 const { query, withTransaction } = require('../db/postgres');
 const appSettingsService = require('./appSettingsService');
 const cashService = require('./cashService');
@@ -100,7 +100,7 @@ async function completeSetup(payload) {
         [admin.full_name, store?.store_phone || null, store?.store_email || null],
       );
 
-      const hash = await bcrypt.hash(admin.password, 10);
+      const hash = await hashPassword(admin.password);
       const { rows: userRows } = await client.query(
         `INSERT INTO users (username, password_hash, role_id, employee_id, is_active)
          VALUES ($1, $2, $3, $4, true)

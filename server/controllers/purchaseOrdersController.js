@@ -3,6 +3,7 @@ const { todayStoreDate } = require('../utils/dates');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { quantitySchema } = require('../utils/quantity');
 const { logActivity } = require('../utils/activityLog');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
 const {
@@ -19,7 +20,7 @@ const {
 const itemSchema = z.object({
   variantId: z.string().uuid(),
   productId: z.string().uuid(),
-  quantity: z.number().positive(),
+  quantity: quantitySchema,
   costPricePerUnit: z.number().nonnegative(),
   unitLabel: z.string().max(20).optional().nullable(),
 });
@@ -47,7 +48,7 @@ const receiveSchema = z.object({
     .array(
       z.object({
         id: z.string().uuid(),
-        quantityReceived: z.number().positive(),
+        quantityReceived: quantitySchema,
       }),
     )
     .min(1),

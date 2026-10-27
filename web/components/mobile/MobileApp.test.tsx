@@ -495,7 +495,7 @@ describe('add product: details + save', () => {
       unitLabel: 'pcs',
       isActive: true,
       simple: { sellingPrice: 4.5, openingStock: 24, barcode: '6291007029871', sku: null, supplierBarcode: null },
-    });
+    }, expect.any(String));
     expect(useMobileAddProductStore.getState().barcode).toBeNull();
     expect(router.replace).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Back to dashboard' }));
@@ -529,6 +529,9 @@ describe('add product: details + save', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save product' }));
     expect(await screen.findByText(PRODUCT_ADDED_MESSAGE)).toBeInTheDocument();
     expect(createProduct).toHaveBeenCalledTimes(2);
+    // The retry reuses the first attempt's request key, so a save that did
+    // reach the server isn't recorded twice.
+    expect(createProduct.mock.calls[1][1]).toBe(createProduct.mock.calls[0][1]);
   });
 
   it('surfaces a server 403 as a permission error', async () => {

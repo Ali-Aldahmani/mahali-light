@@ -203,7 +203,7 @@ function callLogin(body) {
 describe('authController.login', () => {
   it('returns 200 with a JWT token and sanitised user on valid credentials', async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ fails: 0 }] })   // isLockedOut
+      .mockResolvedValueOnce({ rows: [{ locked: false }] }) // reserveAttempt
       .mockResolvedValueOnce({ rows: [MOCK_USER_ROW] }); // find user
 
     const { status, body } = await callLogin({
@@ -224,7 +224,7 @@ describe('authController.login', () => {
 
   it('returns 401 when the password is wrong', async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ fails: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ locked: false }] })
       .mockResolvedValueOnce({ rows: [MOCK_USER_ROW] });
 
     const { status, body } = await callLogin({
@@ -239,7 +239,7 @@ describe('authController.login', () => {
 
   it('returns 401 when the username does not exist', async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ fails: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ locked: false }] })
       .mockResolvedValueOnce({ rows: [] }); // user not found
 
     const { status, body } = await callLogin({
@@ -253,8 +253,8 @@ describe('authController.login', () => {
   });
 
   it('returns 423 when the account is locked after too many failed attempts', async () => {
-    // MAX_FAILED_ATTEMPTS = 5; fails >= 5 triggers lockout.
-    mockQuery.mockResolvedValueOnce({ rows: [{ fails: 5 }] });
+    // The lockout upsert reports this username and address as locked.
+    mockQuery.mockResolvedValueOnce({ rows: [{ locked: true }] });
 
     const { status, body } = await callLogin({
       username: 'admin',
@@ -266,9 +266,9 @@ describe('authController.login', () => {
     expect(body.error.code).toBe('AUTH_ACCOUNT_LOCKED');
   });
 
-  it('returns 403 when the account is inactive', async () => {
+  it('answers an inactive account like a wrong password (AUTH-08)', async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ fails: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ locked: false }] })
       .mockResolvedValueOnce({ rows: [{ ...MOCK_USER_ROW, is_active: false }] });
 
     const { status, body } = await callLogin({
@@ -277,8 +277,23 @@ describe('authController.login', () => {
       pcIdentifier: 'PC-1',
     });
 
-    expect(status).toBe(403);
-    expect(body.error.code).toBe('AUTH_ACCOUNT_INACTIVE');
+    expect(status).toBe(401);
+    expect(body.error.code).toBe('AUTH_INVALID_CREDENTIALS');
+  });
+
+  it('gives an inactive account with the wrong password the same answer', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ locked: false }] })
+      .mockResolvedValueOnce({ rows: [{ ...MOCK_USER_ROW, is_active: false }] });
+
+    const { status, body } = await callLogin({
+      username: 'admin',
+      password: 'WRONG_PASSWORD',
+      pcIdentifier: 'PC-1',
+    });
+
+    expect(status).toBe(401);
+    expect(body.error.code).toBe('AUTH_INVALID_CREDENTIALS');
   });
 
   it('returns 400 when the password field is missing (Zod validation)', async () => {
@@ -308,7 +323,7 @@ describe('authController.login', () => {
 
   it('succeeds without pcIdentifier (schema defaults to "unknown-pc")', async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ fails: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ locked: false }] })
       .mockResolvedValueOnce({ rows: [MOCK_USER_ROW] });
 
     const { status, body } = await callLogin({

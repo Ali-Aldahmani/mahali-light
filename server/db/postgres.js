@@ -49,18 +49,27 @@ async function query(text, params) {
   return getPool().query(text, params);
 }
 
-async function withTransaction(fn) {
-  const client = await getPool().connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
+const DEADLOCK = '40P01';
+
+// retryOnDeadlock: when PostgreSQL aborts the transaction as a deadlock
+// victim, run the whole callback again (up to 3 attempts). Only for callbacks
+// whose effects are all inside the transaction: no sockets, files or other
+// side effects before COMMIT.
+async function withTransaction(fn, { retryOnDeadlock = false } = {}) {
+  const attempts = retryOnDeadlock ? 3 : 1;
+  for (let attempt = 1; ; attempt += 1) {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      if (err.code !== DEADLOCK || attempt >= attempts) throw err;
+    } finally {
+      client.release();
+    }
   }
 }
 

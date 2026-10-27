@@ -2,7 +2,9 @@ const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { nonNegativeQuantitySchema } = require('../utils/quantity');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce, requestKeyFrom } = require('../utils/operations');
 const {
   generateUniqueInternalBarcode,
   generateUniqueSku,
@@ -25,7 +27,7 @@ const createSchema = z.object({
   supplierBarcode: z.string().max(100).nullable().optional(),
   sellingPrice: z.number().min(0).max(MAX_PRICE).default(0),
   costPrice: z.number().min(0).max(MAX_PRICE).default(0),
-  openingStock: z.number().min(0).max(MAX_QTY).default(0),
+  openingStock: nonNegativeQuantitySchema.default(0),
   reorderThreshold: z.number().min(0).max(MAX_QTY).nullable().optional(),
 });
 
@@ -140,7 +142,14 @@ async function create(req, res, next) {
     if (!internalBarcode)
       internalBarcode = await generateUniqueInternalBarcode(categoryId);
 
-    const variantId = await withTransaction(async (client) => {
+    // Inventory audit INV-008: a retried create returns the first variant
+    // instead of adding a second one with a second opening stock.
+    const { result: { id: variantId }, replayed } = await withTransaction((client) => runOnce(client, {
+      scope: 'variant_create',
+      key: requestKeyFrom(req),
+      userId: req.user.id,
+      payload: { productId: id, ...body },
+    }, async () => {
       const { rows: dupSku } = await client.query(
         `SELECT id FROM product_variants WHERE sku = $1`,
         [sku],
@@ -203,10 +212,11 @@ async function create(req, res, next) {
           skipReorderCheck: true,
         });
       }
-      return rows[0].id;
-    });
+      return { id: rows[0].id };
+    }));
 
     const variant = await loadVariantWithAttributes(variantId, includeCost);
+    if (replayed) return created(res, variant);
     await logActivity({
       entityType: 'variant',
       entityId: variantId,

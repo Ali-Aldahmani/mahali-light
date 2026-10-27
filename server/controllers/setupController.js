@@ -6,6 +6,8 @@ const appSettingsService = require('../services/appSettingsService');
 const setupService = require('../services/setupService');
 const setupTokenService = require('../services/setupTokenService');
 const { logActivity } = require('../utils/activityLog');
+const { assertPasswordAllowed } = require('../utils/password');
+const { SYSTEM_ADMIN_ROLE_NAME } = require('../../shared/authzPolicy');
 
 async function status(_req, res, next) {
   try {
@@ -69,7 +71,7 @@ const completeSchema = z.object({
     .object({
       full_name: z.string().min(1),
       username: z.string().min(3),
-      password: z.string().min(6),
+      password: z.string().min(1).max(200),
     })
     .optional(),
   cash_drawer: z
@@ -112,6 +114,11 @@ async function complete(req, res, next) {
         'Admin account is required for first-time setup.',
         { status: 400 },
       );
+    }
+    if (body.admin) {
+      assertPasswordAllowed(body.admin.password, {
+        roleName: SYSTEM_ADMIN_ROLE_NAME, username: body.admin.username,
+      });
     }
     const settings = await setupService.completeSetup({
       store: body.store,

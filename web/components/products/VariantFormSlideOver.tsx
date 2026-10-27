@@ -13,6 +13,7 @@ import {
   uploadVariantImage,
 } from '@/services/variantService';
 import { toast } from '@/store/toastStore';
+import { useRequestKey } from '@/hooks/useRequestKey';
 
 const EMPTY = {
   attributeValueIds: {} as Record<number, number | undefined>,
@@ -43,6 +44,7 @@ export default function VariantFormSlideOver({
   showCost?: boolean;
 }) {
   const isEdit = Boolean(initialValue?.id);
+  const createKey = useRequestKey(open);
   const [form, setForm] = useState(EMPTY);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -139,7 +141,7 @@ export default function VariantFormSlideOver({
         toast.success('Variant updated.');
       } else {
         payload.openingStock = Number(form.openingStock || 0);
-        savedVariant = await createVariant(product.id, payload);
+        savedVariant = await createVariant(product.id, payload, createKey.current());
         toast.success('Variant added.');
       }
 

@@ -447,7 +447,11 @@ export const usePosStore = create<PosState>()((set, get) => ({
   },
 
   setInvoiceDiscount(amount) {
-    set({ invoiceDiscount: round2(amount) });
+    // The server refuses an invoice discount above the lines' total.
+    set((state) => {
+      const max = round2(state.cart.reduce((s, it) => s + computeLineTotal(it).lineTotal, 0));
+      return { invoiceDiscount: Math.min(Math.max(0, round2(amount)), max) };
+    });
   },
 
   setTaxRate(rate) {

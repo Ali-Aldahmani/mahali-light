@@ -151,6 +151,7 @@ export default function CashierCart(props: CashierCartProps) {
               type="number"
               inputMode="decimal"
               min={0}
+              max={Math.max(0, totals.subtotal - totals.itemDiscount)}
               step="0.01"
               value={invoiceDiscount || ''}
               placeholder="0.00"

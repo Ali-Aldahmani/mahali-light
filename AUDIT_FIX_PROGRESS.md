@@ -1,10 +1,14 @@
 # Audit Fix Progress
 
-**Updated:** 25 October 2026 · **Branch:** `main` · **Full plan:** https://claude.ai/artifact/GHJHoJucC9xjWufhH5RCeM (private — open with the owner's account)
+**Updated:** 27 October 2026 · **Branch:** `main` · **Round 1 plan:** https://claude.ai/artifact/GHJHoJucC9xjWufhH5RCeM · **Round 2 plan:** https://claude.ai/artifact/KfVr2QLQxVURbpcMeeEV21 (both private — open with the owner's account)
 
-This report covers the work done against the nine `*_AUDIT.md` reports in this folder, what was verified, and what is still to do. Read **"Before you deploy"** first.
+This report covers the work done against the `*_AUDIT.md` reports in this folder, what was verified, and what is still to do. Read **"Before you deploy"** first.
 
-**Status:** Phases 0–5 of the plan are done, and so are the findings the phases left open (section 3, "Open findings closed on 26 Oct"). What's left in section 5 is accountant checks, your decisions, and feature work the audits list as missing features.
+**Status:**
+- **Round 1** (the first nine audits): Phases 0–5 are done, and so are the findings the phases left open (section 3, "Open findings closed on 26 Oct").
+- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phase 1 is done (section 3, "Round 2, Phase 1"). Phases 2–8 are in the round 2 plan.
+
+What's left in section 5 is accountant checks, your decisions, feature work the audits list as missing, and round 2 Phases 2–8.
 
 ---
 
@@ -14,7 +18,7 @@ This report covers the work done against the nine `*_AUDIT.md` reports in this f
    ```bash
    docker compose up -d --build express-api nextjs
    ```
-   The API applies the new migrations on start: 039, 040 and 041 (earlier phases), **042** (purchase-order comments), **043** (two new accounts, supplier payment reversal columns), **044** (one open warranty claim), **045** (customer snapshot on invoices), **046** (PO cancellation fields), **047** (database CHECKs and the balanced-journal trigger) and **049** (session last-seen). All are additive (new columns, tables, accounts, permissions, indexes and constraints) and safe on existing data: 044 skips its index if old data already has two open claims on one warranty, and 047's CHECKs are `NOT VALID`, so existing rows can't block the upgrade. (048 belongs to the record-level audit log work, which is separate.) The API refuses to migrate without a successful pre-migration backup. That is on purpose.
+   The API applies the new migrations on start: 039, 040 and 041 (earlier phases), **042** (purchase-order comments), **043** (two new accounts, supplier payment reversal columns), **044** (one open warranty claim), **045** (customer snapshot on invoices), **046** (PO cancellation fields), **047** (database CHECKs and the balanced-journal trigger), **049** (session last-seen) and **050** (one open session per user per PC, login lockout table). All are additive (new columns, tables, accounts, permissions, indexes and constraints) and safe on existing data: 044 skips its index if old data already has two open claims on one warranty, 047's CHECKs are `NOT VALID`, so existing rows can't block the upgrade, and 050 first closes duplicate open sessions on the same PC (keeping the newest), as a new login would have. (048 belongs to the record-level audit log work, which is separate.) The API refuses to migrate without a successful pre-migration backup. That is on purpose.
 2. **Run the reconciliation before and after the deploy** (section 6) and compare with the baseline in section 4. A new difference means stop and investigate.
 3. **Reload every till's browser after the deploy.** Money and stock actions now *require* a request key. A page loaded before the update doesn't send one and gets "This screen is out of date. Reload the page and try again."
 4. **Things staff will notice:**
@@ -36,6 +40,13 @@ This report covers the work done against the nine `*_AUDIT.md` reports in this f
    - The **"allow negative stock" setting** is gone. Selling below zero stock was never actually possible.
    - **Cancelling a PO** keeps it, marked cancelled. A confirmed PO can be cancelled while nothing is received or paid.
    - An **unattended till** now shows as idle in the online list after 5 minutes without input.
+   - **Cancelling a confirmed invoice** asks for a reason (5 to 500 characters).
+   - The **invoice discount** can't be more than the items' total.
+   - **New passwords** need at least 10 characters (12 for Admin), and common ones are refused. Existing passwords keep working until they're next changed.
+   - **Five wrong passwords** lock that username out on that PC for 15 minutes. The person's own till still signs in. **Unlock sign-in** on the Users page clears it early.
+   - An **inactive account** now sees "wrong username or password", like any failed login.
+   - **Stock quantities** with more than two decimals, or part pieces for products sold by the piece, are refused on every stock screen, not only at the till.
+   - An **adjustment can't be applied** to a product while a stock count that covers it is open.
 5. **Accounting choices made in Phase 4. Have your accountant confirm these** (section 3, Phase 4). They decide which accounts the new journal entries hit.
 
 ---
@@ -57,6 +68,9 @@ The plan's phases covered each audit's headline findings. The findings they left
 | Warranty audit | Fixed in Phases 1, 2, 4 and on 26 Oct (F16–F18). Per-unit warranties and the "missing features" list: your decision |
 | User presence & logout audit | Fixed in Phases 1, 5 and on 26 Oct (F08, F11, F16). HTTPS on the LAN (F14/F15): your decision |
 | AI/ML feasibility audit | Not a defect list. No action needed now |
+| Authentication & authorization audit (round 2) | Phase 1 on 27 Oct: AUTH-05 to AUTH-08. Open: AUTH-01 (HTTPS), AUTH-02/03/09 (sessions) in Phase 3; AUTH-04 (live events) in Phase 2 |
+| Inventory integrity audit (round 2) | Phase 1 on 27 Oct: INV-002, INV-004, INV-005, INV-008. Open: INV-001 (FIFO), INV-003 (barcodes), INV-006/007, INV-009 (locations decision), INV-010 |
+| Sales & invoices audit (round 2) | Phase 1 on 27 Oct: SI-01, SI-04, SI-07, SI-08. Open: SI-02 (draft ownership), SI-03 (tenders), SI-05 (database rules), SI-06 (closed drawer) |
 
 ---
 
@@ -123,6 +137,16 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 - **Remaining creates:** POs, supplier returns, return requests, manual journal entries, bills and warranty claims run once per request key; the forms send one.
 - **Presence F08/F11/F16:** heartbeats report real input, and only that counts as activity (idle works); `last_seen_at` (049) tracks the connection for the 30-minute sign-out; open sessions are marked offline at startup until they reconnect; beats that change nothing within 20 seconds aren't written.
 
+### Round 2, Phase 1: races and quick fixes (27 Oct, migration 050)
+- **Rejections can't overwrite approvals (SI-01, INV-002):** rejecting an invoice edit, a stock adjustment or a stock count locks the record and only succeeds while it is still pending, in one transaction with its history and audit entries.
+- **Counts and adjustments don't cross (INV-005):** starting a count and applying an adjustment share one lock and recheck inside it, so two counts can't start together and an adjustment can't land on a product a count has just covered.
+- **Lock order (SI-08):** sales, cancellations and approved edits lock products in id order (`stockService.lockVariants`). These three transactions run again, up to 3 times, if PostgreSQL ends one to break a deadlock (`withTransaction(fn, { retryOnDeadlock: true })`).
+- **Invoice discount cap (SI-04):** a discount above the items' total after line discounts is refused; the till caps the field.
+- **Cancellation reason (SI-07):** required for confirmed invoices (5–500 characters); the cancel dialog asks for it. Abandoning a draft doesn't need one.
+- **One quantity rule (INV-004):** `server/utils/quantity.js` is used by sales, openings, receipts, adjustments, counts and PO lines, and `applyStockMovement` checks it for every stock change. Rounding is now to the columns' two decimals.
+- **Retry-safe product creates (INV-008):** product and variant creation run once per request key; the forms send one.
+- **Login (AUTH-05 to AUTH-08):** each attempt is counted per username and address in one atomic upsert before the password is checked (`login_lockouts`), a success clears it, and an Admin can unlock (`POST /users/:id/unlock-login`, logged). One open session per user per PC, under a lock and a unique index. Passwords: 10 characters (12 for Admin), common ones refused, one bcrypt cost (`server/utils/password.js`). Inactive accounts get the same 401 as a wrong password; the reason goes to the activity log.
+
 ### Other work in this push
 - **Purchase-order discussion** (`8e8f75d`, migration 042): comments, replies and reactions on each PO. Comments can't be edited or deleted, are permission-gated and update live. The thread scrolls and opens on the latest comment.
 - **Notification bell** (`b92f390`): the unread badge shows on page load, and notifications missed while offline are re-read after a reconnect.
@@ -134,7 +158,8 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 ## 4. How it was verified
 
 - Every fix has a test that **fails on the old code and passes on the new** (checked by running the tests with the old files restored).
-- Server: **558 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
+- Server: **574 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
+- Round 2, Phase 1: `auditRound2Phase1` has 15 tests on real PostgreSQL. The race tests hold a lock on a second connection to force the interleaving the audits describe. 14 fail on the old code; the lock-order test also passes there, because PostgreSQL happened to lock in id order already. The UI changes (cancel reason, discount cap, Unlock sign-in) were not checked in the running app.
 - New end-to-end suites: `presenceLifecycle` (real HTTP and Socket.IO server), `treasuryLedger` (runs every treasury movement, then the reconciliation), `receivablesAging`, `warrantyClaims`, `invoiceDraftRules`, `dbConstraints`, `createRetries`. Supplier-return, split-refund, exchange-difference and PO-cancellation tests sit in the existing suites.
 - Web: all tests pass; the TypeScript check is clean. (The web count includes tests of the separate, uncommitted record-level audit log work.)
 - Checked in the running app: login, dashboard, live connection on the right port, online-users list, the bell badge, and sign-out confirmation.
@@ -151,6 +176,9 @@ Phase 4 only fixes movements **from now on**. Both differences above stay in the
 ---
 
 ## 5. What is still to do
+
+### Round 2, Phases 2–8
+See the round 2 plan for details and the decisions each phase needs: live events follow permissions (Phase 2), sessions and HTTPS (3), barcodes, movement costs and reorder alerts (4), draft ownership, tenders and cash control (5), FIFO costing (6), database rules (7), and CI that fails when database tests are skipped (8).
 
 ### Needs your accountant
 - **Confirm the account mapping in Phase 4.** Owner money goes to Owner Equity 3001. Over/short goes to 5015. Warranty replacements go to 5016. If you'd rather use other accounts (for example a separate "Owner Drawings" account), it is a small change in `journalService.TREASURY_CODES`.

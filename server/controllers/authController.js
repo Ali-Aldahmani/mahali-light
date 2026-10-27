@@ -33,16 +33,52 @@ async function recordAttempt({ username, ipAddress, pcIdentifier, success }) {
   );
 }
 
-async function isLockedOut(username) {
+// Authentication audit AUTH-05. Each attempt is counted in one atomic upsert
+// BEFORE the password is checked, so parallel guesses can't all slip under
+// the limit, and a success clears the count. Counting per username AND
+// address means a stranger who knows a username locks out only their own
+// PC, not the person's till. Locked attempts don't extend the lock.
+async function reserveAttempt(username, ipAddress) {
   const { rows } = await query(
-    `SELECT COUNT(*)::int AS fails
-       FROM login_attempts
-      WHERE username = $1
-        AND success = false
-        AND attempted_at > NOW() - make_interval(mins => $2)`,
-    [username, LOCK_WINDOW_MINUTES],
+    `INSERT INTO login_lockouts (username, ip_address, failed_count, window_started_at)
+     VALUES ($1, $2, 1, NOW())
+     ON CONFLICT (username, ip_address) DO UPDATE SET
+       failed_count = CASE
+         WHEN login_lockouts.locked_until > NOW() THEN login_lockouts.failed_count
+         WHEN login_lockouts.locked_until IS NOT NULL
+           OR login_lockouts.window_started_at <= NOW() - make_interval(mins => $3) THEN 1
+         ELSE login_lockouts.failed_count + 1 END,
+       window_started_at = CASE
+         WHEN login_lockouts.locked_until > NOW() THEN login_lockouts.window_started_at
+         WHEN login_lockouts.locked_until IS NOT NULL
+           OR login_lockouts.window_started_at <= NOW() - make_interval(mins => $3) THEN NOW()
+         ELSE login_lockouts.window_started_at END,
+       locked_until = CASE
+         WHEN login_lockouts.locked_until > NOW() THEN login_lockouts.locked_until
+         WHEN login_lockouts.locked_until IS NULL
+           AND login_lockouts.window_started_at > NOW() - make_interval(mins => $3)
+           AND login_lockouts.failed_count + 1 > $4 THEN NOW() + make_interval(mins => $3)
+         ELSE NULL END
+     RETURNING (locked_until IS NOT NULL AND locked_until > NOW()) AS locked`,
+    [username, ipAddress || '', LOCK_WINDOW_MINUTES, MAX_FAILED_ATTEMPTS],
   );
-  return rows[0].fails >= MAX_FAILED_ATTEMPTS;
+  return Boolean(rows[0]?.locked);
+}
+
+async function clearAttempts(username, ipAddress) {
+  await query(
+    `DELETE FROM login_lockouts WHERE username = $1 AND ip_address = $2`,
+    [username, ipAddress || ''],
+  );
+}
+
+// Compared against when the username doesn't exist, so an unknown name takes
+// as long as a wrong password and can't be told apart by timing.
+let dummyHash = null;
+async function compareWithDummy(password) {
+  if (!dummyHash) dummyHash = await bcrypt.hash('not-a-real-password', Number(process.env.BCRYPT_ROUNDS || 12));
+  await bcrypt.compare(password, dummyHash);
+  return false;
 }
 
 async function upsertPcRegistry({ pcIdentifier, hostname, ipAddress }) {
@@ -76,7 +112,7 @@ async function login(req, res, next) {
     const hostname = parsed.hostname || pcIdentifier;
     const ipAddress = clientIp(req);
 
-    if (await isLockedOut(username)) {
+    if (await reserveAttempt(username, ipAddress)) {
       await recordAttempt({ username, ipAddress, pcIdentifier, success: false });
       throw new AppError(ERROR_CODES.AUTH_ACCOUNT_LOCKED, undefined, { status: 423 });
     }
@@ -88,18 +124,24 @@ async function login(req, res, next) {
       [username],
     );
     const userRow = rows[0];
-    if (!userRow) {
+    const passwordOk = userRow
+      ? await bcrypt.compare(password, userRow.password_hash)
+      : await compareWithDummy(password);
+    if (!passwordOk) {
       await recordAttempt({ username, ipAddress, pcIdentifier, success: false });
       throw new AppError(ERROR_CODES.AUTH_INVALID_CREDENTIALS, undefined, { status: 401 });
     }
+    // Authentication audit AUTH-08: an inactive account gets the same answer
+    // as a wrong password, checked only after the password, so the login
+    // screen doesn't reveal which usernames exist. The real reason is logged.
     if (!userRow.is_active) {
       await recordAttempt({ username, ipAddress, pcIdentifier, success: false });
-      throw new AppError(ERROR_CODES.AUTH_ACCOUNT_INACTIVE, undefined, { status: 403 });
-    }
-
-    const ok2 = await bcrypt.compare(password, userRow.password_hash);
-    if (!ok2) {
-      await recordAttempt({ username, ipAddress, pcIdentifier, success: false });
+      await logActivity({
+        entityType: 'user',
+        entityId: userRow.id,
+        action: 'user.login_refused_inactive',
+        notes: `PC ${pcIdentifier} (${ipAddress})`,
+      });
       throw new AppError(ERROR_CODES.AUTH_INVALID_CREDENTIALS, undefined, { status: 401 });
     }
 
@@ -107,6 +149,12 @@ async function login(req, res, next) {
     const token = signToken({ sub: user.id, username: user.username });
 
     const replaced = await withTransaction(async (client) => {
+      // Authentication audit AUTH-07: two logins for the same user on the
+      // same PC queue here, so the second closes the first's session instead
+      // of both inserting (the unique index from migration 050 backs this).
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+        `login:${user.id}:${pcIdentifier}`,
+      ]);
       // Close any session already open for this user on this PC (e.g. a
       // second tab logging in independently, or a crashed session that
       // never called logout) before opening a new one — otherwise both
@@ -138,6 +186,7 @@ async function login(req, res, next) {
     });
 
     await recordAttempt({ username, ipAddress, pcIdentifier, success: true });
+    await clearAttempts(username, ipAddress);
 
     // Attendance auto check-in (Phase 11). Idempotent — only opens a record
     // if one doesn't already exist for the employee today, so multi-PC

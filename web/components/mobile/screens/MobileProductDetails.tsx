@@ -10,6 +10,7 @@ import { buildSimpleProductPayload, isDuplicateBarcodeError } from '@/lib/produc
 import { MOBILE_HOME } from '@/lib/mobile/routePolicy';
 import { useMobileQuery } from '@/hooks/useMobileQuery';
 import { useMobileAddProductStore } from '@/store/mobileAddProductStore';
+import { useRequestKey } from '@/hooks/useRequestKey';
 import MobileFlowHeader from '../MobileFlowHeader';
 import { PERMISSION_DENIED_MESSAGE } from '../MobileStates';
 
@@ -62,6 +63,7 @@ const INPUT =
   'h-12 w-full rounded-[12px] border bg-white px-4 text-[16px] font-medium text-ink placeholder:font-normal placeholder:text-m-hint outline-none focus:border-m-accent disabled:opacity-60';
 
 export default function MobileProductDetails() {
+  const createKey = useRequestKey();
   const router = useRouter();
   const barcode = useMobileAddProductStore((s) => s.barcode);
   const source = useMobileAddProductStore((s) => s.source);
@@ -156,6 +158,7 @@ export default function MobileProductDetails() {
           openingStock: Number(openingStock),
           barcode,
         }),
+        createKey.current(),
       );
       doneRef.current = true;
       setCreated({ name: product?.name || name.trim() });

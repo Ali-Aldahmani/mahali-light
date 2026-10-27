@@ -1,11 +1,12 @@
 import http, { apiDelete, apiGet, apiPost, apiPut, uploadConfig, type UploadOptions } from './http';
+import { withRequestKey } from '@/lib/requestKey';
 
 export function listVariants(productId) {
   return apiGet(`/products/${productId}/variants`);
 }
 
-export function createVariant(productId, payload) {
-  return apiPost(`/products/${productId}/variants`, payload);
+export function createVariant(productId, payload, requestKey?: string) {
+  return apiPost(`/products/${productId}/variants`, payload, withRequestKey(requestKey));
 }
 
 export function updateVariant(productId, variantId, payload) {

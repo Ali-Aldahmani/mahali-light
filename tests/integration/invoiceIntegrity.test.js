@@ -125,13 +125,13 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     await invoices.confirmInvoice({ invoiceId: inv.id, employeeId: userId });
     await db.query('UPDATE bank_accounts SET is_default=false');
     const changed = (await db.query(`INSERT INTO bank_accounts (bank_name,account_name,is_default) VALUES ('New default','Test',true) RETURNING id`)).rows[0];
-    await invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId });
+    await invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId, reason: 'Test cancellation' });
     expect(await cash()).toBe(before);
     expect(await stock(inv.variant.id)).toBe(20);
     for (const id of [bank.id, changed.id]) expect(Number((await db.query('SELECT current_balance FROM bank_accounts WHERE id=$1', [id])).rows[0].current_balance)).toBe(0);
     expect(Number((await db.query('SELECT credit_balance FROM customers WHERE id=$1', [c.id])).rows[0].credit_balance)).toBe(0);
     for (const code of ['1001','1002','1003','4001','5001','1004']) expect(await net(inv.id, code)).toBe(0);
-    await expect(invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId })).rejects.toMatchObject({ code: 'BIZ_INVALID_STATE' });
+    await expect(invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId, reason: 'Test cancellation' })).rejects.toMatchObject({ code: 'BIZ_INVALID_STATE' });
     expect(await cash()).toBe(before);
   });
 
@@ -140,7 +140,7 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     const before = await cash();
     await db.query("UPDATE financial_periods SET status='closed'");
     try {
-      await expect(invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId })).rejects.toMatchObject({ code: 'BIZ_PERIOD_CLOSED' });
+      await expect(invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId, reason: 'Test cancellation' })).rejects.toMatchObject({ code: 'BIZ_PERIOD_CLOSED' });
       expect((await invoice(inv.id)).status).toBe('confirmed');
       expect(await stock(inv.variant.id)).toBe(19);
       expect(await cash()).toBe(before);
@@ -154,7 +154,7 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
       customerId: c.id, invoiceId: inv.id, amount: 100, method: 'cash', employeeId: userId,
     });
     const before = await cash();
-    await expect(invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId })).rejects.toMatchObject({ code: 'BIZ_INVALID_STATE' });
+    await expect(invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId, reason: 'Test cancellation' })).rejects.toMatchObject({ code: 'BIZ_INVALID_STATE' });
     expect(await stock(inv.variant.id)).toBe(19);
     expect((await invoice(inv.id)).status).toBe('confirmed');
     expect(await cash()).toBe(before);
@@ -206,7 +206,7 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     await edit(inv, { items: [{ variant_id: v.id, quantity: 2, unit_price: 50 }] });
     expect(await net(inv.id, '5001')).toBe(130);
     expect(await cash()).toBe(before + 100);
-    await invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId });
+    await invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId, reason: 'Test cancellation' });
     expect(await stock(v.id)).toBe(20);
     expect(await net(inv.id, '5001')).toBe(0);
     expect(await net(inv.id, '4001')).toBe(0);
@@ -342,7 +342,7 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     const results = await Promise.allSettled([returnRequest(inv), returnRequest(inv)]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(results.find((r) => r.status === 'rejected').reason.code).toBe('BIZ_RETURN_QTY_EXCEEDED');
-    await expect(invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId })).rejects.toMatchObject({ code: 'BIZ_INVOICE_LOCKED' });
+    await expect(invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId, reason: 'Test cancellation' })).rejects.toMatchObject({ code: 'BIZ_INVOICE_LOCKED' });
     await expect(edit(inv, { items: [{ variant_id: inv.variant.id, quantity: 1, unit_price: 100 }] })).rejects.toMatchObject({ code: 'BIZ_INVOICE_LOCKED' });
   });
 

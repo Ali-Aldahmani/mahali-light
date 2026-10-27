@@ -111,10 +111,10 @@ export function useInvoiceActions({ onChanged }: { onChanged?: () => void } = {}
       <ConfirmDialog
         open={!!cancelling}
         onClose={() => setCancelling(null)}
-        onConfirm={async (extra: any) => {
+        onConfirm={async (reason?: string) => {
           if (!cancelling) return;
           try {
-            await cancelInvoice(cancelling.id, extra || null);
+            await cancelInvoice(cancelling.id, reason || null);
             toast.success('Invoice cancelled.');
             setCancelling(null);
             onChanged?.();
@@ -126,6 +126,7 @@ export function useInvoiceActions({ onChanged }: { onChanged?: () => void } = {}
         description="Stock will be returned and any credit charge reversed. This cannot be undone."
         confirmLabel="Cancel invoice"
         variant="danger"
+        reasonLabel={cancelling?.status === 'confirmed' ? 'Reason for cancelling' : undefined}
       />
 
       <EditRequestSlideOver
