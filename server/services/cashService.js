@@ -182,6 +182,9 @@ async function postTransactionWith(client, params) {
     employeeId = null,
     notes = null,
     allowAutoOpen = true,
+    // Why the drawer was opened without the usual opening step (shown on
+    // the session); e.g. a manager's override for a cash sale.
+    autoOpenNote = 'Auto-opened by system',
     sessionOverride = null,
   } = params;
 
@@ -212,6 +215,7 @@ async function postTransactionWith(client, params) {
   // flows can't fail an entire sale if the cashier forgot to open the drawer.
   // For those cases (allowAutoOpen) we silently open a session using the
   // current balance, mark it as auto-opened, and continue.
+  let autoOpened = false;
   if (!session && drawer.status !== 'open') {
     if (!allowAutoOpen && transactionType !== 'opening') {
       throw new AppError(ERROR_CODES.BIZ_DRAWER_CLOSED, undefined, {
@@ -225,9 +229,10 @@ async function postTransactionWith(client, params) {
            (cash_drawer_id, opened_by, opening_balance, status, notes)
          VALUES ($1,$2,$3,'open',$4)
          RETURNING *`,
-        [drawer.id, employeeId, opening, 'Auto-opened by system'],
+        [drawer.id, employeeId, opening, autoOpenNote],
       );
       session = sessRows[0];
+      autoOpened = true;
       await client.query(
         `UPDATE cash_drawer
             SET status = 'open',
@@ -289,6 +294,8 @@ async function postTransactionWith(client, params) {
     transaction: txRows[0],
     drawerId: drawer.id,
     sessionId,
+    // True when this posting had to open the drawer itself.
+    autoOpened,
     balanceBefore: before,
     balanceAfter: after,
     delta,

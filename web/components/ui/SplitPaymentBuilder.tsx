@@ -1,14 +1,16 @@
-import { Banknote, Building2, CreditCard, Plus, Trash2 } from 'lucide-react';
+import { Banknote, Building2, CreditCard, Plus, Trash2, UserRound } from 'lucide-react';
 import Button from './Button';
 import Input from './Input';
 import { formatCurrency } from '@/lib/utils/format';
 import ChangeCalculator from './ChangeCalculator';
 import Select from './Select';
+import BankTenderFields, { isBankTender } from '@/components/payments/BankTenderFields';
 
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
-  { value: 'bank', label: 'Bank', Icon: Building2 },
-  { value: 'credit', label: 'Credit', Icon: CreditCard },
+  { value: 'card', label: 'Card', Icon: CreditCard },
+  { value: 'transfer', label: 'Transfer', Icon: Building2 },
+  { value: 'credit', label: 'Credit', Icon: UserRound },
 ];
 
 // Multi-row payment composer used by the Confirm & Pay modal. Each row has a
@@ -47,7 +49,7 @@ export default function SplitPaymentBuilder({
       <div className="space-y-2">
         {payments.length === 0 && (
           <div className="rounded-card border border-dashed border-border bg-surface-2 px-3 py-4 text-sm text-ink-muted text-center">
-            No payments yet — add cash, bank, or credit below.
+            No payments yet — add cash, card, transfer or credit below.
           </div>
         )}
         {payments.map((p) => (
@@ -61,7 +63,7 @@ export default function SplitPaymentBuilder({
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {METHODS.filter(
           (m) =>
             !(m.value === 'credit' && !customerLinked && hideCreditWhenGuest),
@@ -116,7 +118,7 @@ function PaymentRow({ payment, customerLinked, onUpdate, onRemove }) {
   const Icon = meta.Icon;
   const isCredit = payment.method === 'credit';
   return (
-    <div className="flex items-center gap-2 rounded-input border border-border bg-surface p-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-input border border-border bg-surface p-2">
       <div className="flex items-center gap-2 w-32 shrink-0">
         <Icon className="h-4 w-4 text-ink-muted" />
         <Select
@@ -149,6 +151,11 @@ function PaymentRow({ payment, customerLinked, onUpdate, onRemove }) {
         <span className="text-xs text-error w-full pl-2">
           Select a customer to use credit.
         </span>
+      )}
+      {isBankTender(payment.method) && (
+        <div className="w-full">
+          <BankTenderFields payment={payment} onChange={onUpdate} />
+        </div>
       )}
     </div>
   );

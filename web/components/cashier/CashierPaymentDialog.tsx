@@ -1,17 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { Banknote, Building2, CreditCard, Trash2 } from 'lucide-react';
+import { Banknote, Building2, CreditCard, Trash2, UserRound } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import { formatCurrency } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import Select from '@/components/ui/Select';
+import BankTenderFields, { isBankTender } from '@/components/payments/BankTenderFields';
 
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
-  { value: 'bank', label: 'Card / Bank', Icon: Building2 },
-  { value: 'credit', label: 'Customer credit', Icon: CreditCard },
+  { value: 'card', label: 'Card', Icon: CreditCard },
+  { value: 'transfer', label: 'Bank transfer', Icon: Building2 },
+  { value: 'credit', label: 'Customer credit', Icon: UserRound },
 ] as const;
 
 const cents = (n: unknown) => Math.round((Number(n) || 0) * 100);
@@ -47,11 +49,14 @@ export default function CashierPaymentDialog({
   open: boolean;
   total: number;
   customer: any | null;
-  payments: { id: string; method: string; amount: number }[];
+  payments: { id: string; method: string; amount: number; bankAccountId?: string | null; reference?: string | null }[];
   submitting: boolean;
   error: string | null;
   onAdd: (method: string, amount: number) => void;
-  onUpdate: (id: string, patch: { method?: string; amount?: number }) => void;
+  onUpdate: (
+    id: string,
+    patch: { method?: string; amount?: number; bankAccountId?: string | null; reference?: string | null },
+  ) => void;
   onRemove: (id: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
@@ -88,7 +93,9 @@ export default function CashierPaymentDialog({
   const guestBalance = !registered && summary.remaining > 0.001;
   // A fully discounted sale (total 0) is valid: zero-amount payments are
   // skipped and the server confirms it as paid. Only a negative total blocks.
-  const blocked = guestBalance || total < 0;
+  // Card and transfer need the account the money goes to (SI-03).
+  const missingAccount = payments.some((p) => isBankTender(p.method) && Number(p.amount) > 0 && !p.bankAccountId);
+  const blocked = guestBalance || total < 0 || missingAccount;
 
   return (
     <Modal
@@ -140,7 +147,8 @@ export default function CashierPaymentDialog({
           {payments.map((p) => {
             const meta = METHODS.find((m) => m.value === p.method) || METHODS[0];
             return (
-              <li key={p.id} className="flex items-center gap-2">
+              <li key={p.id} className="space-y-2">
+              <div className="flex items-center gap-2">
                 <Select
                   containerClassName="w-40 shrink-0"
                   className="h-12"
@@ -170,12 +178,16 @@ export default function CashierPaymentDialog({
                 >
                   <Trash2 className="h-5 w-5" />
                 </button>
+              </div>
+              {isBankTender(p.method) && (
+                <BankTenderFields payment={p} onChange={(patch) => onUpdate(p.id, patch)} />
+              )}
               </li>
             );
           })}
         </ul>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {METHODS.map(({ value, label, Icon }) => {
             const disabled = value === 'credit' && !registered;
             return (
@@ -206,6 +218,11 @@ export default function CashierPaymentDialog({
         {guestBalance && (
           <p role="alert" className="text-sm font-medium text-error">
             Guest sales must be paid in full. Add payment or select a customer.
+          </p>
+        )}
+        {missingAccount && (
+          <p role="alert" className="text-sm font-medium text-error">
+            Choose the bank account for each card or transfer payment.
           </p>
         )}
         {error && (

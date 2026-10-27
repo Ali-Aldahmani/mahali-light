@@ -538,7 +538,10 @@ async function findStockShortfalls(client, items, { allowNegative = false } = {}
 //
 // Returns { invoice, items, payments, totals } so the caller can emit
 // sockets with the right payload and persist the response.
-async function confirmInvoice({ invoiceId, employeeId, io = null }) {
+// closedDrawerReason: a manager's reason for taking cash while the drawer is
+// closed (sales audit SI-06). Without it, a cash sale needs an open drawer;
+// the caller checks the cash.override_closed_drawer permission.
+async function confirmInvoice({ invoiceId, employeeId, io = null, closedDrawerReason = null }) {
   const result = await withTransaction(async (client) => {
     const { rows: invRows } = await client.query(
       `SELECT * FROM invoices WHERE id = $1 FOR UPDATE`,
@@ -666,7 +669,22 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
           referenceId: invoiceId,
           employeeId,
           notes: `Sale ${invoice.invoice_number}`,
+          // A closed drawer is no longer opened silently for a sale.
+          allowAutoOpen: Boolean(closedDrawerReason),
+          autoOpenNote: closedDrawerReason
+            ? `Opened for cash sale ${invoice.invoice_number} with the drawer closed: ${closedDrawerReason}`
+            : undefined,
         });
+        if (closedDrawerReason && posted.autoOpened) {
+          await logActivity({
+            client,
+            entityType: 'cash_drawer',
+            entityId: posted.drawerId || null,
+            action: 'cash.closed_drawer_override',
+            performedBy: employeeId,
+            notes: `Sale ${invoice.invoice_number}: ${closedDrawerReason}`,
+          });
+        }
         treasuryPostings.push({ method: 'cash', ...posted });
       } else if (pm.method === 'bank') {
         const posted = await bankService.recordBankIn({

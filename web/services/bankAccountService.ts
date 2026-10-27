@@ -22,6 +22,13 @@ export function listBankAccounts({ includeInactive = false } = {}) {
   );
 }
 
+// Accounts a card or transfer payment can go into (names only, no balances).
+export function listPaymentBankAccounts(): Promise<
+  { id: string; bankName: string; accountName: string; isDefault: boolean }[]
+> {
+  return apiGet('/bank-accounts/for-payments');
+}
+
 export function getBankAccount(id) {
   return apiGet(`/bank-accounts/${id}`);
 }

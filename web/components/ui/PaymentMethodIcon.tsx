@@ -4,6 +4,8 @@ const META = {
   cash: { Icon: Banknote, label: 'Cash' },
   bank: { Icon: Building2, label: 'Bank' },
   bank_transfer: { Icon: Building2, label: 'Bank transfer' },
+  transfer: { Icon: Building2, label: 'Bank transfer' },
+  card: { Icon: CreditCard, label: 'Card' },
   cheque: { Icon: FileSpreadsheet, label: 'Cheque' },
   credit: { Icon: CreditCard, label: 'Credit' },
 };

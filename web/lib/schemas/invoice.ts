@@ -38,6 +38,8 @@ export const invoicePaymentSchema = z.object({
   id: z.string(),
   invoiceId: z.string(),
   method: z.string(),
+  tender: z.string().nullable().optional(),
+  reference: z.string().nullable().optional(),
   amount: z.number(),
   bankAccountId: z.string().nullable(),
   employeeId: z.string().nullable(),

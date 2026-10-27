@@ -8,19 +8,59 @@ const {
   assertDraftOwner,
 } = require('../services/invoiceService');
 
+// Sales audit SI-03: card and bank transfer are separate tenders, and both
+// name the bank account the money goes to (no silent default account). They
+// are stored as method 'bank' with tender 'card' / 'transfer', so reports and
+// reversals that read method keep working. 'bank' alone is still accepted
+// from older screens, but also needs an account now.
+const BANK_TENDERS = { card: 'card', transfer: 'transfer', bank: null };
+
 const createSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(128),
-  method: z.enum(['cash', 'bank', 'credit']),
+  method: z.enum(['cash', 'card', 'transfer', 'bank', 'credit']),
   amount: z.number().finite().positive().multipleOf(0.01),
   bankAccountId: z.string().uuid().optional().nullable(),
+  reference: z.string().trim().max(100).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
 });
+
+// The stored form of a requested payment.
+function storedPayment(body) {
+  const isBank = Object.prototype.hasOwnProperty.call(BANK_TENDERS, body.method);
+  return {
+    method: isBank ? 'bank' : body.method,
+    tender: isBank ? BANK_TENDERS[body.method] : null,
+    bankAccountId: isBank ? body.bankAccountId || null : null,
+    reference: isBank ? body.reference || null : null,
+  };
+}
+
+async function assertActiveBankAccount(client, bankAccountId) {
+  if (!bankAccountId) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+      'Choose the bank account for this card or transfer payment.',
+      { status: 400, details: { field: 'bankAccountId' } });
+  }
+  const { rows } = await client.query(
+    `SELECT 1 FROM bank_accounts WHERE id = $1 AND is_active = true`, [bankAccountId],
+  );
+  if (!rows.length) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+      'That bank account is closed or does not exist.',
+      { status: 400, details: { field: 'bankAccountId' } });
+  }
+}
+
+const TENDER_LABELS = { card: 'card', transfer: 'bank transfer' };
 
 function shape(row) {
   return {
     id: row.id,
     invoiceId: row.invoice_id,
     method: row.method,
+    // 'card' or 'transfer' for bank payments taken from now on.
+    tender: row.tender || null,
+    reference: row.reference || null,
     amount: Number(row.amount),
     bankAccountId: row.bank_account_id,
     employeeId: row.employee_id,
@@ -57,6 +97,7 @@ async function create(req, res, next) {
       ...req.body,
       idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
     });
+    const pay = storedPayment(body);
 
     const result = await withTransaction(async (client) => {
       const { rows: invRows } = await client.query(
@@ -75,8 +116,10 @@ async function create(req, res, next) {
       );
       if (existing.length) {
         const payment = existing[0];
-        if (payment.method !== body.method || Number(payment.amount) !== body.amount ||
-            (payment.bank_account_id || null) !== (body.bankAccountId || null) ||
+        if (payment.method !== pay.method || Number(payment.amount) !== body.amount ||
+            (payment.bank_account_id || null) !== pay.bankAccountId ||
+            (payment.tender || null) !== pay.tender ||
+            (payment.reference || null) !== pay.reference ||
             (payment.notes || null) !== (body.notes || null)) {
           throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
             'This payment key was already used with different payment details.', { status: 409 });
@@ -107,20 +150,24 @@ async function create(req, res, next) {
           });
         }
       }
+      if (pay.method === 'bank') await assertActiveBankAccount(client, pay.bankAccountId);
 
       const { rows: insertRows } = await client.query(
         `INSERT INTO invoice_payments
-           (invoice_id, method, amount, bank_account_id, employee_id, notes, idempotency_key)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+           (invoice_id, method, amount, bank_account_id, employee_id, notes, idempotency_key,
+            tender, reference)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          RETURNING id`,
         [
           invoiceId,
-          body.method,
+          pay.method,
           body.amount,
-          body.bankAccountId || null,
+          pay.bankAccountId,
           req.user.id,
           body.notes || null,
           body.idempotencyKey,
+          pay.tender,
+          pay.reference,
         ],
       );
 
@@ -132,8 +179,8 @@ async function create(req, res, next) {
         [
           invoiceId,
           req.user.id,
-          JSON.stringify({ method: body.method, amount: body.amount }),
-          `+${Number(body.amount).toFixed(2)} via ${body.method}`,
+          JSON.stringify({ method: pay.method, tender: pay.tender, amount: body.amount }),
+          `+${Number(body.amount).toFixed(2)} via ${TENDER_LABELS[pay.tender] || pay.method}`,
         ],
       );
 
@@ -154,7 +201,7 @@ async function create(req, res, next) {
       entityId: invoiceId,
       action: 'invoice.payment_added',
       performedBy: req.user.id,
-      newValue: { method: body.method, amount: body.amount },
+      newValue: { method: pay.method, tender: pay.tender, amount: body.amount },
     });
 
     return created(res, shape(result.payment));

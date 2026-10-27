@@ -17,6 +17,20 @@ export interface CheckoutPayment {
   id: string;
   method: string;
   amount: number;
+  bankAccountId?: string | null;
+  reference?: string | null;
+}
+
+// Card and transfer are stored as method 'bank' with a tender (sales audit
+// SI-03). True when a stored payment is the one this allocation describes.
+export function samePayment(want: CheckoutPayment, stored: any): boolean {
+  const bankTender = want.method === 'card' || want.method === 'transfer';
+  const method = bankTender ? 'bank' : want.method;
+  return method === stored.method
+    && (!bankTender || (stored.tender === want.method
+      && (stored.bankAccountId || null) === (want.bankAccountId || null)
+      && (stored.reference || null) === (want.reference || null)))
+    && Math.round(Number(want.amount) * 100) === Math.round(Number(stored.amount) * 100);
 }
 
 export interface CheckoutInput {
@@ -41,7 +55,10 @@ export function prepareCheckout({ totals, cart, payments, customer }: CheckoutIn
     .filter((p) => p.method !== 'cash')
     .reduce((sum, p) => sum + Math.round(Number(p.amount) * 100), 0);
   if (nonCashCents > totalCents) {
-    return { ok: false, message: 'Bank and credit payments cannot exceed the invoice total.' };
+    return { ok: false, message: 'Card, transfer and credit payments cannot exceed the invoice total.' };
+  }
+  if (payments.some((p) => (p.method === 'card' || p.method === 'transfer') && Number(p.amount) > 0 && !p.bankAccountId)) {
+    return { ok: false, message: 'Choose the bank account for each card or transfer payment.' };
   }
   let cashRemaining = totalCents - nonCashCents;
   const allocations = payments.map((p) => {
@@ -161,12 +178,14 @@ export async function submitSale({
   draftInvoiceId = null,
   draftUpdatedAt = null,
   onDraftSaved,
+  closedDrawerReason = null,
 }: {
   draft: SaleDraft;
   allocations: CheckoutPayment[];
   draftInvoiceId?: string | null;
   draftUpdatedAt?: string | null;
   onDraftSaved?: (id: string, invoiceNumber: string | null, updatedAt: string | null) => void;
+  closedDrawerReason?: string | null;
 }): Promise<CompletedSale> {
   // A retry of an attempt that already reached the server: if it actually
   // went through, show that sale instead of trying to edit a confirmed one.
@@ -198,8 +217,7 @@ export async function submitSale({
     const existing = await getInvoicePayments(saved.id);
     for (const p of existing) {
       const want = p.idempotencyKey ? planned.get(p.idempotencyKey) : undefined;
-      const same = want && want.method === p.method
-        && Math.round(Number(want.amount) * 100) === Math.round(Number(p.amount) * 100);
+      const same = want && samePayment(want, p);
       if (!same) await removeInvoicePayment(saved.id, p.id);
     }
   }
@@ -209,9 +227,12 @@ export async function submitSale({
       idempotencyKey: pm.id,
       method: pm.method,
       amount: Number(pm.amount),
+      ...(pm.method === 'card' || pm.method === 'transfer'
+        ? { bankAccountId: pm.bankAccountId || null, reference: pm.reference || null }
+        : {}),
     });
   }
-  const confirmed = await confirmInvoice(saved.id);
+  const confirmed = await confirmInvoice(saved.id, closedDrawerReason);
   return { invoiceId: saved.id, confirmed };
 }
 

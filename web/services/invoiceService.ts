@@ -72,8 +72,10 @@ export function takeOverInvoice(id: string) {
   return apiPost(`/invoices/${id}/take-over`, {});
 }
 
-export async function confirmInvoice(id): Promise<InvoiceConfirmResult> {
-  const data = await apiPost(`/invoices/${id}/confirm`, {});
+// closedDrawerReason: a manager taking cash with the drawer closed (SI-06).
+export async function confirmInvoice(id, closedDrawerReason?: string | null): Promise<InvoiceConfirmResult> {
+  const data = await apiPost(`/invoices/${id}/confirm`,
+    closedDrawerReason ? { closedDrawerOverride: { reason: closedDrawerReason } } : {});
   return validateMoneyResponse(invoiceConfirmSchema, data, `POST /invoices/${id}/confirm`);
 }
 

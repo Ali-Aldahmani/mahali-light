@@ -157,6 +157,7 @@ export default function CashierTerminal() {
   const [resolving, setResolving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const [drawerOverrideOpen, setDrawerOverrideOpen] = useState(false);
   const [holding, setHolding] = useState(false);
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [completed, setCompleted] = useState<CompletedSale | null>(null);
@@ -402,7 +403,7 @@ export default function CashierTerminal() {
     setDialog('pay');
   }, [payBlockedReason]);
 
-  const confirmPay = useCallback(async () => {
+  const confirmPay = useCallback(async (closedDrawerReason?: string | null) => {
     const state = usePosStore.getState();
     const t = computeTotals(state);
     const prep = prepareCheckout({ totals: t, cart: state.cart, payments: state.payments, customer: state.selectedCustomer });
@@ -447,9 +448,17 @@ export default function CashierTerminal() {
         draftInvoiceId: state.draftInvoiceId,
         draftUpdatedAt: state.draftUpdatedAt,
         onDraftSaved: (id, number, updatedAt) => usePosStore.getState().setDraftInvoice(id, number, updatedAt),
+        closedDrawerReason: closedDrawerReason || null,
       });
       finishSale(invoiceId, confirmed);
     } catch (err: any) {
+      // Sales audit SI-06: no cash sale with the drawer closed. A manager
+      // may take the cash anyway, with a reason that is logged.
+      if (err?.code === 'BIZ_DRAWER_CLOSED') {
+        setPayError('The cash drawer is closed. Open it before taking cash, or take the payment by card or transfer.');
+        if (useAuthStore.getState().hasPermission('cash.override_closed_drawer')) setDrawerOverrideOpen(true);
+        return;
+      }
       if (!isConnectionError(err)) {
         setPayError(checkoutErrorMessage(err));
         return;
@@ -814,7 +823,7 @@ export default function CashierTerminal() {
         onUpdate={(id, patch) => usePosStore.getState().updatePayment(id, patch)}
         onRemove={(id) => usePosStore.getState().removePayment(id)}
         onCancel={closeDialog}
-        onConfirm={confirmPay}
+        onConfirm={() => confirmPay()}
       />
 
       <CashierSuccessDialog

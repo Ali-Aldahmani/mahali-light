@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const { todayStoreDate } = require('../utils/dates');
-const { withTransaction } = require('../db/postgres');
+const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
@@ -410,7 +410,25 @@ async function transfer(req, res, next) {
   }
 }
 
+// The accounts a cashier can take a card or transfer payment into (sales
+// audit SI-03). Names only: no balances, so invoice.create is enough.
+async function listForPayments(_req, res, next) {
+  try {
+    const { rows } = await query(
+      `SELECT id, bank_name, account_name, is_default
+         FROM bank_accounts WHERE is_active = true
+        ORDER BY is_default DESC, bank_name, account_name`,
+    );
+    return ok(res, rows.map((r) => ({
+      id: r.id, bankName: r.bank_name, accountName: r.account_name, isDefault: !!r.is_default,
+    })));
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  listForPayments,
   list,
   getOne,
   create,

@@ -7,6 +7,7 @@ const router = express.Router();
 router.use(requireAuth());
 
 router.get('/', requirePermission('bank.view'), ctrl.list);
+router.get('/for-payments', requirePermission('invoice.create'), ctrl.listForPayments);
 router.post('/', requirePermission('bank.transact'), ctrl.create);
 router.get('/:id', requirePermission('bank.view'), ctrl.getOne);
 router.put('/:id', requirePermission('bank.transact'), ctrl.update);

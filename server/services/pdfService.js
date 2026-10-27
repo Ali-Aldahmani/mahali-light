@@ -90,6 +90,14 @@ function loadTemplate(name) {
   return content;
 }
 
+// How a payment reads on paper: "Card" / "Bank transfer" for bank payments
+// with a tender (sales audit SI-03), otherwise the method.
+function tenderLabel(p) {
+  if (p.method === 'bank' && p.tender === 'card') return 'Card';
+  if (p.method === 'bank' && p.tender === 'transfer') return 'Bank transfer';
+  return p.method;
+}
+
 function escapeHtml(str) {
   if (str == null) return '';
   return String(str)
@@ -239,7 +247,7 @@ function renderInvoiceHtml({ invoice, items, payments }, settings) {
         .map(
           (p) => `
             <div class="row">
-              <span>${escapeHtml(p.method)} ${p.notes ? `· ${escapeHtml(p.notes)}` : ''}</span>
+              <span>${escapeHtml(tenderLabel(p))} ${p.notes ? `· ${escapeHtml(p.notes)}` : ''}</span>
               <span>${fmtMoney(p.amount, currency)}</span>
             </div>`,
         )
@@ -436,9 +444,13 @@ async function renderReceiptHtml({ invoice, items, payments }, settings) {
   const cashTotal = payments
     .filter((p) => p.method === 'cash')
     .reduce((s, p) => s + Number(p.amount), 0);
-  const bankTotal = payments
-    .filter((p) => p.method === 'bank')
+  // Card and transfer are bank payments with a tender (sales audit SI-03).
+  const sumTender = (t) => payments
+    .filter((p) => p.method === 'bank' && (p.tender || null) === t)
     .reduce((s, p) => s + Number(p.amount), 0);
+  const cardTotal = sumTender('card');
+  const transferTotal = sumTender('transfer');
+  const bankTotal = sumTender(null);
   const creditTotal = payments
     .filter((p) => p.method === 'credit')
     .reduce((s, p) => s + Number(p.amount), 0);
@@ -449,6 +461,14 @@ async function renderReceiptHtml({ invoice, items, payments }, settings) {
   if (cashTotal > 0)
     paymentLines.push(
       `<div class="totals-row"><span>Cash</span><span>${fmtMoney(cashTotal, currency)}</span></div>`,
+    );
+  if (cardTotal > 0)
+    paymentLines.push(
+      `<div class="totals-row"><span>Card</span><span>${fmtMoney(cardTotal, currency)}</span></div>`,
+    );
+  if (transferTotal > 0)
+    paymentLines.push(
+      `<div class="totals-row"><span>Bank transfer</span><span>${fmtMoney(transferTotal, currency)}</span></div>`,
     );
   if (bankTotal > 0)
     paymentLines.push(

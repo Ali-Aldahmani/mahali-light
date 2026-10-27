@@ -48,6 +48,7 @@ import DaysRemainingBadge from '@/components/ui/DaysRemainingBadge';
 import ActionButtons from '@/components/ui/ActionButtons';
 import AuditLogButton from '@/components/audit/AuditLogButton';
 import { useInvoiceActions } from '@/components/invoices/useInvoiceActions';
+import BankTenderFields, { isBankTender } from '@/components/payments/BankTenderFields';
 import CustomerHoverName from '@/components/customers/CustomerHoverName';
 
 export default function InvoiceDetailPage() {
@@ -389,7 +390,7 @@ function PaymentsSection({
             key: 'method',
             header: 'Method',
             render: (r: any) => (
-              <PaymentMethodIcon method={r.method} />
+              <PaymentMethodIcon method={r.tender || r.method} />
             ),
           },
           {
@@ -678,6 +679,7 @@ function AddPaymentSlideOver({
   const balance = Number(invoice?.balanceDue || 0);
   const [amount, setAmount] = useState<any>(balance);
   const [method, setMethod] = useState('cash');
+  const [bank, setBank] = useState<{ bankAccountId?: string | null; reference?: string | null }>({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -685,6 +687,7 @@ function AddPaymentSlideOver({
     if (open) {
       setAmount(balance);
       setMethod('cash');
+      setBank({});
       setNotes('');
       setSaving(false);
     }
@@ -696,6 +699,10 @@ function AddPaymentSlideOver({
       toast.warning('Enter an amount greater than zero.');
       return;
     }
+    if (isBankTender(method) && !bank.bankAccountId) {
+      toast.warning('Choose the bank account for this payment.');
+      return;
+    }
     setSaving(true);
     try {
       paymentKey.current ||= `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -704,6 +711,7 @@ function AddPaymentSlideOver({
         method,
         amount: amt,
         notes: notes || null,
+        ...(isBankTender(method) ? { bankAccountId: bank.bankAccountId, reference: bank.reference || null } : {}),
       });
       paymentKey.current = null;
       toast.success('Payment recorded.');
@@ -751,8 +759,8 @@ function AddPaymentSlideOver({
           <label className="text-sm font-medium text-ink mb-1.5 block">
             Method
           </label>
-          <div className="grid grid-cols-3 gap-2">
-            {['cash', 'bank', 'credit'].map((m) => {
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {['cash', 'card', 'transfer', 'credit'].map((m) => {
               const active = method === m;
               const disabled = m === 'credit' && !invoice.customerId;
               return (
@@ -769,7 +777,7 @@ function AddPaymentSlideOver({
                     disabled && 'opacity-40 cursor-not-allowed',
                   ].join(' ')}
                 >
-                  {m}
+                  {m === 'transfer' ? 'Bank transfer' : m}
                 </button>
               );
             })}
@@ -778,6 +786,14 @@ function AddPaymentSlideOver({
             <p className="text-xs text-ink-muted mt-1">
               Credit unavailable on guest sales.
             </p>
+          )}
+          {isBankTender(method) && (
+            <div className="mt-2">
+              <BankTenderFields
+                payment={{ id: 'invoice-payment', ...bank }}
+                onChange={(patch) => setBank((b) => ({ ...b, ...patch }))}
+              />
+            </div>
           )}
         </div>
         <div>

@@ -629,10 +629,27 @@ async function confirm(req, res, next) {
   try {
     const { id } = req.params;
     const io = req.app.get('io');
+    // Sales audit SI-06: taking cash with the drawer closed is a manager's
+    // decision, with a reason; it is logged as a cash-control exception.
+    const override = req.body?.closedDrawerOverride;
+    let closedDrawerReason = null;
+    if (override) {
+      const perms = req.user?.permissions || [];
+      if (!perms.includes('cash.override_closed_drawer') && !perms.includes('*')) {
+        throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION,
+          'Only a manager can take cash with the drawer closed.', { status: 403 });
+      }
+      closedDrawerReason = String(override.reason || '').trim();
+      if (closedDrawerReason.length < 5 || closedDrawerReason.length > 500) {
+        throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+          'Give a reason for taking cash with the drawer closed (5 to 500 characters).', { status: 400 });
+      }
+    }
     const result = await confirmInvoice({
       invoiceId: id,
       employeeId: req.user.id,
       io,
+      closedDrawerReason,
     });
 
     const { rows } = await query(`${INVOICE_SELECT} WHERE i.id = $1`, [id]);
