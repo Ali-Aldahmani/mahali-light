@@ -5,7 +5,7 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 
 FROM node:22-bookworm-slim AS build
-ARG NEXT_PUBLIC_EXPRESS_PORT=3000
+ARG NEXT_PUBLIC_EXPRESS_PORT=
 WORKDIR /repo
 COPY --from=deps /repo/web/node_modules ./web/node_modules
 COPY web ./web

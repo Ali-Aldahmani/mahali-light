@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Bug, Keyboard, Settings } from 'lucide-react';
+import { Bug, Keyboard, LogOut, Settings } from 'lucide-react';
 import { UserMenu } from '@/components/ui/user-menu';
 import { RoleBadge } from '@/components/ui/Badge';
 import { useAuthStore } from '@/store/authStore';
@@ -9,7 +9,7 @@ import { useSocketStore } from '@/store/socketStore';
 import { useUiErrorStore } from '@/store/uiErrorStore';
 import { useQuickActionStore } from '@/store/quickActionStore';
 import { getMe } from '@/services/authService';
-import { useSignOut } from '@/hooks/useSignOut';
+import { useSignOut, useSignOutEverywhere } from '@/hooks/useSignOut';
 
 /**
  * The account menu in the top-right of the header: username, the person's
@@ -22,6 +22,7 @@ export default function HeaderUserMenu() {
   const openShortcuts = useQuickActionStore((s) => s.openShortcuts);
   const openSettings = useQuickActionStore((s) => s.openSettings);
   const handleSignOut = useSignOut();
+  const handleSignOutEverywhere = useSignOutEverywhere();
 
   // Sessions saved before the server sent full_name don't have it yet; fetch once.
   const missingName = !!user && user.full_name === undefined;
@@ -61,6 +62,11 @@ export default function HeaderUserMenu() {
           icon: <Bug size={16} strokeWidth={1.75} />,
           keys: ['Ctrl', 'Shift', 'B'],
           onSelect: openBugReport,
+        },
+        {
+          label: 'Sign out all my devices',
+          icon: <LogOut size={16} strokeWidth={1.75} />,
+          onSelect: handleSignOutEverywhere,
         },
       ]}
       onSignOut={handleSignOut}

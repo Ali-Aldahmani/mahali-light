@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import SessionKeeper from './SessionKeeper';
 
 /**
  * Client-side auth boundary. Express remains the authorization authority —
@@ -22,5 +23,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [token, user, router, pathname]);
 
   if (!token || !user) return null;
-  return <>{children}</>;
+  return (
+    <>
+      <SessionKeeper />
+      {children}
+    </>
+  );
 }

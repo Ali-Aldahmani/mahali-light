@@ -1,16 +1,17 @@
 # Bytecra POS — Docker notes
 
-Canonical shop setup is the **root README.md**. Stack: `postgres`, `express-api`, `nextjs`. Optional ML profile `fastapi`.
+Canonical shop setup is the **root README.md**. Stack: `postgres`, `express-api`, `nextjs`, `web-tls` (Caddy, the HTTPS front door). Optional ML profile `fastapi`.
 
 The `api` service was renamed to `express-api`. Electron is not required for tills.
 
 ```text
 Server PC (static LAN IP)
   Docker
-    ├── nextjs       (web UI, WEB_PORT → 80)
-    ├── express-api  (Node 22, API + Socket.io, API_PORT → 3000)
+    ├── web-tls      (Caddy: HTTPS on WEB_TLS_PORT → 443; WEB_PORT → 80 redirects)
+    ├── nextjs       (web UI, reached through web-tls only)
+    ├── express-api  (Node 22, API + Socket.io; API_PORT → 3000 on 127.0.0.1 only)
     └── postgres     (not published to the LAN)
-Browsers  ──LAN──►  http://SERVER_IP
+Browsers  ──LAN──►  https://SERVER_IP
 ```
 
 ---
@@ -33,7 +34,7 @@ Do not run Docker on a till-only PC. Do not containerize Electron.
 | Node | 22 (same as CI) |
 | Start command | `node server/index.js` (`npm run server`) |
 | API listen port | `PORT` (Compose forces **3000** inside the container) |
-| LAN publish | `API_PORT` on the Windows host (default 3000) |
+| LAN publish | Only `web-tls`: 443 (HTTPS) and 80 (redirect). `API_PORT` is published on 127.0.0.1 for scripts |
 | Database | PostgreSQL 16; API uses `PGHOST` / `PGPORT` / `PGUSER` / `PGPASSWORD` / `PGDATABASE` (`DATABASE_URL` is **not** read by the app) |
 | Migrations | `npm run migrate` → `node server/db/migrate.js` (idempotent `_migrations` table). **The API also runs migrations on every boot** — that is existing application behaviour, not a Docker invention. |
 | Health | `GET /api/health` |
@@ -66,9 +67,9 @@ Set **all** of these (do not leave `CHANGE_ME` / `REPLACE_ME`):
 | `POSTGRES_PASSWORD` | Strong password for the Docker Postgres user |
 | `POSTGRES_USER` | e.g. `mahali` |
 | `POSTGRES_DB` | e.g. `mahali_light` |
-| `API_PORT` | Host port tills use (usually `3000`) |
-| `SERVER_IP` | This PC’s LAN IP, e.g. `192.168.1.100` |
-| `SERVER_USE_HTTPS` | `true` recommended for multi-PC LAN |
+| `API_PORT` | API port on this PC only (usually `3000`) |
+| `SERVER_IP` | This PC’s LAN IP, e.g. `192.168.1.100`. Set it **before** the first start: the HTTPS certificate is made for it |
+| `SERVER_USE_HTTPS` | Keep `false`: Caddy terminates HTTPS |
 
 Generate secrets:
 
@@ -81,15 +82,16 @@ Leave `PGHOST=localhost` in `.env` if you still use PM2 on another machine. Comp
 
 `.env` is gitignored. Never copy it into the image.
 
-### 2. Firewall (LAN API only)
+### 2. Firewall (HTTPS only)
 
-Administrator PowerShell (use the same number as `API_PORT`):
+Administrator PowerShell:
 
 ```powershell
-New-NetFirewallRule -DisplayName "Bytecra POS API" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+New-NetFirewallRule -DisplayName "Bytecra POS HTTPS" -Direction Inbound -Protocol TCP -LocalPort 443,80 -Action Allow
 ```
 
-Do **not** open 5432.
+Do **not** open 3000 or 5432. If an older install opened 3000, remove that rule:
+`Remove-NetFirewallRule -DisplayName "Bytecra POS API"`.
 
 ### 3. Build and start
 
@@ -125,11 +127,9 @@ Both services should be **healthy**. From the server PC:
 
 ```powershell
 Invoke-WebRequest -Uri "http://127.0.0.1:3000/api/health" -UseBasicParsing
-# If SERVER_USE_HTTPS=true:
-Invoke-WebRequest -Uri "https://127.0.0.1:3000/api/health" -UseBasicParsing -SkipCertificateCheck
 ```
 
-From another till, use the LAN IP, not `localhost`.
+Then trust the shop certificate on every till and phone, and open `https://SERVER_IP`: [docs/HTTPS_SETUP.md](../docs/HTTPS_SETUP.md).
 
 ---
 
@@ -156,28 +156,17 @@ docker compose build nextjs
 docker compose up -d nextjs
 ```
 
-Open the till in a browser at **`http://SERVER_IP`** (or your `WEB_PORT`), not `:3000` — port **3000** is the API only. Hard-refresh once (**Ctrl+Shift+R**) to bypass cached JS.
+Open the till in a browser at **`https://SERVER_IP`**. Port **3000** answers this PC only. Hard-refresh once (**Ctrl+Shift+R**) to bypass cached JS.
 
 **Never** use `docker compose down -v` in normal operations. `-v` deletes `postgres_data` and the API volumes.
 
 ---
 
-## HTTPS (Node, not Docker)
+## HTTPS
 
-TLS is handled **inside** the API container (`server/utils/tlsCert.js`):
+The `web-tls` service (Caddy) is the only way in from the LAN. It serves the web app, the API and live updates on `https://SERVER_IP` with a self-signed certificate it creates on first start, and redirects plain HTTP. The API refuses plain-HTTP requests from other machines (`REQUIRE_HTTPS`, on in production).
 
-1. `SERVER_USE_HTTPS=true` and `SERVER_IP=<LAN IP>` in `.env`
-2. On first start, OpenSSL in the image writes `cert.pem` / `key.pem` into the `api_tls` volume (`/data/tls`)
-3. That certificate is **self-signed**. Windows POS clients must set `"serverUseHttps": true` in `%APPDATA%\BytecraPOS\appConfig.json`. Electron already allows this cert **only** for the configured server IP.
-
-Trust implication: tills trust that IP’s self-signed cert via the app, not via Windows Certificate Store. Replace with company PEMs if required:
-
-```env
-TLS_CERT_FILE=/data/tls/cert.pem
-TLS_KEY_FILE=/data/tls/key.pem
-```
-
-Mount your files into `api_tls` or add a bind mount. Docker does not sit in front as a reverse proxy.
+Each till and phone trusts the certificate once: [docs/HTTPS_SETUP.md](../docs/HTTPS_SETUP.md). That guide also covers a changed IP and using the shop's own certificate.
 
 ---
 
@@ -193,7 +182,7 @@ Do not use `localhost` on a client till.
 {
   "mode": "client",
   "serverIp": "192.168.1.100",
-  "serverPort": 3000,
+  "serverPort": 443,
   "serverUseHttps": true,
   "pcIdentifier": "POS-2"
 }
@@ -271,7 +260,7 @@ A backup is not production-ready until you have **run this restore once on a tes
 4. docker compose run --rm express-api npm run migrate
 5. docker compose up -d
 6. docker compose ps   (postgres, express-api, nextjs healthy)
-7. Hit /api/health on :API_PORT and open http://SERVER_IP for the POS
+7. Hit http://127.0.0.1:API_PORT/api/health on the server and open https://SERVER_IP for the POS
 8. Login + one sale on two PCs (Ctrl+Shift+R on each till if the UI looks stale)
 ```
 
@@ -290,9 +279,9 @@ A backup is not production-ready until you have **run this restore once on a tes
 [ ] API container healthy
 [ ] PostgreSQL container healthy
 [ ] Database migrations completed
-[ ] API reachable from LAN (not only localhost)
+[ ] https://SERVER_IP opens with a padlock on every till and phone (docs/HTTPS_SETUP.md)
 [ ] PostgreSQL not published (no host :5432)
-[ ] Firewall allows API_PORT only
+[ ] Firewall allows 443 and 80 only (not 3000)
 [ ] Backup tested
 [ ] Restore tested
 [ ] POS client connection tested
@@ -312,8 +301,9 @@ A backup is not production-ready until you have **run this restore once on a tes
 | `POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env` | Add `POSTGRES_PASSWORD` to `.env` |
 | API: JWT_SECRET too short / placeholder | Production refuses weak secrets |
 | API: connection refused postgres | Wait for `postgres` healthy; do not set `PGHOST=localhost` inside Compose (Compose already overrides) |
-| Healthcheck failing with HTTPS | Confirm API logs show TLS enabled; healthcheck accepts self-signed |
-| Clients timeout | Firewall, wrong `API_PORT`, `SERVER_USE_HTTPS` vs client `serverUseHttps` |
+| Clients timeout | Firewall must allow 443 and 80; tills must use `https://SERVER_IP` |
+| "This connection isn't secure. Open the POS at https://…" | The till used an old `http://SERVER_IP:3000` link; use `https://SERVER_IP` |
+| "Your connection isn't private" | That device doesn't trust the shop certificate yet: docs/HTTPS_SETUP.md |
 | `down -v` by mistake | Restore from backup; the database volume is gone |
 
 PM2 path: if you are not using Docker, ignore this file and use `docs/SETUP_GUIDE.md` / `docs/SHOP_MULTI_PC.md`.

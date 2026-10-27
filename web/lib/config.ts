@@ -56,9 +56,11 @@ export function getSocketUrl(): string {
   if (isBrowserWebClient() && typeof window !== 'undefined') {
     const explicit = envPublic('NEXT_PUBLIC_SOCKET_URL', '');
     if (explicit) return explicit.replace(/\/$/, '');
-    const port = envPublic('NEXT_PUBLIC_EXPRESS_PORT', '3000');
-    const { protocol, hostname } = window.location;
-    return `${protocol}//${hostname}:${port}`;
+    // In Docker the page, the API and live updates share one HTTPS address
+    // (Caddy). Local development sets the API's own port instead.
+    const port = envPublic('NEXT_PUBLIC_EXPRESS_PORT', '');
+    const { protocol, hostname, origin } = window.location;
+    return port ? `${protocol}//${hostname}:${port}` : origin;
   }
   return resolveOrigin();
 }

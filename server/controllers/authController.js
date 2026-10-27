@@ -1,7 +1,8 @@
 const bcrypt = require('bcrypt');
 const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
-const { signToken, loadUserContext, hashToken } = require('../middleware/auth');
+const { signToken, loadUserContext, hashToken, tokenSecondsUntil } = require('../middleware/auth');
+const { SESSION_MAX_HOURS, IDLE_SIGNOUT_MINUTES } = require('../services/sessionPolicy');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { ok } = require('../utils/response');
 const { logActivity } = require('../utils/activityLog');
@@ -147,6 +148,7 @@ async function login(req, res, next) {
 
     const user = await loadUserContext(userRow.id);
     const token = signToken({ sub: user.id, username: user.username });
+    const sessionExpiresAt = new Date(Date.now() + SESSION_MAX_HOURS * 3600 * 1000);
 
     const replaced = await withTransaction(async (client) => {
       // Authentication audit AUTH-07: two logins for the same user on the
@@ -169,9 +171,9 @@ async function login(req, res, next) {
       );
       await client.query(
         `INSERT INTO user_sessions
-           (user_id, pc_identifier, ip_address, token_hash, status)
-         VALUES ($1,$2,$3,$4,'online')`,
-        [user.id, pcIdentifier, ipAddress, hashToken(token)],
+           (user_id, pc_identifier, ip_address, token_hash, status, absolute_expires_at)
+         VALUES ($1,$2,$3,$4,'online',$5)`,
+        [user.id, pcIdentifier, ipAddress, hashToken(token), sessionExpiresAt],
       );
       await client.query(
         `INSERT INTO pc_registry (pc_identifier, hostname, ip_address, last_seen)
@@ -228,7 +230,9 @@ async function login(req, res, next) {
     });
     await presenceService.publishUserPresence(io, user.id);
 
-    return ok(res, { token, user: sanitizeUser(user) });
+    return ok(res, {
+      token, user: sanitizeUser(user), sessionExpiresAt, idleSignOutMinutes: IDLE_SIGNOUT_MINUTES,
+    });
   } catch (err) {
     next(err);
   }
@@ -291,19 +295,55 @@ async function logout(req, res, next) {
   }
 }
 
+// "Sign out all my devices" (authentication audit AUTH-09): closes every open
+// session of the signed-in user, this one included, and cuts their sockets.
+// The way back when a till's sign-out never reached the server.
+async function logoutAll(req, res, next) {
+  try {
+    const io = req.app.get('io');
+    const sessions = await presenceService.revokeUserSessions(io, {
+      userId: req.user.id,
+      logoutType: 'manual_all',
+      reason: 'Signed out from all devices',
+    });
+    if (req.user.employee_id) {
+      await attendanceService.checkOutSafe({
+        employeeId: req.user.employee_id, method: 'app_logout', userId: req.user.id, io,
+      });
+    }
+    await logActivity({
+      entityType: 'user',
+      entityId: req.user.id,
+      action: 'user.logout_all',
+      performedBy: req.user.id,
+      notes: `Closed ${sessions.length} session(s)`,
+    });
+    return ok(res, { loggedOut: true, sessionsClosed: sessions.length });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Swap the token for a new one (authentication audit AUTH-02). The session's
+// maximum length doesn't move, the new token never outlives it, and the old
+// token keeps working for one minute for requests already on their way.
+// Refreshing isn't activity: it doesn't hold off the idle sign-out.
 async function refresh(req, res, next) {
   try {
     const user = await loadUserContext(req.user.id);
-    const token = signToken({ sub: user.id, username: user.username });
+    const token = signToken(
+      { sub: user.id, username: user.username },
+      { expiresIn: tokenSecondsUntil(req.sessionExpiresAt) },
+    );
 
     await query(
       `UPDATE user_sessions
-          SET token_hash = $1, last_activity_at = NOW()
-        WHERE id = $2`,
+          SET previous_token_hash = token_hash, token_rotated_at = NOW(), token_hash = $1
+        WHERE id = $2 AND logout_at IS NULL`,
       [hashToken(token), req.sessionId],
     );
 
-    return ok(res, { token, user: sanitizeUser(user) });
+    return ok(res, { token, user: sanitizeUser(user), sessionExpiresAt: req.sessionExpiresAt });
   } catch (err) {
     next(err);
   }
@@ -321,4 +361,4 @@ async function me(req, res, next) {
   }
 }
 
-module.exports = { login, logout, refresh, me };
+module.exports = { login, logout, logoutAll, refresh, me };

@@ -19,6 +19,7 @@ const { run: runSeed } = require('./db/seed');
 const { run: runSeedProducts } = require('./db/seedProducts');
 const { run: runSeedSettings } = require('./db/seedSettings');
 const { attachSocket } = require('./socket');
+const { requireSecureTransport, secureTransportRequired } = require('./middleware/secureTransport');
 const { createFilesRouter } = require('./routes/files');
 
 const authRouter = require('./routes/auth');
@@ -199,10 +200,15 @@ async function bootstrap() {
       '[server] \x1b[33m⚠  WARNING\x1b[0m SERVER_USE_HTTPS=true but no certificate could be loaded — ' +
       'falling back to plain HTTP.  Check TLS_CERT_FILE / TLS_KEY_FILE or ensure openssl is in PATH.',
     );
+  } else if (secureTransportRequired()) {
+    console.log(
+      '[server] Plain HTTP inside the server only: requests from other machines must arrive ' +
+      'through the HTTPS front door (Caddy, TRUSTED_PROXIES). Others are refused.',
+    );
   } else if (process.env.NODE_ENV === 'production') {
     console.warn(
-      '[server] \x1b[33m⚠  WARNING\x1b[0m Plain HTTP is active.  ' +
-      'For LAN deployments set SERVER_USE_HTTPS=true so passwords and tokens are encrypted in transit.',
+      '[server] \x1b[33m⚠  WARNING\x1b[0m REQUIRE_HTTPS=false: passwords and tokens can cross the ' +
+      'network unencrypted. Use the HTTPS front door for any multi-PC shop.',
     );
   }
 
@@ -213,7 +219,10 @@ async function bootstrap() {
   //   • CORS_ORIGINS list — comma-separated explicit origins from the env.
   const allowedOrigins = extraOrigins();
 
-  const io = attachSocket(server, allowedOrigins);
+  const io = attachSocket(server, allowedOrigins, {
+    requireSecure: secureTransportRequired(),
+    trustProxy: () => app.get('trust proxy fn'),
+  });
   app.set('io', io);
 
   // Security headers via helmet.
@@ -264,6 +273,9 @@ async function bootstrap() {
       credentials: true,
     }),
   );
+  // Plain HTTP from another machine is refused in production (AUTH-01):
+  // tills come in through the HTTPS front door. See middleware/secureTransport.js.
+  app.use(requireSecureTransport());
   app.use(compression());
   app.use(express.json({ limit: '2mb' }));
   app.use(requestId);

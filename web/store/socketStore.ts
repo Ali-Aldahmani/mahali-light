@@ -114,9 +114,13 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
     if (get().socket) return get().socket;
     const token = useAuthStore.getState().token;
     if (!token) return null;
+    // The session this socket belongs to. Its token is refreshed every half
+    // hour; a reconnect uses whatever token is current (auth callback below).
+    const sessionKey = useAuthStore.getState().sessionKey;
+    const sameSession = () => useAuthStore.getState().sessionKey === sessionKey && !!useAuthStore.getState().token;
 
     const socket = io(getSocketUrl(), {
-      auth: { token },
+      auth: (cb) => cb({ token: useAuthStore.getState().token }),
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -153,7 +157,7 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       // rebuilt) and when it ends a session. Socket.IO does not reconnect
       // after a server-side cut, so do it here: a live session comes straight
       // back, an ended one is refused and handled by connect_error below.
-      if (reason === 'io server disconnect' && useAuthStore.getState().token === token) {
+      if (reason === 'io server disconnect' && sameSession()) {
         socket.connect();
       }
     });
@@ -164,7 +168,7 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
         // session has since been replaced by a newer login, that new
         // session is a different one — a stale rejection of this old
         // socket's handshake must not clear it.
-        if (useAuthStore.getState().token !== token) return;
+        if (!sameSession()) return;
         toast.error('Session expired. Please sign in again.');
         useAuthStore.getState().logoutLocal();
       }

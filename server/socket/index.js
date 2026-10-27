@@ -1,18 +1,18 @@
 const { Server } = require('socket.io');
 const { verifyToken, hashToken, loadUserContext } = require('../middleware/auth');
 const { query } = require('../db/postgres');
-const attendanceService = require('../services/attendanceService');
 const { isAllowedOrigin } = require('../utils/corsOrigins');
 const presenceService = require('../services/presenceService');
+const sessionPolicy = require('../services/sessionPolicy');
 const { permissionRooms } = require('./events');
+const { isSecureHandshake } = require('../middleware/secureTransport');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
-const TIMEOUT_LOGOUT_MS = 30 * 60 * 1000;
 
 // allowedOrigins is the same Set used by the Express CORS middleware so both
 // the HTTP and WebSocket upgrade paths enforce the same origin policy.
-function attachSocket(httpServer, allowedOrigins = new Set()) {
+function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = false, trustProxy = () => null } = {}) {
   const io = new Server(httpServer, {
     cors: {
       origin: (origin, cb) => {
@@ -38,6 +38,11 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
   // Authenticate the socket via JWT in handshake.auth.token.
   io.use(async (socket, next) => {
     try {
+      // Same rule as the HTTP API (middleware/secureTransport.js): the token
+      // in this handshake must not have crossed the network in plain text.
+      if (requireSecure && !isSecureHandshake(socket, trustProxy())) {
+        return next(new Error('HTTPS_REQUIRED'));
+      }
       // Auth token must come from the handshake auth payload, never the
       // query string — query params get written to access/proxy logs.
       const token = socket.handshake.auth && socket.handshake.auth.token;
@@ -53,6 +58,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
            LEFT JOIN roles r ON r.id = u.role_id
            LEFT JOIN employees e ON e.id = u.employee_id
           WHERE s.token_hash = $1 AND s.logout_at IS NULL AND u.is_active
+            AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW())
           ORDER BY s.login_at DESC LIMIT 1`,
         [hashToken(token)],
       );
@@ -71,7 +77,6 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       socket.data.role = rows[0].role_name;
       socket.data.sessionId = rows[0].session_id;
       socket.data.pcIdentifier = rows[0].pc_identifier;
-      socket.data.tokenExpMs = payload.exp ? payload.exp * 1000 : null;
 
       next();
     } catch (err) {
@@ -97,7 +102,9 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       socket.join(presenceService.OBSERVERS_ROOM);
     }
 
-    socket.emit('connected', { userId, username, role });
+    socket.emit('connected', {
+      userId, username, role, idleSignOutMinutes: sessionPolicy.IDLE_SIGNOUT_MINUTES,
+    });
 
     // A (re)connect is activity: mark the session online straight away
     // rather than at the next heartbeat, then tell the viewers.
@@ -109,9 +116,11 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       .then(() => presenceService.publishUserPresence(io, userId))
       .catch(() => {});
 
-    // A heartbeat only refreshes a session that is still open and a token
-    // that has not expired; otherwise the socket is cut, so a closed session
-    // can never be brought back to "online" by a client that kept running.
+    // A heartbeat only refreshes a session that is still open and within its
+    // maximum length; otherwise the socket is cut, so a closed session can
+    // never be brought back to "online" by a client that kept running. The
+    // socket outlives token refreshes: it belongs to the session, which the
+    // handshake checked.
     //
     // `active` says whether the screen saw real input since the last beat
     // (presence audit F08): only then is it activity that keeps the user
@@ -121,10 +130,6 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
     // many open tabs don't each write every beat (F16).
     socket.on('heartbeat', async (payload) => {
       try {
-        if (socket.data.tokenExpMs && Date.now() >= socket.data.tokenExpMs) {
-          socket.disconnect(true);
-          return;
-        }
         const active = payload?.active !== false;
         const { rows: live } = await query(
           `UPDATE user_sessions s
@@ -133,6 +138,7 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
                   status = CASE WHEN $2 THEN 'online' ELSE s.status END
              FROM user_sessions prev
             WHERE s.id = $1 AND prev.id = s.id AND s.logout_at IS NULL
+              AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW())
               AND (s.last_seen_at IS NULL OR s.last_seen_at < NOW() - INTERVAL '20 seconds'
                    OR ($2 AND s.status <> 'online'))
             RETURNING prev.status AS previous_status`,
@@ -141,7 +147,8 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
         if (!live.length) {
           // Either throttled, or the session is closed: only the latter cuts.
           const { rows: open } = await query(
-            `SELECT 1 FROM user_sessions WHERE id = $1 AND logout_at IS NULL`,
+            `SELECT 1 FROM user_sessions WHERE id = $1 AND logout_at IS NULL
+                AND (absolute_expires_at IS NULL OR absolute_expires_at > NOW())`,
             [sessionId],
           );
           if (!open.length) socket.disconnect(true);
@@ -218,56 +225,10 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
     });
   });
 
-  // Idle-timeout sweeper — sessions inactive past TIMEOUT_LOGOUT_MS get a
-  // hard logout AND an attendance check-out with method='timeout'. This is
-  // the safety net for users who close their app without signing out.
-  // The UPDATE re-checks the cutoff itself, so a heartbeat landing after
-  // the session was picked can't be logged out by a stale selection.
-  setInterval(async () => {
-    try {
-      const cutoffMin = Math.floor(TIMEOUT_LOGOUT_MS / 60000);
-      const { rows } = await query(
-        `UPDATE user_sessions s
-            SET logout_at = NOW(),
-                logout_type = 'timeout',
-                status = 'offline'
-           FROM users u
-          WHERE u.id = s.user_id
-            AND s.logout_at IS NULL
-            AND COALESCE(s.last_seen_at, s.last_activity_at) < NOW() - make_interval(mins => $1)
-          RETURNING s.id, s.user_id, u.employee_id`,
-        [cutoffMin],
-      );
-      presenceService.disconnectSessions(io, rows.map((r) => r.id), {
-        reason: 'Signed out after inactivity',
-      });
-      for (const r of rows) {
-        if (r.employee_id) {
-          // Only close attendance if this was the last live session for
-          // the employee — multi-PC users stay checked in.
-          const { rows: liveRows } = await query(
-            `SELECT 1 FROM user_sessions s
-               JOIN users u ON u.id = s.user_id
-              WHERE u.employee_id = $1 AND s.logout_at IS NULL
-              LIMIT 1`,
-            [r.employee_id],
-          );
-          if (!liveRows.length) {
-            await attendanceService.checkOutSafe({
-              employeeId: r.employee_id,
-              method: 'timeout',
-              userId: r.user_id,
-              io,
-            });
-          }
-        }
-      }
-      for (const userId of new Set(rows.map((r) => r.user_id))) {
-        await presenceService.publishUserPresence(io, userId);
-      }
-    } catch (err) {
-      // ignore — best-effort
-    }
+  // Sign-out sweeper: idle tills, closed screens and sessions past their
+  // maximum length (services/sessionPolicy.js).
+  setInterval(() => {
+    sessionPolicy.sweepSessions(io).catch(() => {});
   }, IDLE_CHECK_INTERVAL_MS).unref();
 
   // Periodic idle sweeper. Same conditional UPDATE, so newer activity is

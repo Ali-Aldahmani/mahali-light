@@ -11,16 +11,17 @@ import { useSocketStore } from '@/store/socketStore';
 // Dedicated full-screen shell for Cashier Mode: same session, same API and
 // permissions as Admin Mode, but none of the admin navigation.
 function CashierShell({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore((s) => s.token);
+  // The session, not the token: a token refresh mustn't reconnect the socket.
+  const sessionKey = useAuthStore((s) => s.sessionKey);
   const connect = useSocketStore((s) => s.connect);
   const disconnect = useSocketStore((s) => s.disconnect);
 
   useEffect(() => {
-    if (!token) return undefined;
+    if (!sessionKey) return undefined;
     connect();
     return () => disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [sessionKey]);
 
   return (
     <GlobalErrorShell>

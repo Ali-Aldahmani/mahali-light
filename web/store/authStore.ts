@@ -15,6 +15,8 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: null,
       permissions: [],
+      sessionKey: null,
+      idleSignOutMinutes: 15,
 
       isAuthenticated: () => Boolean(get().token && get().user),
 
@@ -28,17 +30,21 @@ export const useAuthStore = create<AuthState>()(
         return keys.some((k) => owned.has(k));
       },
 
-      setSession: ({ token, user }) => {
+      setSession: ({ token, user, idleSignOutMinutes }) => {
         set({
           token,
           user,
           permissions: user?.permissions || [],
+          sessionKey: `${user?.id || 'user'}:${Date.now()}`,
+          idleSignOutMinutes: Number.isFinite(idleSignOutMinutes) ? Number(idleSignOutMinutes) : 15,
         });
       },
 
+      setToken: (token) => set({ token }),
+
       setUser: (user) => set({ user, permissions: user?.permissions || [] }),
 
-      logoutLocal: () => set({ user: null, token: null, permissions: [] }),
+      logoutLocal: () => set({ user: null, token: null, permissions: [], sessionKey: null }),
     }),
     {
       name: STORAGE_KEY,
@@ -47,10 +53,19 @@ export const useAuthStore = create<AuthState>()(
       // localStorage would survive app restarts, which is a security risk for
       // a shared POS terminal where different employees use the same machine.
       storage: createJSONStorage(() => sessionStorage),
+      // A session saved by an older build has no sessionKey; give it one so
+      // its screens still connect after the update.
+      merge: (persisted: any, current) => {
+        const merged = { ...current, ...(persisted || {}) };
+        if (merged.token && !merged.sessionKey) merged.sessionKey = `${merged.user?.id || 'user'}:restored`;
+        return merged;
+      },
       partialize: (state) => ({
         user: state.user,
         token: state.token,
         permissions: state.permissions,
+        sessionKey: state.sessionKey,
+        idleSignOutMinutes: state.idleSignOutMinutes,
       }),
     },
   ),

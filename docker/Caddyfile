@@ -3,7 +3,25 @@
 	auto_https off
 }
 
+# Plain HTTP only redirects (authentication audit AUTH-01): passwords and
+# sign-in tokens never cross the shop network unencrypted.
+:80 {
+	redir https://{host}{uri} permanent
+}
+
+# One HTTPS address for everything. The API, files and live updates go
+# straight to Express, which trusts this container's X-Forwarded-For and
+# X-Forwarded-Proto (TRUSTED_PROXIES=web-tls). Caddy ignores those headers
+# when a browser sends them, so a till can't fake its address.
 :443 {
 	tls /certs/cert.pem /certs/key.pem
-	reverse_proxy nextjs:3000
+
+	@api path /api/* /files/* /socket.io/*
+	handle @api {
+		reverse_proxy express-api:3000
+	}
+
+	handle {
+		reverse_proxy nextjs:3000
+	}
 }

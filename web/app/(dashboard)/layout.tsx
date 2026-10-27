@@ -103,7 +103,8 @@ const TITLES: Record<string, string> = {
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [helpOpen, setHelpOpen] = useState(false);
-  const token = useAuthStore((s) => s.token);
+  // The session, not the token: a token refresh mustn't reconnect the socket.
+  const sessionKey = useAuthStore((s) => s.sessionKey);
   const fetchAppSettings = useAppSettingsStore((s) => s.fetchPublic);
   useKeyboardShortcuts({ onToggleHelp: () => setHelpOpen((v) => !v) });
   const permissions = useAuthStore((s) => s.user?.permissions || []);
@@ -132,7 +133,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const fetchMaintenance = useBackupStore((s) => s.fetchMaintenance);
 
   useEffect(() => {
-    if (!token) return undefined;
+    if (!sessionKey) return undefined;
     connect();
     const hasStock = permissions.includes('stock.view') || permissions.includes('*');
     if (hasStock) {
@@ -246,7 +247,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [sessionKey]);
 
   const title = useMemo(() => {
     const match = Object.keys(TITLES)

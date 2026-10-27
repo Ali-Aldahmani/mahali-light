@@ -17,9 +17,26 @@ function getJwtSecret() {
 // Every token gets a random ID (jti). Without it two logins by the same user
 // in the same second produced identical tokens, whose identical hashes then
 // collided on user_sessions.token_hash.
+//
+// A token lasts 30 minutes (ACCESS_TOKEN_TTL); the app swaps it for a new one
+// before then, up to the session's maximum length (authentication audit
+// AUTH-02). JWT_EXPIRES_IN is no longer read: an 8-hour token copied from a
+// till stayed usable long after the person left.
+const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '30m';
+
+// Seconds a new token lasts, capped so it never outlives its session's
+// maximum length.
+function tokenSecondsUntil(sessionExpiresAt) {
+  const m = /^(d+)s*([smh]?)$/.exec(String(ACCESS_TOKEN_TTL).trim());
+  const ttl = m ? Number(m[1]) * ({ s: 1, m: 60, h: 3600 }[m[2]] || 1) : 1800;
+  if (!sessionExpiresAt) return ttl;
+  const left = Math.floor((new Date(sessionExpiresAt).getTime() - Date.now()) / 1000);
+  return Math.max(1, Math.min(ttl, left));
+}
+
 function signToken(payload, opts = {}) {
   return jwt.sign(payload, getJwtSecret(), {
-    expiresIn: process.env.JWT_EXPIRES_IN || '8h',
+    expiresIn: ACCESS_TOKEN_TTL,
     jwtid: crypto.randomUUID(),
     ...opts,
   });
@@ -74,6 +91,22 @@ async function loadUserContext(userId) {
   return user;
 }
 
+// The session a token belongs to: its current token, or the one it replaced
+// within the last minute (a request already on its way during a refresh).
+async function findSessionByToken(token) {
+  const hash = hashToken(token);
+  const { rows } = await query(
+    `SELECT id, logout_at, status, absolute_expires_at,
+            (absolute_expires_at IS NOT NULL AND absolute_expires_at <= NOW()) AS past_max_length
+       FROM user_sessions
+      WHERE token_hash = $1
+         OR (previous_token_hash = $1 AND token_rotated_at > NOW() - INTERVAL '1 minute')
+      ORDER BY login_at DESC LIMIT 1`,
+    [hash],
+  );
+  return rows;
+}
+
 function requireAuth() {
   return async (req, _res, next) => {
     try {
@@ -101,12 +134,8 @@ function requireAuth() {
 
       // Confirm session is still active. Look up by hash — the plaintext
       // token is never stored in the database (see migration 020_token_hash).
-      const { rows: sess } = await query(
-        `SELECT id, logout_at, status FROM user_sessions
-          WHERE token_hash = $1 ORDER BY login_at DESC LIMIT 1`,
-        [hashToken(token)],
-      );
-      if (!sess.length || sess[0].logout_at) {
+      const sess = await findSessionByToken(token);
+      if (!sess.length || sess[0].logout_at || sess[0].past_max_length) {
         return next(
           new AppError(ERROR_CODES.AUTH_SESSION_EXPIRED, undefined, { status: 401 }),
         );
@@ -127,11 +156,23 @@ function requireAuth() {
       req.user = user;
       req.token = token;
       req.sessionId = sess[0].id;
-
-      // Touch last_activity_at; best-effort.
-      query('UPDATE user_sessions SET last_activity_at = NOW() WHERE id = $1', [
-        sess[0].id,
-      ]).catch(() => {});
+      req.sessionExpiresAt = sess[0].absolute_expires_at;
+      // Only real input on the screen counts as activity (authentication
+      // audit AUTH-03), or background requests would keep an unattended till
+      // signed in. The app says so with X-User-Active on the first request
+      // after input; screens without a live connection (the phone app)
+      // depend on it. Writes are skipped within 20 seconds of the last one.
+      const active = req.headers['x-user-active'] === '1';
+      query(
+        `UPDATE user_sessions
+            SET last_seen_at = NOW(),
+                last_activity_at = CASE WHEN $2 THEN NOW() ELSE last_activity_at END,
+                status = CASE WHEN $2 THEN 'online' ELSE status END
+          WHERE id = $1 AND logout_at IS NULL
+            AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '20 seconds'
+                 OR ($2 AND last_activity_at < NOW() - INTERVAL '20 seconds'))`,
+        [sess[0].id, active],
+      ).catch(() => {});
 
       next();
     } catch (err) {
@@ -140,4 +181,6 @@ function requireAuth() {
   };
 }
 
-module.exports = { requireAuth, signToken, verifyToken, loadUserContext, hashToken };
+module.exports = {
+  requireAuth, signToken, verifyToken, loadUserContext, hashToken, findSessionByToken, tokenSecondsUntil,
+};

@@ -5,6 +5,7 @@ import { useOfflineStore } from '@/store/offlineStore';
 import { useUiErrorStore } from '@/store/uiErrorStore';
 import { toast } from '@/store/toastStore';
 import { addBreadcrumb } from './breadcrumbService';
+import { takeInputForRequest } from '@/lib/auth/activity';
 
 const APP_VERSION = '1.10.0';
 
@@ -43,6 +44,9 @@ http.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   config.headers = config.headers || ({} as AxiosRequestHeaders);
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // The first request after keyboard/mouse/touch input says someone is using
+  // this screen, which holds off the idle sign-out (lib/auth/activity.ts).
+  if (token && takeInputForRequest()) config.headers['X-User-Active'] = '1';
 
   const electron = typeof window !== 'undefined' ? window.electron : null;
   config.headers['X-PC-Identifier'] = electron?.pcIdentifier || PC_IDENTIFIER;

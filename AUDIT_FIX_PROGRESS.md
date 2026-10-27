@@ -6,7 +6,7 @@ This report covers the work done against the `*_AUDIT.md` reports in this folder
 
 **Status:**
 - **Round 1** (the first nine audits): Phases 0–5 are done, and so are the findings the phases left open (section 3, "Open findings closed on 26 Oct").
-- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phases 1 and 2 are done (section 3, "Round 2, Phase 1" and "Round 2, Phase 2"). Phases 3–8 are in the round 2 plan.
+- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phases 1–3 are done (section 3, "Round 2, Phase 1" to "Round 2, Phase 3"). Phases 4–8 are in the round 2 plan.
 
 What's left in section 5 is accountant checks, your decisions, feature work the audits list as missing, and round 2 Phases 2–8.
 
@@ -16,12 +16,13 @@ What's left in section 5 is accountant checks, your decisions, feature work the 
 
 1. **Back up first, then rebuild Docker.** The shop runs in Docker (`bytecrapos-*`). Code changes only take effect after:
    ```bash
-   docker compose up -d --build express-api nextjs
+   docker compose up -d --build
    ```
-   The API applies the new migrations on start: 039, 040 and 041 (earlier phases), **042** (purchase-order comments), **043** (two new accounts, supplier payment reversal columns), **044** (one open warranty claim), **045** (customer snapshot on invoices), **046** (PO cancellation fields), **047** (database CHECKs and the balanced-journal trigger), **049** (session last-seen) and **050** (one open session per user per PC, login lockout table). All are additive (new columns, tables, accounts, permissions, indexes and constraints) and safe on existing data: 044 skips its index if old data already has two open claims on one warranty, 047's CHECKs are `NOT VALID`, so existing rows can't block the upgrade, and 050 first closes duplicate open sessions on the same PC (keeping the newest), as a new login would have. (048 belongs to the record-level audit log work, which is separate.) The API refuses to migrate without a successful pre-migration backup. That is on purpose.
+   The API applies the new migrations on start: 039, 040 and 041 (earlier phases), **042** (purchase-order comments), **043** (two new accounts, supplier payment reversal columns), **044** (one open warranty claim), **045** (customer snapshot on invoices), **046** (PO cancellation fields), **047** (database CHECKs and the balanced-journal trigger), **049** (session last-seen), **050** (one open session per user per PC, login lockout table) and **051** (session maximum length, token rotation). All are additive (new columns, tables, accounts, permissions, indexes and constraints) and safe on existing data: 044 skips its index if old data already has two open claims on one warranty, 047's CHECKs are `NOT VALID`, so existing rows can't block the upgrade, 050 first closes duplicate open sessions on the same PC (keeping the newest), as a new login would have, and 051 gives open sessions their sign-in time plus 12 hours. (048 belongs to the record-level audit log work, which is separate.) The API refuses to migrate without a successful pre-migration backup. That is on purpose.
 2. **Run the reconciliation before and after the deploy** (section 6) and compare with the baseline in section 4. A new difference means stop and investigate.
-3. **Reload every till's browser after the deploy.** Money and stock actions now *require* a request key. A page loaded before the update doesn't send one and gets "This screen is out of date. Reload the page and try again."
-4. **Things staff will notice:**
+3. **Switch every till and phone to HTTPS (round 2, Phase 3).** Set `SERVER_IP` in `.env` before rebuilding. In the Windows firewall allow 443 and 80 and remove the old rule for 3000. Trust the shop certificate on each device and change every bookmark to `https://SERVER_IP`: [docs/HTTPS_SETUP.md](docs/HTTPS_SETUP.md). Port 3000 now answers the server PC only, and the API refuses plain HTTP from other machines.
+4. **Reload every till's browser after the deploy.** Money and stock actions now *require* a request key. A page loaded before the update doesn't send one and gets "This screen is out of date. Reload the page and try again."
+5. **Things staff will notice:**
    - Paying a supplier in cash needs the cash drawer **opened first**.
    - A sale whose serial number is already under an active warranty is **blocked**.
    - Cashiers can create warranties but **can't edit or void** them (Manager and Admin only).
@@ -48,7 +49,11 @@ What's left in section 5 is accountant checks, your decisions, feature work the 
    - **Stock quantities** with more than two decimals, or part pieces for products sold by the piece, are refused on every stock screen, not only at the till.
    - An **adjustment can't be applied** to a product while a stock count that covers it is open.
    - **Live updates follow each person's permissions.** Cashiers now see drawer, customer-balance and invoice updates live (they could already open those pages). A user denied a permission, and roles without it (for example Warehouse for cash and invoices), no longer get those updates. Custom roles get the updates for the permissions they have.
-5. **Accounting choices made in Phase 4. Have your accountant confirm these** (section 3, Phase 4). They decide which accounts the new journal entries hit.
+   - **The POS address is `https://SERVER_IP`.** Plain http redirects there.
+   - **A screen with no keyboard, mouse or touch input for 15 minutes signs out,** with a one-minute warning first. A closed screen still signs out after 30 minutes.
+   - **Everyone signs in again 12 hours after signing in,** however busy the till is (about once a shift).
+   - **"Sign out all my devices"** in the account menu closes the person's sessions on every PC and phone.
+6. **Accounting choices made in Phase 4. Have your accountant confirm these** (section 3, Phase 4). They decide which accounts the new journal entries hit.
 
 ---
 
@@ -67,9 +72,9 @@ The plan's phases covered each audit's headline findings. The findings they left
 | Transaction atomicity audit | Fixed in Phase 2 and on 26 Oct (database constraints, TXA-011). FIFO: your decision |
 | Invoice financial integrity audit | Fixed in Phases 1–4 and on 26 Oct (F11, F13, F14, F21, F23, F24). FIFO, serial ownership (F18) and per-invoice settlement (F20): decisions / feature work |
 | Warranty audit | Fixed in Phases 1, 2, 4 and on 26 Oct (F16–F18). Per-unit warranties and the "missing features" list: your decision |
-| User presence & logout audit | Fixed in Phases 1, 5 and on 26 Oct (F08, F11, F16). HTTPS on the LAN (F14/F15): your decision |
+| User presence & logout audit | Fixed in Phases 1, 5 and on 26 Oct (F08, F11, F16). HTTPS on the LAN (F14/F15): round 2, Phase 3 on 27 Oct |
 | AI/ML feasibility audit | Not a defect list. No action needed now |
-| Authentication & authorization audit (round 2) | Phase 1 on 27 Oct: AUTH-05 to AUTH-08. Phase 2 on 27 Oct: AUTH-04. Open: AUTH-01 (HTTPS), AUTH-02/03/09 (sessions) in Phase 3 |
+| Authentication & authorization audit (round 2) | Phase 1 on 27 Oct: AUTH-05 to AUTH-08. Phase 2 on 27 Oct: AUTH-04. Phase 3 on 27 Oct: AUTH-01, AUTH-02, AUTH-03, AUTH-09. All findings closed |
 | Inventory integrity audit (round 2) | Phase 1 on 27 Oct: INV-002, INV-004, INV-005, INV-008. Open: INV-001 (FIFO), INV-003 (barcodes), INV-006/007, INV-009 (locations decision), INV-010 |
 | Sales & invoices audit (round 2) | Phase 1 on 27 Oct: SI-01, SI-04, SI-07, SI-08. Open: SI-02 (draft ownership), SI-03 (tenders), SI-05 (database rules), SI-06 (closed drawer) |
 
@@ -154,6 +159,12 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 - Restore notices still reach every screen, because a restore restarts the server. The role room is kept only so a role's permission change can drop its users' sockets; no event is sent to it.
 - `liveEvents.contract` fails the build on a new direct send to everyone or to a role room, or on an event without an audience.
 
+### Round 2, Phase 3: sessions and HTTPS (27 Oct, migration 051)
+- **HTTPS (AUTH-01, presence F14/F15):** Caddy (`web-tls`) is the only way in from the LAN. It serves the web app, the API, files and live updates on `https://SERVER_IP` and redirects port 80. The API port is published on 127.0.0.1 only and the web container isn't published. In production the API refuses plain-HTTP requests and socket handshakes from other machines unless they came through a trusted proxy over HTTPS (`server/middleware/secureTransport.js`, `REQUIRE_HTTPS`). Local calls (health check, scripts) still work. Device setup: [docs/HTTPS_SETUP.md](docs/HTTPS_SETUP.md).
+- **Idle sign-out (AUTH-03):** a session with no keyboard, mouse or touch input for 15 minutes (`IDLE_SIGNOUT_MINUTES`) is closed by the server sweep (`server/services/sessionPolicy.js`). Ordinary API requests no longer count as activity; the first request after input carries `X-User-Active`, so the phone screens without a live connection work too. The screen warns a minute before and signs itself out at the limit (`SessionKeeper`).
+- **Session length (AUTH-02):** a session ends 12 hours after sign-in (`absolute_expires_at`, `SESSION_MAX_HOURS`). Tokens last 30 minutes (`ACCESS_TOKEN_TTL`; `JWT_EXPIRES_IN` is no longer read) and the app refreshes them two minutes early. A refresh never extends the session or counts as activity, the new token never outlives the session, and the old one works for one more minute. Live connections belong to the session and survive refreshes.
+- **Sign-out that didn't reach the server (AUTH-09):** the app retries every 15 seconds while the page is open, holding the old token in memory only. New "Sign out all my devices" (`POST /auth/logout-all`).
+
 ### Other work in this push
 - **Purchase-order discussion** (`8e8f75d`, migration 042): comments, replies and reactions on each PO. Comments can't be edited or deleted, are permission-gated and update live. The thread scrolls and opens on the latest comment.
 - **Notification bell** (`b92f390`): the unread badge shows on page load, and notifications missed while offline are re-read after a reconnect.
@@ -165,9 +176,10 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 ## 4. How it was verified
 
 - Every fix has a test that **fails on the old code and passes on the new** (checked by running the tests with the old files restored).
-- Server: **582 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
+- Server: **591 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
 - Round 2, Phase 1: `auditRound2Phase1` has 15 tests on real PostgreSQL. The race tests hold a lock on a second connection to force the interleaving the audits describe. 14 fail on the old code; the lock-order test also passes there, because PostgreSQL happened to lock in id order already. The UI changes (cancel reason, discount cap, Unlock sign-in) were not checked in the running app.
 - Round 2, Phase 2: `liveEventAudience` runs a real Socket.IO server: a Manager denied `cash.view`, a custom role with only `cash.view`, Warehouse and Admin; stock updates on the till and in the store room; an edit decision reaching the requester once; a permission change on reconnect. All four fail on the old code. Live updates were not checked in the running app.
+- Round 2, Phase 3: `sessionLifetime` runs a real HTTP and Socket.IO server: idle, closed-screen and maximum-length sign-out, activity only from input, token rotation with the one-minute overlap, a connection outliving its first token, sign-out on all devices, and plain HTTP and plain-HTTP sockets refused. 6 of 9 fail on the old code; the other 3 call the new sweep and HTTPS check directly. New web tests cover refresh timing, the idle warning and sign-out, activity reporting and the sign-out retry. Caddy validates the new config and Compose publishes only 80 and 443 to the LAN, but the full Docker stack was not built and run end to end.
 - New end-to-end suites: `presenceLifecycle` (real HTTP and Socket.IO server), `treasuryLedger` (runs every treasury movement, then the reconciliation), `receivablesAging`, `warrantyClaims`, `invoiceDraftRules`, `dbConstraints`, `createRetries`. Supplier-return, split-refund, exchange-difference and PO-cancellation tests sit in the existing suites.
 - Web: all tests pass; the TypeScript check is clean. (The web count includes tests of the separate, uncommitted record-level audit log work.)
 - Checked in the running app: login, dashboard, live connection on the right port, online-users list, the bell badge, and sign-out confirmation.
@@ -185,8 +197,8 @@ Phase 4 only fixes movements **from now on**. Both differences above stay in the
 
 ## 5. What is still to do
 
-### Round 2, Phases 3–8
-See the round 2 plan for details and the decisions each phase needs: sessions and HTTPS (Phase 3), barcodes, movement costs and reorder alerts (4), draft ownership, tenders and cash control (5), FIFO costing (6), database rules (7), and CI that fails when database tests are skipped (8).
+### Round 2, Phases 4–8
+See the round 2 plan for details and the decisions each phase needs: barcodes, movement costs and reorder alerts (Phase 4), draft ownership, tenders and cash control (5), FIFO costing (6), database rules (7), and CI that fails when database tests are skipped (8).
 
 ### Needs your accountant
 - **Confirm the account mapping in Phase 4.** Owner money goes to Owner Equity 3001. Over/short goes to 5015. Warranty replacements go to 5016. If you'd rather use other accounts (for example a separate "Owner Drawings" account), it is a small change in `journalService.TREASURY_CODES`.
@@ -202,7 +214,6 @@ Not defects in existing code, and each needs a product decision first: serial-nu
 - **One shared drawer or one per till.**
 - **Cheques:** build issued, cleared and bounced states, or hide cheque as a payment method.
 - **Warranty per unit** (with serials) instead of per sale line.
-- **HTTPS on the shop network** for logins (the TLS gateway exists; sockets aren't routed through it yet).
 - **The exchange-difference tender:** the server accepts it, but the return screen doesn't ask for it yet, so the difference is still taken as cash unless a bank is sent.
 
 ---
