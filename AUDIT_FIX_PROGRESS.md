@@ -6,7 +6,7 @@ This report covers the work done against the `*_AUDIT.md` reports in this folder
 
 **Status:**
 - **Round 1** (the first nine audits): Phases 0–5 are done, and so are the findings the phases left open (section 3, "Open findings closed on 26 Oct").
-- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phases 1–4 are done (section 3, "Round 2, Phase 1" to "Round 2, Phase 4"). Phases 5–8 are in the round 2 plan.
+- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phases 1–4 are done (section 3, "Round 2, Phase 1" to "Round 2, Phase 4"). Phase 5 is part done: draft sales belong to their cashier (SI-02, migration 054). What's left of Phase 5, and Phases 6–8, are in [AUDIT_ROUND2_HANDOFF.md](AUDIT_ROUND2_HANDOFF.md) and the round 2 plan.
 
 What's left in section 5 is accountant checks, your decisions, feature work the audits list as missing, and round 2 Phases 2–8.
 
