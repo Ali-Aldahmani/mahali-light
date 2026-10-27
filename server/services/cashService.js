@@ -4,6 +4,7 @@ const { logActivity } = require('../utils/activityLog');
 const { runOnce } = require('../utils/operations');
 const { todayStoreDate } = require('../utils/dates');
 const journalService = require('./journalService');
+const { emitEvent } = require('../socket/events');
 
 const { TREASURY_CODES: GL } = journalService;
 
@@ -310,14 +311,7 @@ async function recordCash(params) {
     postTransactionWith(c, rest),
   );
   if (io) {
-    io.to('role:Manager').emit('cash_balance_updated', {
-      newBalance: result.balanceAfter,
-      delta: result.delta,
-      transactionType: rest.transactionType,
-      changedBy: rest.employeeId || null,
-      at: nowIso(),
-    });
-    io.to('role:Admin').emit('cash_balance_updated', {
+    emitEvent(io, 'cash_balance_updated', {
       newBalance: result.balanceAfter,
       delta: result.delta,
       transactionType: rest.transactionType,
@@ -420,14 +414,14 @@ async function openDrawer({ openingBalance, employeeId, notes = null, io = null 
   });
 
   if (io) {
-    io.emit('drawer_opened', {
+    emitEvent(io, 'drawer_opened', {
       drawerId: result.drawer.id,
       sessionId: result.session.id,
       openedBy: employeeId,
       openingBalance: amt,
       at: nowIso(),
     });
-    io.to('role:Manager').emit('cash_balance_updated', {
+    emitEvent(io, 'cash_balance_updated', {
       newBalance: amt,
       delta: amt,
       transactionType: 'opening',
@@ -598,7 +592,7 @@ async function closeDrawer({
   });
 
   if (io) {
-    io.to('role:Manager').emit('drawer_closed', {
+    emitEvent(io, 'drawer_closed', {
       drawerId: result.drawer.id,
       sessionId: result.session.id,
       closedBy: employeeId,
@@ -607,16 +601,7 @@ async function closeDrawer({
       discrepancy: result.discrepancy,
       at: nowIso(),
     });
-    io.to('role:Admin').emit('drawer_closed', {
-      drawerId: result.drawer.id,
-      sessionId: result.session.id,
-      closedBy: employeeId,
-      closingBalance: result.counted,
-      expectedBalance: result.expected,
-      discrepancy: result.discrepancy,
-      at: nowIso(),
-    });
-    io.to('role:Manager').emit('cash_balance_updated', {
+    emitEvent(io, 'cash_balance_updated', {
       newBalance: result.counted,
       delta: result.counted - result.expected,
       transactionType: 'closing',
@@ -688,8 +673,7 @@ async function recordManualAdjustment({
       changedBy: employeeId || null,
       at: nowIso(),
     };
-    io.to('role:Manager').emit('cash_balance_updated', payload);
-    io.to('role:Admin').emit('cash_balance_updated', payload);
+    emitEvent(io, 'cash_balance_updated', payload);
   }
   return result;
 }

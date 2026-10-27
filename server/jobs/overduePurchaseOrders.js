@@ -1,4 +1,5 @@
 const { query } = require('../db/postgres');
+const { emitEvent } = require('../socket/events');
 
 // Runs once on startup (a few seconds after boot) and then daily at midnight
 // local server time. Emits `po_overdue` to manager/admin sockets for every
@@ -38,8 +39,7 @@ function startOverduePoJob(io) {
           })),
           checkedAt: new Date().toISOString(),
         };
-        io.to('role:Manager').emit('po_overdue', payload);
-        io.to('role:Admin').emit('po_overdue', payload);
+        emitEvent(io, 'po_overdue', payload);
       }
     } catch (err) {
       console.error('[overduePoJob] failed', err);

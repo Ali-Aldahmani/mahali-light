@@ -11,6 +11,7 @@ const {
   isVariantUnderActiveCount,
   lockStockCounts,
 } = require('../services/stockService');
+const { emitEvent } = require('../socket/events');
 
 const REASONS = new Set([
   'damaged',
@@ -305,7 +306,7 @@ async function create(req, res, next) {
 
       const io = replayed ? null : req.app.get('io');
       if (io) {
-        io.emit('stock_updated', {
+        emitEvent(io, 'stock_updated', {
           productId: variant.product_id,
           variantId: body.variantId,
           newQty: Number(result.movement.qty_after),
@@ -359,8 +360,7 @@ async function create(req, res, next) {
         requestedByUsername: req.user.username,
         timestamp: new Date().toISOString(),
       };
-      io.to('role:Manager').emit('adjustment_request_created', payload);
-      io.to('role:Admin').emit('adjustment_request_created', payload);
+      emitEvent(io, 'adjustment_request_created', payload);
     }
 
     // Phase 16: persistent approval notification for managers/admins.
@@ -450,7 +450,7 @@ async function approve(req, res, next) {
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('stock_updated', {
+      emitEvent(io, 'stock_updated', {
         productId: result.reqRow.product_id,
         variantId: result.reqRow.variant_id,
         newQty: Number(result.movement.qty_after),
@@ -489,8 +489,7 @@ async function approve(req, res, next) {
       const { checkReorderThreshold } = require('../services/reorderService');
       const r = await checkReorderThreshold(result.reqRow.variant_id);
       if (io && r?.created) {
-        io.to('role:Manager').emit('reorder_alert_created', r.payload);
-        io.to('role:Admin').emit('reorder_alert_created', r.payload);
+        emitEvent(io, 'reorder_alert_created', r.payload);
       }
     } catch (_e) {
       // best-effort

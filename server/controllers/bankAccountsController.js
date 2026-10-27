@@ -8,6 +8,7 @@ const { runOnce, requestKeyFrom } = require('../utils/operations');
 const bankService = require('../services/bankService');
 const cashService = require('../services/cashService');
 const journalService = require('../services/journalService');
+const { emitEvent } = require('../socket/events');
 
 const GL = journalService.TREASURY_CODES;
 
@@ -364,7 +365,7 @@ async function transfer(req, res, next) {
       }));
     if (io && !replayed) {
       const at = new Date().toISOString();
-      io.to('role:Manager').emit('bank_balance_updated', {
+      emitEvent(io, 'bank_balance_updated', {
         bankAccountId: result.out.accountId,
         bankName: result.out.bankName,
         newBalance: result.out.balanceAfter,
@@ -374,7 +375,7 @@ async function transfer(req, res, next) {
         at,
       });
       if (body.toType === 'bank_account' && result.in?.accountId) {
-        io.to('role:Manager').emit('bank_balance_updated', {
+        emitEvent(io, 'bank_balance_updated', {
           bankAccountId: result.in.accountId,
           bankName: result.in.bankName,
           newBalance: result.in.balanceAfter,
@@ -384,7 +385,7 @@ async function transfer(req, res, next) {
           at,
         });
       } else {
-        io.to('role:Manager').emit('cash_balance_updated', {
+        emitEvent(io, 'cash_balance_updated', {
           newBalance: result.in.balanceAfter,
           delta: result.in.delta,
           transactionType: 'transfer',

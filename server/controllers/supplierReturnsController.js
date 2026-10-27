@@ -8,6 +8,7 @@ const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('../services/stockService');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
 const journalService = require('../services/journalService');
+const { emitEvent } = require('../socket/events');
 
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -307,7 +308,7 @@ async function create(req, res, next) {
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('stock_updated', {
+      emitEvent(io, 'stock_updated', {
         movementType: 'return_out',
         affectedVariants: result.affectedVariants,
         referenceType: 'supplier_return',
@@ -322,8 +323,7 @@ async function create(req, res, next) {
         createdBy: req.user.id,
         createdByUsername: req.user.username,
       };
-      io.to('role:Manager').emit('supplier_return_created', payload);
-      io.to('role:Admin').emit('supplier_return_created', payload);
+      emitEvent(io, 'supplier_return_created', payload);
     }
 
     const { rows } = await query(`${LIST_SELECT} WHERE sr.id = $1`, [result.returnId]);

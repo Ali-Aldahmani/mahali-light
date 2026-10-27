@@ -11,6 +11,7 @@ const bankService = require('./bankService');
 const { snapshotInvoiceCustomer } = require('../utils/customerSnapshot');
 const journalService = require('./journalService');
 const notificationService = require('./notificationService');
+const { emitEvent } = require('../socket/events');
 
 const RETURN_TYPES = new Set([
   'customer_refund',
@@ -719,8 +720,7 @@ async function createReturnRequest({
       isNoInvoice: !!noInvoiceReturn,
       at: new Date().toISOString(),
     };
-    io.to('role:Manager').emit('return_request_created', payload);
-    io.to('role:Admin').emit('return_request_created', payload);
+    emitEvent(io, 'return_request_created', payload);
   }
 
   try {
@@ -1169,7 +1169,6 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
                 changedBy: managerId,
                 at: new Date().toISOString(),
               },
-              audience: ['role:Manager', 'role:Admin'],
             });
           } else if (p.method === 'bank') {
             const posted = await bankService.recordBankOut({
@@ -1194,7 +1193,6 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
                 changedBy: managerId,
                 at: new Date().toISOString(),
               },
-              audience: ['role:Manager', 'role:Admin'],
             });
           }
         }
@@ -1322,7 +1320,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
           .catch(() => {});
       }
       emitCustomerChanged(io, result.order.customer_id, 'return_executed');
-      io.emit('return_executed', {
+      emitEvent(io, 'return_executed', {
         returnOrderId: result.order.id,
         returnOrderNumber: result.order.return_order_number,
         returnType: result.order.return_type,
@@ -1331,11 +1329,7 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
       });
       for (const ev of result.executionEvents) {
         if (!ev) continue;
-        if (ev.audience && ev.audience.length) {
-          for (const room of ev.audience) io.to(room).emit(ev.event, ev.payload);
-        } else {
-          io.emit(ev.event, ev.payload);
-        }
+        emitEvent(io, ev.event, ev.payload);
       }
     }
     return result;
@@ -1504,7 +1498,7 @@ async function buildReplacementInvoice(
         description: `Price-difference payment for ${returnOrderNumber}`,
       });
       stockEmits.push({
-        event: 'bank_balance_updated', audience: ['role:Manager', 'role:Admin'],
+        event: 'bank_balance_updated',
         payload: { bankAccountId: posted.accountId, bankName: posted.bankName,
           newBalance: posted.balanceAfter, delta: posted.delta,
           transactionType: 'sale', changedBy: managerId, at: new Date().toISOString() },
@@ -1516,7 +1510,7 @@ async function buildReplacementInvoice(
         notes: `Price-difference payment for ${returnOrderNumber}`,
       });
       stockEmits.push({
-        event: 'cash_balance_updated', audience: ['role:Manager', 'role:Admin'],
+        event: 'cash_balance_updated',
         payload: { newBalance: posted.balanceAfter, delta: posted.delta,
           transactionType: 'sale', changedBy: managerId, at: new Date().toISOString() },
       });
@@ -1687,7 +1681,7 @@ async function cancelReturnRequest({ requestId, userId, io = null }) {
     return r;
   }).then((row) => {
     if (io) {
-      io.to('role:Manager').emit('return_request_reviewed', {
+      emitEvent(io, 'return_request_reviewed', {
         requestId,
         status: 'cancelled',
         at: new Date().toISOString(),

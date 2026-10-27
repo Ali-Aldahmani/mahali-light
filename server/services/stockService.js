@@ -5,6 +5,7 @@ const { assertQuantity } = require('../utils/quantity');
 const { checkReorderThreshold } = require('./reorderService');
 const journalService = require('./journalService');
 const notificationService = require('./notificationService');
+const { emitEvent } = require('../socket/events');
 
 // Movement types that require an inventory-vs-equity journal entry. Sales +
 // purchases + quarantine moves are excluded — those flow through invoice /
@@ -299,7 +300,7 @@ async function applyStockMovement(params) {
   // their own client (outer transaction), defer the emit to the caller (they
   // pass `io: null`) since we don't know whether the outer txn committed yet.
   if (io && !params.client) {
-    io.emit('stock_updated', {
+    emitEvent(io, 'stock_updated', {
       productId: result.variant.productId,
       variantId: result.variant.id,
       newQty: result.variant.stockQty,
@@ -312,8 +313,7 @@ async function applyStockMovement(params) {
       referenceId,
     });
     if (reorderResult?.created) {
-      io.to('role:Manager').emit('reorder_alert_created', reorderResult.payload);
-      io.to('role:Admin').emit('reorder_alert_created', reorderResult.payload);
+      emitEvent(io, 'reorder_alert_created', reorderResult.payload);
       emitLowStockNotification(reorderResult.payload).catch(() => {});
     }
   }
@@ -354,10 +354,9 @@ function emitDeferred(io, payloads = []) {
   for (const p of payloads) {
     if (!p) continue;
     if (p.event === 'stock_updated') {
-      io.emit('stock_updated', p.payload);
+      emitEvent(io, 'stock_updated', p.payload);
     } else if (p.event === 'reorder_alert_created') {
-      io.to('role:Manager').emit('reorder_alert_created', p.payload);
-      io.to('role:Admin').emit('reorder_alert_created', p.payload);
+      emitEvent(io, 'reorder_alert_created', p.payload);
       emitLowStockNotification(p.payload).catch(() => {});
     }
   }

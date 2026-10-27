@@ -16,6 +16,7 @@ const {
   savePurchaseOrderAttachment,
   deleteAttachmentFile,
 } = require('../utils/upload');
+const { emitEvent } = require('../socket/events');
 
 const itemSchema = z.object({
   variantId: z.string().uuid(),
@@ -358,8 +359,7 @@ async function create(req, res, next) {
         createdBy: req.user.id,
         createdByUsername: req.user.username,
       };
-      io.to('role:Manager').emit('po_created', payload);
-      io.to('role:Admin').emit('po_created', payload);
+      emitEvent(io, 'po_created', payload);
     }
 
     const { rows: full } = await query(`${LIST_SELECT} WHERE po.id = $1`, [poId]);
@@ -624,7 +624,7 @@ async function receive(req, res, next) {
     // A replayed retry changed nothing, so there is nothing to announce.
     const io = result.replayed ? null : req.app.get('io');
     if (io) {
-      io.emit('stock_updated', {
+      emitEvent(io, 'stock_updated', {
         productId: null,
         movementType: 'purchase',
         affectedVariants: result.affectedVariants,
@@ -642,8 +642,7 @@ async function receive(req, res, next) {
         receivedBy: req.user.id,
         receivedByUsername: req.user.username,
       };
-      io.to('role:Manager').emit('po_received', payload);
-      io.to('role:Admin').emit('po_received', payload);
+      emitEvent(io, 'po_received', payload);
     }
 
     // Re-check reorder thresholds for the receiving variants — purchase

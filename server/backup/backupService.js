@@ -17,6 +17,7 @@ const usbDestination = require('./destinations/usbDestination');
 
 const maintenanceMode = require('./maintenanceMode');
 const encryption = require('./encryption');
+const { emitEvent } = require('../socket/events');
 
 // =======================================================================
 // Schedule keys map to local-disk sub-directories AND drive retention.
@@ -39,14 +40,9 @@ function setIoInstance(io) {
 function emit(event, payload) {
   if (!ioInstance) return;
   try {
-    if (event === 'restore_imminent' || event === 'restore_progress' || event === 'restore_completed') {
-      ioInstance.emit(event, payload);
-    } else {
-      ioInstance.to('role:Admin').emit(event, payload);
-      if (event === 'backup_failed' || event === 'disk_space_warning') {
-        ioInstance.to('role:Manager').emit(event, payload);
-      }
-    }
+    // Restore events reach every screen; the rest go to backup.view
+    // (server/socket/events.js).
+    emitEvent(ioInstance, event, payload);
   } catch (_err) {
     /* best-effort */
   }

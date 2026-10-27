@@ -7,6 +7,7 @@ const { logActivity } = require('../utils/activityLog');
 const { applyStockMovement, lockStockCounts } = require('../services/stockService');
 const { checkReorderThreshold } = require('../services/reorderService');
 const notificationService = require('../services/notificationService');
+const { emitEvent } = require('../socket/events');
 
 const initSchema = z.object({
   countType: z.enum(['full', 'partial', 'category']),
@@ -509,8 +510,7 @@ async function submit(req, res, next) {
         discrepancyCount: full[0].discrepancy_count,
         netValueImpact: Number(full[0].net_value_impact || 0),
       };
-      io.to('role:Manager').emit('stock_count_submitted', payload);
-      io.to('role:Admin').emit('stock_count_submitted', payload);
+      emitEvent(io, 'stock_count_submitted', payload);
     }
 
     try {
@@ -646,8 +646,7 @@ async function approve(req, res, next) {
       try {
         const r = await checkReorderThreshold(vid);
         if (io && r?.created) {
-          io.to('role:Manager').emit('reorder_alert_created', r.payload);
-          io.to('role:Admin').emit('reorder_alert_created', r.payload);
+          emitEvent(io, 'reorder_alert_created', r.payload);
         }
       } catch (_e) {
         // best effort
@@ -657,7 +656,7 @@ async function approve(req, res, next) {
     if (io) {
       // One broad stock_updated so caches refresh — clients can re-query
       // affected variants from the server.
-      io.emit('stock_updated', {
+      emitEvent(io, 'stock_updated', {
         countId: id,
         movementType: 'count_correction',
         affectedVariants: result.variantIds,

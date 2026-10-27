@@ -8,6 +8,7 @@ const { runOnce, requestKeyFrom } = require('../utils/operations');
 const cashService = require('../services/cashService');
 const journalService = require('../services/journalService');
 const { postTransactionWith: postBankWith } = require('../services/bankService');
+const { emitEvent } = require('../socket/events');
 
 async function getState(_req, res, next) {
   try {
@@ -301,14 +302,14 @@ async function transferToBank(req, res, next) {
       }));
     if (io && !replayed) {
       const at = new Date().toISOString();
-      io.to('role:Manager').emit('cash_balance_updated', {
+      emitEvent(io, 'cash_balance_updated', {
         newBalance: result.out.balanceAfter,
         delta: result.out.delta,
         transactionType: 'transfer',
         changedBy: req.user.id,
         at,
       });
-      io.to('role:Manager').emit('bank_balance_updated', {
+      emitEvent(io, 'bank_balance_updated', {
         bankAccountId: result.in.accountId,
         bankName: result.in.bankName,
         newBalance: result.in.balanceAfter,

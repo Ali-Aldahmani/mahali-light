@@ -8,6 +8,7 @@ const {
   rejectEditRequest,
 } = require('../services/invoiceService');
 const notificationService = require('../services/notificationService');
+const { emitEvent } = require('../socket/events');
 
 const createSchema = z.object({
   requestNote: z.string().min(1).max(2000),
@@ -158,8 +159,7 @@ async function create(req, res, next) {
         note: body.requestNote,
         at: new Date().toISOString(),
       };
-      io.to('role:Manager').emit('edit_request_created', payload);
-      io.to('role:Admin').emit('edit_request_created', payload);
+      emitEvent(io, 'edit_request_created', payload);
     }
 
     try {

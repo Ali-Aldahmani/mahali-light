@@ -4,6 +4,7 @@ const { query } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { emitEvent } = require('../socket/events');
 
 function zodFail(err) {
   return new AppError(
@@ -91,7 +92,7 @@ async function add(req, res, next) {
         newValue: { name: body.name, date: body.date, type: body.type },
       });
       const io = req.app.get('io');
-      if (io) io.emit('holiday_added', { id: rows[0].id, name: rows[0].name, date: body.date });
+      if (io) emitEvent(io, 'holiday_added', { id: rows[0].id, name: rows[0].name, date: body.date });
       return created(res, rows[0]);
     } catch (e) {
       if (e.code === '23505') {
@@ -122,7 +123,7 @@ async function remove(req, res, next) {
       oldValue: { name: rows[0].name, date: rows[0].date },
     });
     const io = req.app.get('io');
-    if (io) io.emit('holiday_removed', { id: req.params.id });
+    if (io) emitEvent(io, 'holiday_removed', { id: req.params.id });
     return ok(res, { deleted: true });
   } catch (err) {
     next(err);

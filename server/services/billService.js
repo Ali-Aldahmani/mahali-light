@@ -6,6 +6,7 @@ const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
 const notificationService = require('./notificationService');
+const { emitEvent } = require('../socket/events');
 
 const FREQUENCIES = new Set(['monthly', 'quarterly', 'yearly']);
 const PAYMENT_METHODS = new Set(['cash', 'bank']);
@@ -602,8 +603,7 @@ async function payBillPayment({
       paidBy: userId,
       at: new Date().toISOString(),
     };
-    io.to('role:Manager').emit('bill_paid', billPaidPayload);
-    io.to('role:Admin').emit('bill_paid', billPaidPayload);
+    emitEvent(io, 'bill_paid', billPaidPayload);
 
     notificationService
       .notifyManagersAndAdmins({
@@ -628,16 +628,14 @@ async function payBillPayment({
       at: new Date().toISOString(),
     };
     if (paymentMethod === 'cash') {
-      io.to('role:Manager').emit('cash_balance_updated', balancePayload);
-      io.to('role:Admin').emit('cash_balance_updated', balancePayload);
+      emitEvent(io, 'cash_balance_updated', balancePayload);
     } else {
       const bankPayload = {
         ...balancePayload,
         accountId: result.treasury?.accountId,
         bankName: result.treasury?.bankName,
       };
-      io.to('role:Manager').emit('bank_balance_updated', bankPayload);
-      io.to('role:Admin').emit('bank_balance_updated', bankPayload);
+      emitEvent(io, 'bank_balance_updated', bankPayload);
     }
   }
 
@@ -959,8 +957,7 @@ async function checkAndUpdateBillStatuses({ io = null } = {}) {
           daysUntilDue: n.daysUntilDue,
           type: n.type,
         };
-        io.to('role:Manager').emit('bill_due_reminder', payload);
-        io.to('role:Admin').emit('bill_due_reminder', payload);
+        emitEvent(io, 'bill_due_reminder', payload);
       }
     }
 

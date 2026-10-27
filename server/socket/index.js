@@ -4,6 +4,7 @@ const { query } = require('../db/postgres');
 const attendanceService = require('../services/attendanceService');
 const { isAllowedOrigin } = require('../utils/corsOrigins');
 const presenceService = require('../services/presenceService');
+const { permissionRooms } = require('./events');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
@@ -57,6 +58,13 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
       );
       if (!rows.length) return next(new Error('AUTH_SESSION_EXPIRED'));
 
+      // Effective permissions decide which live events this socket gets
+      // (server/socket/events.js). A role or permission change drops the
+      // user's sockets, so they are read again on reconnect.
+      const user = await loadUserContext(payload.sub);
+      if (!user?.is_active) return next(new Error('AUTH_SESSION_EXPIRED'));
+
+      socket.data.permissions = user.permissions || [];
       socket.data.userId = payload.sub;
       socket.data.username = rows[0].username;
       socket.data.employeeName = rows[0].employee_name || null;
@@ -72,26 +80,24 @@ function attachSocket(httpServer, allowedOrigins = new Set()) {
   });
 
   io.on('connection', (socket) => {
-    const { userId, username, employeeName, role, pcIdentifier, sessionId } = socket.data;
+    const { userId, username, employeeName, role, pcIdentifier, sessionId, permissions } = socket.data;
 
     socket.join(`user:${userId}`);
     // Per-session room used for targeted force-logout. Named after the
     // session UUID, not the token, so the room name reveals no credentials.
     socket.join(`session:${sessionId}`);
-    // Role-based room used by stock alerts, adjustment requests, etc.
+    // One room per effective permission, for broadcast events.
+    socket.join(permissionRooms(permissions));
+    // The role room is only for dropping these sockets when the role's
+    // permissions change (presenceService.refreshRoleSockets). Events are
+    // never sent to it.
     if (role) socket.join(`role:${role}`);
+    // Presence viewers get live updates.
+    if (presenceService.canViewPresence(permissions)) {
+      socket.join(presenceService.OBSERVERS_ROOM);
+    }
 
     socket.emit('connected', { userId, username, role });
-
-    // Presence viewers get live updates; the permission is read now, and a
-    // permission change drops the socket so it is read again on reconnect.
-    loadUserContext(userId)
-      .then((user) => {
-        if (user?.is_active && presenceService.canViewPresence(user.permissions)) {
-          socket.join(presenceService.OBSERVERS_ROOM);
-        }
-      })
-      .catch(() => {});
 
     // A (re)connect is activity: mark the session online straight away
     // rather than at the next heartbeat, then tell the viewers.

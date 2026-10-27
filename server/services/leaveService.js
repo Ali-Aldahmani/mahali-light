@@ -4,6 +4,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const attendanceService = require('./attendanceService');
 const notificationService = require('./notificationService');
+const { emitEvent } = require('../socket/events');
 
 const UAE_WEEKEND = new Set([5, 6]); // Fri / Sat
 const LEAVE_TYPES = new Set(['annual', 'sick', 'unpaid', 'emergency']);
@@ -314,8 +315,7 @@ async function submitLeave({
         endDate: end,
         totalDays,
       };
-      io.to('role:Manager').emit('leave_request_created', payload);
-      io.to('role:Admin').emit('leave_request_created', payload);
+      emitEvent(io, 'leave_request_created', payload);
     }
 
     try {
@@ -438,11 +438,9 @@ async function approveLeave({ leaveId, managerId, io = null }) {
         status: 'approved',
         reviewedBy: managerId,
       };
-      io.to('role:Manager').emit('leave_request_reviewed', payload);
-      io.to('role:Admin').emit('leave_request_reviewed', payload);
-      if (leave.requested_by) {
-        io.to(`user:${leave.requested_by}`).emit('leave_request_reviewed', payload);
-      }
+      emitEvent(io, 'leave_request_reviewed', payload, {
+        alsoTo: leave.requested_by ? [`user:${leave.requested_by}`] : [],
+      });
     }
 
     if (leave.requested_by) {
@@ -519,10 +517,9 @@ async function rejectLeave({ leaveId, managerId, reason, io = null }) {
         rejectionReason: reason.trim(),
         reviewedBy: managerId,
       };
-      io.to('role:Manager').emit('leave_request_reviewed', payload);
-      if (leave.requested_by) {
-        io.to(`user:${leave.requested_by}`).emit('leave_request_reviewed', payload);
-      }
+      emitEvent(io, 'leave_request_reviewed', payload, {
+        alsoTo: leave.requested_by ? [`user:${leave.requested_by}`] : [],
+      });
     }
 
     if (leave.requested_by) {
@@ -586,7 +583,7 @@ async function cancelLeave({ leaveId, requesterId, io = null }) {
     });
 
     if (io) {
-      io.to('role:Manager').emit('leave_request_reviewed', {
+      emitEvent(io, 'leave_request_reviewed', {
         leaveId,
         employeeId: leave.employee_id,
         status: 'cancelled',

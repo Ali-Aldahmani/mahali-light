@@ -99,7 +99,7 @@ async function revokeUserSessions(io, { userId, logoutType, exceptSessionId = nu
 }
 
 // After a role or permission change: drop the user's sockets so they
-// reconnect with fresh rooms (role room, presence observers). The session
+// reconnect with fresh rooms (permission rooms, presence observers). The session
 // stays open; the client reconnects on its own.
 function refreshUserSockets(io, userId) {
   if (io && userId) io.in(`user:${userId}`).disconnectSockets(true);

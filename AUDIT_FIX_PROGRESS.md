@@ -6,7 +6,7 @@ This report covers the work done against the `*_AUDIT.md` reports in this folder
 
 **Status:**
 - **Round 1** (the first nine audits): Phases 0–5 are done, and so are the findings the phases left open (section 3, "Open findings closed on 26 Oct").
-- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phase 1 is done (section 3, "Round 2, Phase 1"). Phases 2–8 are in the round 2 plan.
+- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phases 1 and 2 are done (section 3, "Round 2, Phase 1" and "Round 2, Phase 2"). Phases 3–8 are in the round 2 plan.
 
 What's left in section 5 is accountant checks, your decisions, feature work the audits list as missing, and round 2 Phases 2–8.
 
@@ -47,6 +47,7 @@ What's left in section 5 is accountant checks, your decisions, feature work the 
    - An **inactive account** now sees "wrong username or password", like any failed login.
    - **Stock quantities** with more than two decimals, or part pieces for products sold by the piece, are refused on every stock screen, not only at the till.
    - An **adjustment can't be applied** to a product while a stock count that covers it is open.
+   - **Live updates follow each person's permissions.** Cashiers now see drawer, customer-balance and invoice updates live (they could already open those pages). A user denied a permission, and roles without it (for example Warehouse for cash and invoices), no longer get those updates. Custom roles get the updates for the permissions they have.
 5. **Accounting choices made in Phase 4. Have your accountant confirm these** (section 3, Phase 4). They decide which accounts the new journal entries hit.
 
 ---
@@ -68,7 +69,7 @@ The plan's phases covered each audit's headline findings. The findings they left
 | Warranty audit | Fixed in Phases 1, 2, 4 and on 26 Oct (F16–F18). Per-unit warranties and the "missing features" list: your decision |
 | User presence & logout audit | Fixed in Phases 1, 5 and on 26 Oct (F08, F11, F16). HTTPS on the LAN (F14/F15): your decision |
 | AI/ML feasibility audit | Not a defect list. No action needed now |
-| Authentication & authorization audit (round 2) | Phase 1 on 27 Oct: AUTH-05 to AUTH-08. Open: AUTH-01 (HTTPS), AUTH-02/03/09 (sessions) in Phase 3; AUTH-04 (live events) in Phase 2 |
+| Authentication & authorization audit (round 2) | Phase 1 on 27 Oct: AUTH-05 to AUTH-08. Phase 2 on 27 Oct: AUTH-04. Open: AUTH-01 (HTTPS), AUTH-02/03/09 (sessions) in Phase 3 |
 | Inventory integrity audit (round 2) | Phase 1 on 27 Oct: INV-002, INV-004, INV-005, INV-008. Open: INV-001 (FIFO), INV-003 (barcodes), INV-006/007, INV-009 (locations decision), INV-010 |
 | Sales & invoices audit (round 2) | Phase 1 on 27 Oct: SI-01, SI-04, SI-07, SI-08. Open: SI-02 (draft ownership), SI-03 (tenders), SI-05 (database rules), SI-06 (closed drawer) |
 
@@ -147,6 +148,12 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 - **Retry-safe product creates (INV-008):** product and variant creation run once per request key; the forms send one.
 - **Login (AUTH-05 to AUTH-08):** each attempt is counted per username and address in one atomic upsert before the password is checked (`login_lockouts`), a success clears it, and an Admin can unlock (`POST /users/:id/unlock-login`, logged). One open session per user per PC, under a lock and a unique index. Passwords: 10 characters (12 for Admin), common ones refused, one bcrypt cost (`server/utils/password.js`). Inactive accounts get the same 401 as a wrong password; the reason goes to the activity log.
 
+### Round 2, Phase 2: live events follow permissions (27 Oct)
+- **AUTH-04:** each socket joins one room per effective permission (role permissions plus the user's own grants, minus their denies), loaded at the handshake. Every broadcast goes through `emitEvent` (`server/socket/events.js`), which maps each of the 60 events to the permission of the matching GET route; an event missing from the map throws instead of going to everyone. About 150 sends to everyone or to the Manager/Admin rooms were moved to it.
+- Events for one person (the requester of an edit, leave or correction) go to the approvers and that person's room in one send, so nobody gets them twice.
+- Restore notices still reach every screen, because a restore restarts the server. The role room is kept only so a role's permission change can drop its users' sockets; no event is sent to it.
+- `liveEvents.contract` fails the build on a new direct send to everyone or to a role room, or on an event without an audience.
+
 ### Other work in this push
 - **Purchase-order discussion** (`8e8f75d`, migration 042): comments, replies and reactions on each PO. Comments can't be edited or deleted, are permission-gated and update live. The thread scrolls and opens on the latest comment.
 - **Notification bell** (`b92f390`): the unread badge shows on page load, and notifications missed while offline are re-read after a reconnect.
@@ -158,8 +165,9 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 ## 4. How it was verified
 
 - Every fix has a test that **fails on the old code and passes on the new** (checked by running the tests with the old files restored).
-- Server: **574 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
+- Server: **582 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
 - Round 2, Phase 1: `auditRound2Phase1` has 15 tests on real PostgreSQL. The race tests hold a lock on a second connection to force the interleaving the audits describe. 14 fail on the old code; the lock-order test also passes there, because PostgreSQL happened to lock in id order already. The UI changes (cancel reason, discount cap, Unlock sign-in) were not checked in the running app.
+- Round 2, Phase 2: `liveEventAudience` runs a real Socket.IO server: a Manager denied `cash.view`, a custom role with only `cash.view`, Warehouse and Admin; stock updates on the till and in the store room; an edit decision reaching the requester once; a permission change on reconnect. All four fail on the old code. Live updates were not checked in the running app.
 - New end-to-end suites: `presenceLifecycle` (real HTTP and Socket.IO server), `treasuryLedger` (runs every treasury movement, then the reconciliation), `receivablesAging`, `warrantyClaims`, `invoiceDraftRules`, `dbConstraints`, `createRetries`. Supplier-return, split-refund, exchange-difference and PO-cancellation tests sit in the existing suites.
 - Web: all tests pass; the TypeScript check is clean. (The web count includes tests of the separate, uncommitted record-level audit log work.)
 - Checked in the running app: login, dashboard, live connection on the right port, online-users list, the bell badge, and sign-out confirmation.
@@ -177,8 +185,8 @@ Phase 4 only fixes movements **from now on**. Both differences above stay in the
 
 ## 5. What is still to do
 
-### Round 2, Phases 2–8
-See the round 2 plan for details and the decisions each phase needs: live events follow permissions (Phase 2), sessions and HTTPS (3), barcodes, movement costs and reorder alerts (4), draft ownership, tenders and cash control (5), FIFO costing (6), database rules (7), and CI that fails when database tests are skipped (8).
+### Round 2, Phases 3–8
+See the round 2 plan for details and the decisions each phase needs: sessions and HTTPS (Phase 3), barcodes, movement costs and reorder alerts (4), draft ownership, tenders and cash control (5), FIFO costing (6), database rules (7), and CI that fails when database tests are skipped (8).
 
 ### Needs your accountant
 - **Confirm the account mapping in Phase 4.** Owner money goes to Owner Equity 3001. Over/short goes to 5015. Warranty replacements go to 5016. If you'd rather use other accounts (for example a separate "Owner Drawings" account), it is a small change in `journalService.TREASURY_CODES`.

@@ -8,6 +8,7 @@ const {
   collectPayment,
   voidPayment,
 } = require('../services/customerService');
+const { emitEvent } = require('../socket/events');
 
 const createSchema = z.object({
   amount: z.number().positive(),
@@ -142,8 +143,7 @@ async function createForCustomer(req, res, next) {
         changedByUsername: req.user.username,
         at: new Date().toISOString(),
       };
-      io.to('role:Manager').emit('customer_balance_updated', payload);
-      io.to('role:Admin').emit('customer_balance_updated', payload);
+      emitEvent(io, 'customer_balance_updated', payload);
       if (treasury) {
         const at = new Date().toISOString();
         if (treasury.method === 'cash') {
@@ -154,8 +154,7 @@ async function createForCustomer(req, res, next) {
             changedBy: req.user.id,
             at,
           };
-          io.to('role:Manager').emit('cash_balance_updated', p);
-          io.to('role:Admin').emit('cash_balance_updated', p);
+          emitEvent(io, 'cash_balance_updated', p);
         } else if (treasury.method === 'bank_transfer') {
           const p = {
             bankAccountId: treasury.accountId,
@@ -166,8 +165,7 @@ async function createForCustomer(req, res, next) {
             changedBy: req.user.id,
             at,
           };
-          io.to('role:Manager').emit('bank_balance_updated', p);
-          io.to('role:Admin').emit('bank_balance_updated', p);
+          emitEvent(io, 'bank_balance_updated', p);
         }
       }
     }
@@ -220,8 +218,7 @@ async function remove(req, res, next) {
         changedByUsername: req.user.username,
         at: new Date().toISOString(),
       };
-      io.to('role:Manager').emit('customer_balance_updated', payload);
-      io.to('role:Admin').emit('customer_balance_updated', payload);
+      emitEvent(io, 'customer_balance_updated', payload);
       if (treasury) {
         const at = new Date().toISOString();
         if (treasury.method === 'cash') {
@@ -232,8 +229,7 @@ async function remove(req, res, next) {
             changedBy: req.user.id,
             at,
           };
-          io.to('role:Manager').emit('cash_balance_updated', p);
-          io.to('role:Admin').emit('cash_balance_updated', p);
+          emitEvent(io, 'cash_balance_updated', p);
         } else if (treasury.method === 'bank_transfer') {
           const p = {
             bankAccountId: treasury.accountId,
@@ -244,8 +240,7 @@ async function remove(req, res, next) {
             changedBy: req.user.id,
             at,
           };
-          io.to('role:Manager').emit('bank_balance_updated', p);
-          io.to('role:Admin').emit('bank_balance_updated', p);
+          emitEvent(io, 'bank_balance_updated', p);
         }
       }
     }

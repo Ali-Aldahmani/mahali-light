@@ -11,6 +11,7 @@ const {
   saveSupplierPaymentReceipt,
   deleteAttachmentFile,
 } = require('../utils/upload');
+const { emitEvent } = require('../socket/events');
 
 const createSchema = z.object({
   amount: z.number().positive(),
@@ -96,8 +97,7 @@ async function createForPo(req, res, next) {
         paidBy: req.user.id,
         paidByUsername: req.user.username,
       };
-      io.to('role:Manager').emit('po_payment_added', payload);
-      io.to('role:Admin').emit('po_payment_added', payload);
+      emitEvent(io, 'po_payment_added', payload);
       if (treasury) {
         const at = new Date().toISOString();
         if (treasury.method === 'cash') {
@@ -108,8 +108,7 @@ async function createForPo(req, res, next) {
             changedBy: req.user.id,
             at,
           };
-          io.to('role:Manager').emit('cash_balance_updated', p);
-          io.to('role:Admin').emit('cash_balance_updated', p);
+          emitEvent(io, 'cash_balance_updated', p);
         } else if (treasury.method === 'bank_transfer') {
           const p = {
             bankAccountId: treasury.accountId,
@@ -120,8 +119,7 @@ async function createForPo(req, res, next) {
             changedBy: req.user.id,
             at,
           };
-          io.to('role:Manager').emit('bank_balance_updated', p);
-          io.to('role:Admin').emit('bank_balance_updated', p);
+          emitEvent(io, 'bank_balance_updated', p);
         }
       }
     }
@@ -170,8 +168,7 @@ async function remove(req, res, next) {
           changedBy: req.user.id,
           at,
         };
-        io.to('role:Manager').emit('cash_balance_updated', p);
-        io.to('role:Admin').emit('cash_balance_updated', p);
+        emitEvent(io, 'cash_balance_updated', p);
       } else if (treasury.method === 'bank_transfer') {
         const p = {
           bankAccountId: treasury.accountId,
@@ -182,8 +179,7 @@ async function remove(req, res, next) {
           changedBy: req.user.id,
           at,
         };
-        io.to('role:Manager').emit('bank_balance_updated', p);
-        io.to('role:Admin').emit('bank_balance_updated', p);
+        emitEvent(io, 'bank_balance_updated', p);
       }
     }
 

@@ -23,6 +23,7 @@ const {
 } = require('../services/productService');
 const { lookupBarcode } = require('../services/barcodeLookupService');
 const pricingRestrictionService = require('../services/pricingRestrictionService');
+const { emitEvent } = require('../socket/events');
 
 const SOLD_BY = ['piece', 'meter', 'roll', 'kg', 'box'];
 
@@ -612,7 +613,7 @@ async function history(req, res, next) {
 
 function emitProductChange(req, event, payload) {
   const io = req.app.get('io');
-  if (io) io.emit(event, payload);
+  if (io) emitEvent(io, event, payload);
 }
 
 // ---------- search (used by POS in later phase) ----------

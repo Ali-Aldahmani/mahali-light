@@ -3,6 +3,7 @@ const { todayStoreDate } = require('../utils/dates');
 const journalService = require('./journalService');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { emitEvent } = require('../socket/events');
 
 const ALLOWED_TX_TYPES = new Set([
   'sale',
@@ -229,8 +230,7 @@ function emitBankBalance(io, result, { transactionType, employeeId = null }) {
     changedBy: employeeId || null,
     at: new Date().toISOString(),
   };
-  io.to('role:Manager').emit('bank_balance_updated', payload);
-  io.to('role:Admin').emit('bank_balance_updated', payload);
+  emitEvent(io, 'bank_balance_updated', payload);
 }
 
 async function recordBank(params) {

@@ -18,6 +18,7 @@ const bankService = require('./bankService');
 const journalService = require('./journalService');
 const notificationService = require('./notificationService');
 const pricingRestrictionService = require('./pricingRestrictionService');
+const { emitEvent } = require('../socket/events');
 
 // Lazy-require to avoid circular deps and to keep puppeteer cold-start cost
 // off the boot path. Returns null if PDF generation is unavailable.
@@ -758,7 +759,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
   // delta if any.
   if (io) {
     for (const e of result.stockEmits) {
-      io.emit(e.event, e.payload);
+      emitEvent(io, e.event, e.payload);
     }
     const payload = {
       invoiceId,
@@ -770,12 +771,11 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
       pcIdentifier: result.invoice.pc_identifier,
       at: new Date().toISOString(),
     };
-    io.to('role:Manager').emit('invoice_confirmed', payload);
-    io.to('role:Admin').emit('invoice_confirmed', payload);
+    emitEvent(io, 'invoice_confirmed', payload);
     emitCustomerChanged(io, result.invoice.customer_id, 'invoice_confirmed');
     // Broadcast to all clients so the cashier's own success screen knows the
     // PDF will be ready shortly.
-    io.emit('invoice_pdf_pending', { invoiceId });
+    emitEvent(io, 'invoice_pdf_pending', { invoiceId });
 
     if (result.creditUsed > 0 && result.invoice.customer_id) {
       const { rows: cRows } = await query(
@@ -792,8 +792,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
           changedBy: employeeId,
           at: new Date().toISOString(),
         };
-        io.to('role:Manager').emit('customer_balance_updated', creditPayload);
-        io.to('role:Admin').emit('customer_balance_updated', creditPayload);
+        emitEvent(io, 'customer_balance_updated', creditPayload);
       }
     }
 
@@ -809,8 +808,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
           changedBy: employeeId,
           at,
         };
-        io.to('role:Manager').emit('cash_balance_updated', p);
-        io.to('role:Admin').emit('cash_balance_updated', p);
+        emitEvent(io, 'cash_balance_updated', p);
       } else if (tp.method === 'bank') {
         const p = {
           bankAccountId: tp.accountId,
@@ -821,14 +819,13 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
           changedBy: employeeId,
           at,
         };
-        io.to('role:Manager').emit('bank_balance_updated', p);
-        io.to('role:Admin').emit('bank_balance_updated', p);
+        emitEvent(io, 'bank_balance_updated', p);
       }
     }
   }
 
   if (io && result.warranties.length) {
-    io.emit('warranty_created_batch', {
+    emitEvent(io, 'warranty_created_batch', {
       invoiceId,
       invoiceNumber: result.invoice.invoice_number,
       count: result.warranties.length,
@@ -844,7 +841,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
         .generateInvoicePDFSafe(invoiceId)
         .then((res) => {
           if (res && io) {
-            io.emit('invoice_pdf_ready', {
+            emitEvent(io, 'invoice_pdf_ready', {
               invoiceId,
               pdfPath: res.path,
               at: new Date().toISOString(),
@@ -853,7 +850,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null }) {
             // the cashier's terminal can fire the receipt print silently.
             const settings = getStoreSettings();
             if (settings.print?.autoPrintReceiptOnConfirm) {
-              io.emit('print_receipt_requested', {
+              emitEvent(io, 'print_receipt_requested', {
                 invoiceId,
                 invoiceNumber: result.invoice.invoice_number,
                 pcIdentifier: result.invoice.pc_identifier,
@@ -1059,7 +1056,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
   }, { retryOnDeadlock: true });
 
   if (io) {
-    for (const e of result.stockEmits) io.emit(e.event, e.payload);
+    for (const e of result.stockEmits) emitEvent(io, e.event, e.payload);
     for (const posting of result.treasuryPostings) {
       const event = posting.method === 'cash' ? 'cash_balance_updated' : 'bank_balance_updated';
       const payload = {
@@ -1067,8 +1064,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
         newBalance: posting.balanceAfter, delta: posting.delta,
         transactionType: 'refund', changedBy: employeeId, at: new Date().toISOString(),
       };
-      io.to('role:Manager').emit(event, payload);
-      io.to('role:Admin').emit(event, payload);
+      emitEvent(io, event, payload);
     }
     const payload = {
       invoiceId,
@@ -1076,8 +1072,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
       cancelledBy: employeeId,
       at: new Date().toISOString(),
     };
-    io.to('role:Manager').emit('invoice_cancelled', payload);
-    io.to('role:Admin').emit('invoice_cancelled', payload);
+    emitEvent(io, 'invoice_cancelled', payload);
     emitCustomerChanged(io, result.invoice.customer_id, 'invoice_cancelled');
   }
 
@@ -1097,7 +1092,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
   } catch (_e) { /* best-effort */ }
 
   if (io && result.voidedWarranties.length) {
-    io.emit('warranty_voided_batch', {
+    emitEvent(io, 'warranty_voided_batch', {
       invoiceId,
       count: result.voidedWarranties.length,
       at: new Date().toISOString(),
@@ -1412,15 +1407,15 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
   });
 
   if (io) {
-    for (const e of result.stockEmits) io.emit(e.event, e.payload);
-    io.emit('edit_request_reviewed', {
+    for (const e of result.stockEmits) emitEvent(io, e.event, e.payload);
+    emitEvent(io, 'edit_request_reviewed', {
       requestId,
       invoiceId: result.request.invoice_id,
       status: 'approved',
       reviewedBy: managerId,
       requestedBy: result.request.requested_by,
       at: new Date().toISOString(),
-    });
+    }, { alsoTo: result.request.requested_by ? [`user:${result.request.requested_by}`] : [] });
   }
 
   if (result.request.requested_by) {
@@ -1536,7 +1531,7 @@ async function rejectEditRequest({ requestId, managerId, reason, io = null }) {
   });
 
   if (io) {
-    io.emit('edit_request_reviewed', {
+    emitEvent(io, 'edit_request_reviewed', {
       requestId,
       invoiceId: rows[0].invoice_id,
       status: 'rejected',
@@ -1544,7 +1539,7 @@ async function rejectEditRequest({ requestId, managerId, reason, io = null }) {
       requestedBy: rows[0].requested_by,
       reason: reason || null,
       at: new Date().toISOString(),
-    });
+    }, { alsoTo: rows[0].requested_by ? [`user:${rows[0].requested_by}`] : [] });
   }
 
   if (rows[0].requested_by) {

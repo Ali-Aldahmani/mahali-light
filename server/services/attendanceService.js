@@ -7,6 +7,7 @@ const {
   resolveManualAttendanceStatus,
   assertRequestedStatusAllowed,
 } = require('../../shared/attendancePolicy');
+const { emitEvent } = require('../socket/events');
 
 // UAE Friday/Saturday weekend. Sunday is the first working day.
 // JS getDay(): 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
@@ -157,8 +158,7 @@ async function checkIn({ employeeId, method = 'app_login', userId = null, io = n
         status,
         lateMinutes,
       };
-      io.to('role:Manager').emit('attendance_checked_in', payload);
-      io.to('role:Admin').emit('attendance_checked_in', payload);
+      emitEvent(io, 'attendance_checked_in', payload);
     }
 
     if (status === 'late') {
@@ -264,8 +264,7 @@ async function checkOut({
         overtimeHours,
         method,
       };
-      io.to('role:Manager').emit('attendance_checked_out', payload);
-      io.to('role:Admin').emit('attendance_checked_out', payload);
+      emitEvent(io, 'attendance_checked_out', payload);
     }
 
     return shapeAttendance({ ...rows[0], employee_name: employee.name });
@@ -494,8 +493,7 @@ async function submitCorrection({
         date: dateOnly(att.date),
         reason,
       };
-      io.to('role:Manager').emit('correction_request_created', payload);
-      io.to('role:Admin').emit('correction_request_created', payload);
+      emitEvent(io, 'correction_request_created', payload);
     }
 
     try {
@@ -599,10 +597,9 @@ async function reviewCorrection({
         status: decision,
         rejectionReason,
       };
-      io.to('role:Manager').emit('correction_request_reviewed', payload);
-      if (corr.requested_by) {
-        io.to(`user:${corr.requested_by}`).emit('correction_request_reviewed', payload);
-      }
+      emitEvent(io, 'correction_request_reviewed', payload, {
+        alsoTo: corr.requested_by ? [`user:${corr.requested_by}`] : [],
+      });
     }
 
     if (corr.requested_by) {
@@ -706,12 +703,7 @@ async function markAbsentForDay({ date = null, io = null } = {}) {
     }
 
     if (io) {
-      io.to('role:Manager').emit('attendance_day_finalized', {
-        date: day,
-        markedAbsent: absentRows.length,
-        autoClosed: openRows.length,
-      });
-      io.to('role:Admin').emit('attendance_day_finalized', {
+      emitEvent(io, 'attendance_day_finalized', {
         date: day,
         markedAbsent: absentRows.length,
         autoClosed: openRows.length,

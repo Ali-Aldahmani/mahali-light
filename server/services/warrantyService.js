@@ -8,6 +8,7 @@ const notificationService = require('./notificationService');
 const journalService = require('./journalService');
 const { runOnce } = require('../utils/operations');
 const { snapshotInvoiceCustomer } = require('../utils/customerSnapshot');
+const { emitEvent } = require('../socket/events');
 
 // Normalizes a Date object or date-like string to a plain YYYY-MM-DD. A
 // Date from the pg driver represents LOCAL midnight for a DATE column, so
@@ -212,7 +213,7 @@ async function createWarrantiesFromInvoice(invoiceId, { actorId = null, io = nul
 
   const { created, invoiceNumber } = await withTransaction(work);
   if (io && created.length) {
-    io.emit('warranty_created_batch', {
+    emitEvent(io, 'warranty_created_batch', {
       invoiceId,
       invoiceNumber,
       count: created.length,
@@ -298,7 +299,7 @@ async function createManualWarranty({
     });
 
     if (io) {
-      afterCommit.push(() => io.emit('warranty_created', {
+      afterCommit.push(() => emitEvent(io, 'warranty_created', {
         warrantyId: warranty.id,
         warrantyNumber: warranty.warranty_number,
         productId,
@@ -343,7 +344,7 @@ async function voidWarrantiesForInvoice(invoiceId, { actorId = null, reason = nu
     });
   }
   if (io && rows.length && !client) {
-    io.emit('warranty_voided_batch', {
+    emitEvent(io, 'warranty_voided_batch', {
       invoiceId,
       count: rows.length,
       at: new Date().toISOString(),
@@ -393,7 +394,7 @@ async function voidWarranty({ warrantyId, actorId, reason = null, io = null }) {
     });
 
     if (io) {
-      afterCommit.push(() => io.emit('warranty_voided', {
+      afterCommit.push(() => emitEvent(io, 'warranty_voided', {
         warrantyId,
         warrantyNumber: w.warranty_number,
         voidedBy: actorId,
@@ -540,8 +541,7 @@ async function createClaim({
           createdBy,
           at: new Date().toISOString(),
         };
-        io.to('role:Manager').emit('warranty_claim_created', payload);
-        io.to('role:Admin').emit('warranty_claim_created', payload);
+        emitEvent(io, 'warranty_claim_created', payload);
       }
       try {
         await notificationService.notifyManagersAndAdmins({
@@ -926,9 +926,9 @@ async function resolveWarrantyClaim({
   }).then((result) => {
     if (io) {
       for (const e of result.stockEmits) {
-        if (e) io.emit(e.event, e.payload);
+        if (e) emitEvent(io, e.event, e.payload);
       }
-      io.emit('warranty_claim_resolved', {
+      emitEvent(io, 'warranty_claim_resolved', {
         claimId,
         resolution,
         resolvedBy: managerId,
@@ -984,7 +984,7 @@ async function raiseSupplierClaim({ claimId, actorId, notes = null, io = null })
     notes,
   });
   if (io) {
-    io.to('role:Manager').emit('warranty_claim_updated', {
+    emitEvent(io, 'warranty_claim_updated', {
       claimId,
       supplier_claim_raised: true,
       at: new Date().toISOString(),
@@ -1016,7 +1016,7 @@ async function setSupplierClaimResolved({ claimId, actorId, resolved, notes = nu
     notes,
   });
   if (io) {
-    io.to('role:Manager').emit('warranty_claim_updated', {
+    emitEvent(io, 'warranty_claim_updated', {
       claimId,
       supplier_claim_resolved: !!resolved,
       at: new Date().toISOString(),
@@ -1046,7 +1046,7 @@ async function expireWarranties({ io = null } = {}) {
     });
   }
   if (io && rows.length) {
-    io.emit('warranty_expired_batch', {
+    emitEvent(io, 'warranty_expired_batch', {
       count: rows.length,
       at: new Date().toISOString(),
     });
@@ -1068,8 +1068,7 @@ async function notifyExpiringSoon({ days = 30, io }) {
   const count = rows[0].count;
   if (count > 0) {
     const payload = { count, withinDays: days, at: new Date().toISOString() };
-    io.to('role:Manager').emit('warranty_expiring_soon', payload);
-    io.to('role:Admin').emit('warranty_expiring_soon', payload);
+    emitEvent(io, 'warranty_expiring_soon', payload);
   }
   return { count };
 }

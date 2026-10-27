@@ -7,6 +7,7 @@ const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
 const { deleteAttachmentFile } = require('../utils/upload');
+const { emitEvent } = require('../socket/events');
 
 const PAYMENT_METHODS = new Set(['cash', 'bank']);
 
@@ -179,8 +180,7 @@ async function createExpense({
       recordedBy: userId,
       at: new Date().toISOString(),
     };
-    io.to('role:Manager').emit('expense_recorded', expensePayload);
-    io.to('role:Admin').emit('expense_recorded', expensePayload);
+    emitEvent(io, 'expense_recorded', expensePayload);
 
     const balancePayload = {
       newBalance: result.treasury?.balanceAfter,
@@ -190,16 +190,14 @@ async function createExpense({
       at: new Date().toISOString(),
     };
     if (paymentMethod === 'cash') {
-      io.to('role:Manager').emit('cash_balance_updated', balancePayload);
-      io.to('role:Admin').emit('cash_balance_updated', balancePayload);
+      emitEvent(io, 'cash_balance_updated', balancePayload);
     } else {
       const bankPayload = {
         ...balancePayload,
         accountId: result.treasury?.accountId,
         bankName: result.treasury?.bankName,
       };
-      io.to('role:Manager').emit('bank_balance_updated', bankPayload);
-      io.to('role:Admin').emit('bank_balance_updated', bankPayload);
+      emitEvent(io, 'bank_balance_updated', bankPayload);
     }
   }
 
