@@ -1,11 +1,50 @@
 # Audit round 2: hand-off
 
-**Written:** 27 October 2026, mid Phase 5, when the session was near its usage limit.
-**Branch:** `main`, last commit `0ae6d0d`. Nothing is pushed.
+**Written:** 27 October 2026, mid Phase 5. **Updated** the same day when the user stopped the session partway through parts 2–3.
+**Branch:** `main`, last code commit `6fd5feb` (work in progress, see below). Nothing is pushed.
 **Plan:** https://claude.ai/artifact/KfVr2QLQxVURbpcMeeEV21 (private, owner's account)
-**Progress report:** [AUDIT_FIX_PROGRESS.md](AUDIT_FIX_PROGRESS.md). It's up to date through Phase 4. Phase 5 part 1 is described only here so far.
+**Progress report:** [AUDIT_FIX_PROGRESS.md](AUDIT_FIX_PROGRESS.md). It's up to date through Phase 4. Phase 5 is described only here so far.
 
-Start a new session with: *"Read AUDIT_ROUND2_HANDOFF.md and continue Phase 5 from 'What's left in Phase 5'."*
+Start a new session with: *"Read AUDIT_ROUND2_HANDOFF.md and continue Phase 5, starting with 'Start here'."*
+
+## Start here: finish and test parts 2 and 3
+
+Commit `6fd5feb` is **work in progress**. The web type check is clean and the server modules load, but **no tests were written for it and the full suites were not run**. Do these first, in order:
+
+1. **Finish the till's closed-drawer override prompt.** In `web/components/cashier/CashierTerminal.tsx`, `confirmPay(closedDrawerReason?)` sets `drawerOverrideOpen` to true when confirm fails with `BIZ_DRAWER_CLOSED` and the user has `cash.override_closed_drawer`. **No dialog renders it yet.** Add one next to `<CashierPaymentDialog …>`:
+
+   ```tsx
+   <ConfirmDialog
+     open={drawerOverrideOpen}
+     onClose={() => setDrawerOverrideOpen(false)}
+     onConfirm={(reason) => { setDrawerOverrideOpen(false); confirmPay(reason); }}
+     title="Take cash with the drawer closed?"
+     description="This is logged as a cash-control exception."
+     confirmLabel="Take the cash"
+     reasonLabel="Reason"
+   />
+   ```
+
+   `ConfirmDialog` already supports `reasonLabel` (added in Phase 1). Import it from `@/components/ui/ConfirmDialog`.
+2. **Check the dashboard `/pos` page.** Its `submitSale` call doesn't pass `closedDrawerReason` (around line 309 of `web/app/(dashboard)/pos/page.tsx`). At minimum, show the same clear message on `BIZ_DRAWER_CLOSED`.
+3. **Write `tests/integration/phase5Payments.test.js`.** Copy the harness from `draftOwnership.test.js`. Cover:
+   - **SI-03:**
+     - a card or transfer payment without `bankAccountId` gets 400; an inactive account gets 400
+     - card stores `method 'bank'`, `tender 'card'` and the reference, and confirm posts to the chosen account (`bank_transactions` and the account balance)
+     - an idempotent replay with a different tender or reference gets 409
+     - a legacy `bank` payment row with no account (insert it directly) still confirms
+     - `GET /bank-accounts/for-payments` works for a Cashier and returns no balances
+   - **SI-06:**
+     - with the drawer closed (`UPDATE cash_drawer SET status='closed'` and no open session), a cash sale confirm gets 409 `BIZ_DRAWER_CLOSED` and no session is created
+     - a Manager with `closedDrawerOverride: { reason }` succeeds; the session note contains the reason and `activity_log` has `cash.closed_drawer_override`
+     - a Cashier sending the override gets 403; a too-short reason gets 400
+     - card-only sales still work with the drawer closed
+4. **Run the full suites.** These existing tests will probably break, because they confirm cash sales with the drawer closed (they relied on auto-open):
+   - `invoiceIntegrity`, `customInvoiceItems`, `auditPhase2`, `treasuryLedger`, `checkoutRecovery`, `idempotency`
+
+   Fix them by opening the drawer in their setup (`cashService.openDrawer({ openingBalance: 0, employeeId })`), **not** by weakening the rule. Payments posted with `method: 'bank'` and no `bankAccountId` through the API also now get 400; give those tests an account.
+5. **Web tests:** update `web/lib/pos/checkoutResume.test.ts` and `web/lib/cashier/cashier.test.ts` if needed (they use `method: 'bank'`), and add one for `samePayment` with card and transfer.
+6. **Commit** as "fix: audit round 2, phase 5 parts 2–3 …", then continue with parts 4 and 5 below.
 
 ---
 
@@ -17,7 +56,7 @@ Start a new session with: *"Read AUDIT_ROUND2_HANDOFF.md and continue Phase 5 fr
 | 2 | Live events follow permissions (AUTH-04) | Done | `3b0ca13` |
 | 3 | HTTPS through Caddy, 15-min idle sign-out, 12-hour sessions, sign-out all devices (AUTH-01/02/03/09) | Done | `807fe66` |
 | 4 | One barcode per product, cost on each movement, reorder alerts (INV-003/006/007) | Done | `428ea80` |
-| 5 | Drafts, tenders, cash control | **Part 1 done** (draft ownership, SI-02) | `0ae6d0d` |
+| 5 | Drafts, tenders, cash control | **Part 1 done** (draft ownership, SI-02). **Parts 2–3 written, not tested** (card/transfer, closed drawer). Parts 4–5 not started | `0ae6d0d`, `6fd5feb` (WIP) |
 | 6 | FIFO costing (INV-001) | Not started; needs accountant sign-off | |
 | 7 | Database rules (SI-05, INV-010) | Not started; after 5–6 | |
 | 8 | CI fails on skipped DB tests (AUTH-13, INV-015), route-permission test, more reconcile checks | Not started | |
@@ -52,6 +91,8 @@ Tests at `0ae6d0d`: server **604 passed, 6 skipped** (the commit message says 60
 - Permissions `cash.override_closed_drawer` and `cash.approve_close` (Admin, Manager), also in `shared/permissions.js` and `server/db/seed.js`.
 
 ### What's left in Phase 5
+
+**Parts 2 and 3 below are written in `6fd5feb` as described, except the till's override prompt. Finish and test them using "Start here" above.** The notes stay here as the design reference.
 
 **Part 2: card and transfer with a chosen bank account (SI-03, no cheques).**
 - **Storage:** keep `method = 'bank'` in the database for both card and transfer. Put `'card'` or `'transfer'` in `tender`, and the slip or transfer reference in `reference`. Reports, cancellation reversal and refunds all read `method = 'bank'`, so they keep working.
