@@ -13,6 +13,8 @@ Phases 5 and 8 and INV-009 are done and in AUDIT_FIX_PROGRESS.md. Next is **Phas
 
 **Before writing code, ask the user** to get the accountant's sign-off on three points: the FIFO cutover (opening layers at today's stock and cost, no journal on the day), the round 1 account mapping, and the one-off opening adjustment. Also rehearse the cutover on a copy of live data. Phase 8 and INV-009 were done first while waiting for it.
 
+**Not yet checked in the running app:** the Phase 5 screens. That means the till's payment dialog (Card / Bank transfer with the account picker and reference), the closed-drawer message and the manager's "Take the cash" prompt, the second-approver fields when closing the drawer (Treasury → Cash drawer), the exchange payment choice on a new return, and the Users page online badges (presence F07, fixed 29 Oct in `64f2bb3`). Start the app with the `api` and `web` launch entries and click through them before Phase 6. The dev admin account is in `server/db/seed.js`.
+
 **Known flaky test:** `presenceLifecycle` › "an unattended screen goes idle while staying connected (F08)" failed once in a full run on 29 Oct and passed 3 of 3 alone. The full run after that passed. If it keeps failing, make its timing more tolerant rather than changing presence code.
 
 **Dev environment on this PC:** the dev database (`mahali-pg`) was upgraded to migration 054 on 29 Oct. Backup taken first: `tmp/db-backups/before-phase5-20261029-1219.dump`. `.claude/launch.json` has `api` (port 3002, `npm run dev:server`) and `web` (port 3001). The API's own pre-upgrade backup needs `pg_dump` on the PC, which isn't installed, so new migrations go through `docker exec mahali-pg pg_dump …` first, then `MIGRATE_WITHOUT_BACKUP=1 npm run migrate`.
