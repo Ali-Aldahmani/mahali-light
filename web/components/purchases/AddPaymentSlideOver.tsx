@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Banknote, Building2, FileSpreadsheet } from 'lucide-react';
+import { Banknote, Building2 } from 'lucide-react';
 import ReceiptUpload from '@/components/ui/ReceiptUpload';
 import SlideOver from '@/components/ui/SlideOver';
 import Button from '@/components/ui/Button';
@@ -16,7 +16,6 @@ import { useRequestKey } from '@/hooks/useRequestKey';
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
   { value: 'bank_transfer', label: 'Bank transfer', Icon: Building2 },
-  { value: 'cheque', label: 'Cheque', Icon: FileSpreadsheet },
 ];
 
 function money2(n: number) {
@@ -220,7 +219,7 @@ export default function AddPaymentSlideOver({
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
             className="w-full rounded-input border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none"
-            placeholder="Reference number, cheque #, etc."
+            placeholder="Reference number"
           />
         </div>
       </div>

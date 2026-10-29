@@ -5,6 +5,8 @@ const { runOnce } = require('../utils/operations');
 const { todayStoreDate } = require('../utils/dates');
 const journalService = require('./journalService');
 const { emitEvent } = require('../socket/events');
+const bcrypt = require('bcrypt');
+const { loadUserContext } = require('../middleware/auth');
 
 const { TREASURY_CODES: GL } = journalService;
 
@@ -439,11 +441,37 @@ async function openDrawer({ openingBalance, employeeId, notes = null, io = null 
   return result;
 }
 
+// Round 1 open item: a difference above the tolerance is approved by a
+// second person, not forced by whoever is closing. They sign in on the till:
+// a different active user with cash.approve_close. Returns their user id.
+async function verifyCloseApprover(client, approver, closingUserId) {
+  const refuse = (message, status = 403) => new AppError(
+    ERROR_CODES.AUTH_NO_PERMISSION, message, { status, details: { reason: 'approver_refused' } },
+  );
+  const { rows } = await client.query(
+    `SELECT id, password_hash, is_active FROM users WHERE username = $1`, [approver.username],
+  );
+  const user = rows[0];
+  const passwordOk = user ? await bcrypt.compare(approver.password, user.password_hash) : false;
+  if (!user || !passwordOk || !user.is_active) {
+    throw refuse('The approver\'s username or password is wrong.', 401);
+  }
+  if (user.id === closingUserId) {
+    throw refuse('Someone other than the person closing the drawer must approve the difference.');
+  }
+  const ctx = await loadUserContext(user.id);
+  const perms = ctx?.permissions || [];
+  if (!perms.includes('cash.approve_close') && !perms.includes('*')) {
+    throw refuse('That person isn\'t allowed to approve drawer differences.');
+  }
+  return user.id;
+}
+
 async function closeDrawer({
   closingBalance,
   employeeId,
   notes = null,
-  force = false,
+  approver = null,
   io = null,
 }) {
   const counted = money(closingBalance);
@@ -485,20 +513,25 @@ async function closeDrawer({
     const running = money(drawer.current_balance);
     const discrepancy = money(counted - expected);
 
-    if (Math.abs(discrepancy) > DISCREPANCY_TOLERANCE && !force) {
-      throw new AppError(
-        ERROR_CODES.BIZ_DISCREPANCY_NEEDS_APPROVAL,
-        `Discrepancy of ${discrepancy.toFixed(2)} AED exceeds the ${DISCREPANCY_TOLERANCE.toFixed(2)} AED tolerance.`,
-        {
-          status: 409,
-          details: {
-            expectedBalance: expected,
-            countedBalance: counted,
-            discrepancy,
-            tolerance: DISCREPANCY_TOLERANCE,
+    let approvedBy = null;
+    if (Math.abs(discrepancy) > DISCREPANCY_TOLERANCE) {
+      if (!approver) {
+        throw new AppError(
+          ERROR_CODES.BIZ_DISCREPANCY_NEEDS_APPROVAL,
+          `Discrepancy of ${discrepancy.toFixed(2)} AED exceeds the ${DISCREPANCY_TOLERANCE.toFixed(2)} AED tolerance. A second person must approve it.`,
+          {
+            status: 409,
+            details: {
+              expectedBalance: expected,
+              countedBalance: counted,
+              discrepancy,
+              tolerance: DISCREPANCY_TOLERANCE,
+              needsApprover: true,
+            },
           },
-        },
-      );
+        );
+      }
+      approvedBy = await verifyCloseApprover(client, approver, employeeId);
     }
     if (Math.abs(discrepancy) > 0.0001 && !notes) {
       throw new AppError(
@@ -530,10 +563,22 @@ async function closeDrawer({
               expected_balance = $3,
               discrepancy = $4,
               closed_at = NOW(),
-              notes = COALESCE(NULLIF($5, ''), notes)
+              notes = COALESCE(NULLIF($5, ''), notes),
+              discrepancy_approved_by = $7
         WHERE id = $6`,
-      [employeeId, counted, expected, discrepancy, notes || '', session.id],
+      [employeeId, counted, expected, discrepancy, notes || '', session.id, approvedBy],
     );
+    if (approvedBy) {
+      await logActivity({
+        client,
+        entityType: 'cash_drawer',
+        entityId: drawer.id,
+        action: 'cash_drawer.close_approved',
+        performedBy: employeeId,
+        newValue: { sessionId: session.id, discrepancy, approvedBy },
+        notes,
+      });
+    }
 
     await client.query(
       `UPDATE cash_drawer

@@ -25,7 +25,8 @@ import { toast } from '@/store/toastStore';
 import { createReturnRequest } from '@/services/returnService';
 import { searchProducts } from '@/services/productService';
 import { formatCurrency, formatDate, timeAgo } from '@/lib/utils/format';
-import type { Invoice, InvoiceItem, RefundPlanEntry, ReplacementPlanItem, SelectOption } from '../types';
+import type { DifferencePayment, Invoice, InvoiceItem, RefundPlanEntry, ReplacementPlanItem, SelectOption } from '../types';
+import { defaultBankAccountId, usePaymentBankAccounts } from '@/components/payments/BankTenderFields';
 import { useRequestKey } from '@/hooks/useRequestKey';
 
 const REASON_OPTIONS: SelectOption[] = [
@@ -92,6 +93,10 @@ function NewReturnRequestPageContent() {
 
   const [refundPlan, setRefundPlan] = useState<RefundPlanEntry[]>([]);
   const [replacementItems, setReplacementItems] = useState<ReplacementPlanItem[]>([]);
+  const [differencePayment, setDifferencePayment] = useState<DifferencePayment>({
+    method: 'cash',
+    bankAccountId: null,
+  });
   // Each entry: { id, sourceItemId, variantId, productName, sku, quantity, unitPrice }
 
   // One key per visit: a retried submit returns the request already filed.
@@ -267,6 +272,11 @@ function NewReturnRequestPageContent() {
       }
       return;
     }
+    if (step === 2 && returnType === 'customer_replace' && priceDifference > 0
+        && differencePayment.method === 'bank' && !differencePayment.bankAccountId) {
+      toast.error('Choose the bank account the price difference is paid into.');
+      return;
+    }
     setStep((s) => Math.min(STEPS.length - 1, s + 1));
   }
 
@@ -294,6 +304,8 @@ function NewReturnRequestPageContent() {
               : priceDifference < 0
                 ? 'refund_to_customer'
                 : 'none',
+          // How the customer pays a positive difference (cash or a bank account).
+          ...(priceDifference > 0 ? { differencePayment } : {}),
         };
       }
 
@@ -381,6 +393,8 @@ function NewReturnRequestPageContent() {
             setReplacementItems={setReplacementItems}
             priceDifference={priceDifference}
             replacementTotal={replacementTotal}
+            differencePayment={differencePayment}
+            setDifferencePayment={setDifferencePayment}
           />
         )}
         {step === 2 && returnType === 'supplier_return' && (
@@ -979,6 +993,8 @@ function ReplaceStep({
   setReplacementItems,
   priceDifference,
   replacementTotal,
+  differencePayment,
+  setDifferencePayment,
 }: {
   returnedItems: BackendItem[];
   totalReturned: number;
@@ -986,7 +1002,10 @@ function ReplaceStep({
   setReplacementItems: React.Dispatch<React.SetStateAction<ReplacementPlanItem[]>>;
   priceDifference: number;
   replacementTotal: number;
+  differencePayment: DifferencePayment;
+  setDifferencePayment: React.Dispatch<React.SetStateAction<DifferencePayment>>;
 }) {
+  const bankAccounts = usePaymentBankAccounts();
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -1159,6 +1178,42 @@ function ReplaceStep({
           <div className="rounded-xl border border-accent/30 bg-accent-light p-4 text-sm text-accent">
             The customer pays an extra {formatCurrency(priceDifference)} — this
             will be charged when the manager approves the request.
+          </div>
+        )}
+        {priceDifference > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-ink">How the customer pays the difference</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['cash', 'bank'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() =>
+                    setDifferencePayment(
+                      m === 'cash'
+                        ? { method: 'cash', bankAccountId: null }
+                        : { method: 'bank', bankAccountId: defaultBankAccountId(bankAccounts) },
+                    )
+                  }
+                  className={[
+                    'rounded-input border px-3 py-2 text-sm transition',
+                    differencePayment.method === m
+                      ? 'border-accent bg-accent-light text-accent'
+                      : 'border-border bg-surface text-ink hover:bg-surface-2',
+                  ].join(' ')}
+                >
+                  {m === 'cash' ? 'Cash' : 'Card or bank transfer'}
+                </button>
+              ))}
+            </div>
+            {differencePayment.method === 'bank' && (
+              <Select
+                placeholder={bankAccounts.length ? 'Bank account' : 'No bank account set up'}
+                value={differencePayment.bankAccountId || ''}
+                onChange={(v) => setDifferencePayment({ method: 'bank', bankAccountId: v || null })}
+                options={bankAccounts.map((a) => ({ value: a.id, label: `${a.bankName} · ${a.accountName}` }))}
+              />
+            )}
           </div>
         )}
       </div>

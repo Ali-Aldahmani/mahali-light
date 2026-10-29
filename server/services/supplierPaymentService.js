@@ -7,7 +7,9 @@ const bankService = require('./bankService');
 const { logActivity } = require('../utils/activityLog');
 const { runOnce } = require('../utils/operations');
 
-const VALID_METHODS = new Set(['cash', 'bank_transfer', 'cheque']);
+// No cheques (owner's decision, audit round 2): a cheque never posted to the
+// ledger and had no cleared or bounced state. Older cheque rows stay readable.
+const VALID_METHODS = new Set(['cash', 'bank_transfer']);
 
 function money(n) {
   n = Number(n) || 0;

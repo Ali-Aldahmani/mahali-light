@@ -5,13 +5,15 @@
 **Plan:** https://claude.ai/artifact/KfVr2QLQxVURbpcMeeEV21 (private, owner's account)
 **Progress report:** [AUDIT_FIX_PROGRESS.md](AUDIT_FIX_PROGRESS.md). It's up to date through Phase 4. Phase 5 is described only here so far.
 
-Start a new session with: *"Read AUDIT_ROUND2_HANDOFF.md and continue Phase 5, starting with 'Start here'."*
+Start a new session with: *"Read AUDIT_ROUND2_HANDOFF.md and continue from 'Start here'."*
 
-## Start here: Phase 5 parts 4 and 5
+## Start here: Phase 6 (FIFO costing)
 
-Parts 1–3 are done and tested. Continue with **Part 4** (second approver for drawer differences above AED 10), then **Part 5** (exchange difference tender picker), described under "What's left in Phase 5" below. Then update AUDIT_FIX_PROGRESS.md for the whole of Phase 5 (it still stops at Phase 4) and commit.
+Phase 5 is done and in AUDIT_FIX_PROGRESS.md. Next is **Phase 6, FIFO costing (INV-001)**, under "Phases 6–8" below.
 
-**Known flaky test:** `presenceLifecycle` › "an unattended screen goes idle while staying connected (F08)" failed once in a full run on 29 Oct (`stale` was false) and passed 3 of 3 when rerun alone. It compares timestamps under load and doesn't touch Phase 5 code. If it keeps failing in full runs, make its timing more tolerant rather than changing presence code.
+**Before writing code, ask the user** to get the accountant's sign-off on three points: the FIFO cutover (opening layers at today's stock and cost, no journal on the day), the round 1 account mapping, and the one-off opening adjustment. Also rehearse the cutover on a copy of live data. If that sign-off isn't there, Phase 8 (CI) and INV-009 (write down single location) need no decisions and can go first.
+
+**Known flaky test:** `presenceLifecycle` › "an unattended screen goes idle while staying connected (F08)" failed once in a full run on 29 Oct and passed 3 of 3 alone. The full run after that passed. If it keeps failing, make its timing more tolerant rather than changing presence code.
 
 **Dev environment on this PC:** the dev database (`mahali-pg`) was upgraded to migration 054 on 29 Oct. Backup taken first: `tmp/db-backups/before-phase5-20261029-1219.dump`. `.claude/launch.json` has `api` (port 3002, `npm run dev:server`) and `web` (port 3001). The API's own pre-upgrade backup needs `pg_dump` on the PC, which isn't installed, so new migrations go through `docker exec mahali-pg pg_dump …` first, then `MIGRATE_WITHOUT_BACKUP=1 npm run migrate`.
 
@@ -25,12 +27,12 @@ Parts 1–3 are done and tested. Continue with **Part 4** (second approver for d
 | 2 | Live events follow permissions (AUTH-04) | Done | `3b0ca13` |
 | 3 | HTTPS through Caddy, 15-min idle sign-out, 12-hour sessions, sign-out all devices (AUTH-01/02/03/09) | Done | `807fe66` |
 | 4 | One barcode per product, cost on each movement, reorder alerts (INV-003/006/007) | Done | `428ea80` |
-| 5 | Drafts, tenders, cash control | **Parts 1–3 done** (draft ownership, card/transfer, closed drawer). Parts 4–5 not started | `0ae6d0d`, `6fd5feb`, and the commit after this update |
+| 5 | Draft ownership, card/transfer, closed drawer, drawer-close approver, exchange tender, no cheques | Done | `0ae6d0d`, `6fd5feb`, `ae9b3ac`, and the commit after this update |
 | 6 | FIFO costing (INV-001) | Not started; needs accountant sign-off | |
 | 7 | Database rules (SI-05, INV-010) | Not started; after 5–6 | |
 | 8 | CI fails on skipped DB tests (AUTH-13, INV-015), route-permission test, more reconcile checks | Not started | |
 
-Tests at `0ae6d0d`: server **604 passed, 6 skipped** (the commit message says 605; 604 is right). Web: **213 passed**. Web type check clean.
+Tests at the end of Phase 5: server **616 passed, 6 skipped**. Web **215 passed**. Web type check clean.
 
 ---
 

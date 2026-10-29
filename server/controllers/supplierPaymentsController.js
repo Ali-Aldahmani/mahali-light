@@ -15,7 +15,7 @@ const { emitEvent } = require('../socket/events');
 
 const createSchema = z.object({
   amount: z.number().positive(),
-  paymentMethod: z.enum(['cash', 'bank_transfer', 'cheque']),
+  paymentMethod: z.enum(['cash', 'bank_transfer']),
   paymentDate: z.string().optional().nullable(),
   bankAccountId: z.string().uuid().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),

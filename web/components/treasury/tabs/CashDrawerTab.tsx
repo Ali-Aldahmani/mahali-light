@@ -442,13 +442,19 @@ function CloseDrawerSlideOver({
   const [counted, setCounted] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
-  const [needsForce, setNeedsForce] = useState(false);
+  // A difference above the tolerance is approved by a second person, who
+  // signs in here (the server checks they may and aren't the one closing).
+  const [needsApprover, setNeedsApprover] = useState(false);
+  const [approverUsername, setApproverUsername] = useState('');
+  const [approverPassword, setApproverPassword] = useState('');
 
   useEffect(() => {
     if (open) {
       setCounted('');
       setNotes('');
-      setNeedsForce(false);
+      setNeedsApprover(false);
+      setApproverUsername('');
+      setApproverPassword('');
     }
   }, [open]);
 
@@ -463,7 +469,9 @@ function CloseDrawerSlideOver({
       const result = await closeDrawer({
         closingBalance: cnt,
         notes: notes || null,
-        force: needsForce,
+        approver: needsApprover
+          ? { username: approverUsername.trim(), password: approverPassword }
+          : null,
       });
       toast.success('Drawer closed.');
       onDone?.({
@@ -476,11 +484,10 @@ function CloseDrawerSlideOver({
       onClose?.();
     } catch (err: any) {
       if (err?.code === 'BIZ_DISCREPANCY_NEEDS_APPROVAL') {
-        setNeedsForce(true);
-        toast.warning(
-          'This discrepancy is above the tolerance. Confirm again as manager.',
-        );
+        setNeedsApprover(true);
+        toast.warning('This difference is above the tolerance. A second person must approve it.');
       } else {
+        setApproverPassword('');
         toast.error(err?.message || 'Could not close the drawer.');
       }
     } finally {
@@ -519,11 +526,29 @@ function CloseDrawerSlideOver({
               : undefined
           }
         />
-        {needsForce && (
-          <p className="text-xs text-warning bg-warning-light border border-warning/30 rounded-card px-3 py-2">
-            Discrepancy is above tolerance. Submitting again will force-close
-            the drawer with a manager override.
-          </p>
+        {needsApprover && (
+          <div className="space-y-3 rounded-card border border-warning/30 bg-warning-light px-3 py-3">
+            <p className="text-xs text-ink">
+              The difference is above the tolerance. A manager other than you signs in here to approve it.
+            </p>
+            <Input
+              id="close-approver-username"
+              label="Approver username"
+              value={approverUsername}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApproverUsername(e.target.value)}
+              autoComplete="off"
+              required
+            />
+            <Input
+              id="close-approver-password"
+              label="Approver password"
+              type="password"
+              value={approverPassword}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApproverPassword(e.target.value)}
+              autoComplete="off"
+              required
+            />
+          </div>
         )}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" type="button" onClick={onClose}>

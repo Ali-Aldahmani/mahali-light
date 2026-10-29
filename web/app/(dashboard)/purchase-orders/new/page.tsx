@@ -85,7 +85,7 @@ function NewPurchaseOrderPageContent() {
   const [recordPayment, setRecordPayment] = useState(false);
   const [payKind, setPayKind] = useState<'full' | 'half' | 'custom'>('full');
   const [payAmount, setPayAmount] = useState<number | string>('');
-  const [payMethod, setPayMethod] = useState<'cash' | 'bank_transfer' | 'cheque'>('cash');
+  const [payMethod, setPayMethod] = useState<'cash' | 'bank_transfer'>('cash');
 
   // If a supplierId is passed in, fetch + preselect.
   useEffect(() => {
@@ -651,7 +651,6 @@ function NewPurchaseOrderPageContent() {
                         [
                           { id: 'cash' as const, label: 'Cash' },
                           { id: 'bank_transfer' as const, label: 'Bank transfer' },
-                          { id: 'cheque' as const, label: 'Cheque' },
                         ]
                       ).map((m) => (
                         <button

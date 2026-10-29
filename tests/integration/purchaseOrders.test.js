@@ -123,13 +123,20 @@ describe.skipIf(!enabled)('purchase order create/update/confirm on real PostgreS
     expect(res.body.data.notes).toBe('updated notes only');
   });
 
+  // A funded account to pay suppliers from (cheques are no longer offered).
+  async function payingAccount() {
+    const { rows: [a] } = await db.query(
+      `INSERT INTO bank_accounts (bank_name, account_name, current_balance) VALUES ('Test', 'Payables', 100000) RETURNING id`);
+    return a.id;
+  }
+
   it('a paid draft keeps its supplier and cannot drop below what was paid (Phase 4)', async () => {
     const put = (id, body) => request(app).put(`/purchase-orders/${id}`).auth(adminToken, { type: 'bearer' }).send(body);
     const created = await request(app).post('/purchase-orders').auth(adminToken, { type: 'bearer' })
       .send({ supplierId, items: [{ productId, variantId, quantity: 2, costPricePerUnit: 60 }] });
     const draftId = created.body.data.id;
     await require('../../server/services/supplierPaymentService').addPayment({
-      poId: draftId, amount: 100, method: 'cheque', employeeId: adminId,
+      poId: draftId, amount: 100, method: 'bank_transfer', bankAccountId: await payingAccount(), employeeId: adminId,
     });
     const { rows: [other] } = await db.query(`INSERT INTO suppliers (name) VALUES ('Other Supplier') RETURNING id`);
 
@@ -203,7 +210,7 @@ describe.skipIf(!enabled)('purchase order create/update/confirm on real PostgreS
     const paidId = await newPo();
     await post(`/purchase-orders/${paidId}/confirm`);
     await require('../../server/services/supplierPaymentService').addPayment({
-      poId: paidId, amount: 10, method: 'cheque', employeeId: adminId,
+      poId: paidId, amount: 10, method: 'bank_transfer', bankAccountId: await payingAccount(), employeeId: adminId,
     });
     expect((await post(`/purchase-orders/${paidId}/cancel`)).status).toBe(409);
 

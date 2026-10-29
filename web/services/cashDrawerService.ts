@@ -22,8 +22,18 @@ export function openDrawer(openingBalance, notes = null) {
   return apiPost('/cash-drawer/open', { openingBalance, notes });
 }
 
-export function closeDrawer({ closingBalance, notes = null, force = false }) {
-  return apiPost('/cash-drawer/close', { closingBalance, notes, force });
+// approver: the second person who signs in to approve a difference above the
+// tolerance (they can't be the person closing).
+export function closeDrawer({
+  closingBalance,
+  notes = null,
+  approver = null,
+}: {
+  closingBalance: number;
+  notes?: string | null;
+  approver?: { username: string; password: string } | null;
+}) {
+  return apiPost('/cash-drawer/close', { closingBalance, notes, approver });
 }
 
 // requestKey: see lib/requestKey — makes a retried submit safe.

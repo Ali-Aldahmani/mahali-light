@@ -53,7 +53,13 @@ async function open(req, res, next) {
 const closeSchema = z.object({
   closingBalance: z.number().nonnegative(),
   notes: z.string().max(2000).optional().nullable(),
+  // Still accepted from older screens, but no longer enough on its own: a
+  // difference above the tolerance needs a second person (approver).
   force: z.boolean().optional().default(false),
+  approver: z.object({
+    username: z.string().trim().min(1).max(50),
+    password: z.string().min(1).max(200),
+  }).optional().nullable(),
 });
 
 async function close(req, res, next) {
@@ -64,7 +70,7 @@ async function close(req, res, next) {
       closingBalance: body.closingBalance,
       employeeId: req.user.id,
       notes: body.notes || null,
-      force: body.force,
+      approver: body.approver || null,
       io,
     });
     const state = await cashService.getDrawerState();

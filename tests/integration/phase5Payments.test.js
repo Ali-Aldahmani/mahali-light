@@ -66,6 +66,7 @@ describe.skipIf(!enabled)('phase 5 payments on real PostgreSQL', () => {
     app.use(express.json());
     app.use('/invoices', require('../../server/routes/invoices'));
     app.use('/bank-accounts', require('../../server/routes/bankAccounts'));
+    app.use('/cash-drawer', require('../../server/routes/cashDrawer'));
     app.use(require('../../server/middleware/errors').errorHandler);
     cashier = await user('Cashier');
     manager = await user('Manager');
@@ -176,5 +177,86 @@ describe.skipIf(!enabled)('phase 5 payments on real PostgreSQL', () => {
     const { rows: log } = await db.query(
       `SELECT notes FROM activity_log WHERE action = 'cash.closed_drawer_override'`);
     expect(log.some((l) => /Opening float not counted yet/.test(l.notes))).toBe(true);
+  });
+
+  // --- Drawer close: a second person approves a large difference ----------
+
+  async function withPassword(roleName, password = 'copper-lamp-harbor') {
+    const u = await user(roleName);
+    const { rows: [row] } = await db.query(
+      `UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING username`,
+      [await require('bcrypt').hash(password, 4), u.id]);
+    return { ...u, username: row.username, password };
+  }
+  async function openDrawerIfClosed() {
+    const { rows: [d] } = await db.query(`SELECT status FROM cash_drawer LIMIT 1`);
+    if (d.status !== 'open') {
+      await require('../../server/services/cashService').openDrawer({ openingBalance: 100, employeeId: manager.id });
+    }
+  }
+  const closeAs = (by, body) => by.as('post', '/cash-drawer/close').send(body);
+
+  it('drawer close: a difference above AED 10 needs a different manager to sign in', async () => {
+    await openDrawerIfClosed();
+    const first = await closeAs(manager, { closingBalance: 0, notes: 'Counted short', force: true });
+    expect(first.status).toBe(409);
+    expect(first.body.error.details.needsApprover).toBe(true);
+    const expected = Number(first.body.error.details.expectedBalance);
+    const counted = Math.max(0, expected - 50);
+    const body = { closingBalance: counted, notes: 'Counted short' };
+
+    const me = await withPassword('Manager');
+    const cashierApprover = await withPassword('Cashier');
+    const otherManager = await withPassword('Manager');
+
+    expect((await closeAs(me, { ...body, approver: { username: me.username, password: me.password } })).status).toBe(403);
+    expect((await closeAs(me, { ...body, approver: { username: otherManager.username, password: 'wrong-password' } })).status).toBe(401);
+    expect((await closeAs(me, { ...body, approver: { username: cashierApprover.username, password: cashierApprover.password } })).status).toBe(403);
+
+    const ok = await closeAs(me, { ...body, approver: { username: otherManager.username, password: otherManager.password } });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    const { rows: [session] } = await db.query(
+      `SELECT closed_by, discrepancy_approved_by FROM cash_drawer_sessions ORDER BY closed_at DESC NULLS LAST LIMIT 1`);
+    expect(session).toEqual({ closed_by: me.id, discrepancy_approved_by: otherManager.id });
+    const { rows: log } = await db.query(`SELECT 1 FROM activity_log WHERE action = 'cash_drawer.close_approved'`);
+    expect(log).toHaveLength(1);
+  });
+
+  it('drawer close: a difference within AED 10 needs no approver', async () => {
+    await openDrawerIfClosed();
+    // Counting 0 against the AED 100 float is refused and reports what's expected.
+    const probe = await closeAs(manager, { closingBalance: 0, notes: 'probe' });
+    expect(probe.status).toBe(409);
+    const expected = Number(probe.body.error.details.expectedBalance);
+    const res = await closeAs(manager, { closingBalance: expected - 5, notes: 'Five short' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+  });
+
+  // --- No cheques ------------------------------------------------------------
+
+  it('supplier payments no longer accept cheques', async () => {
+    await expect(require('../../server/services/supplierPaymentService').addPayment({
+      poId: randomUUID(), amount: 10, method: 'cheque', employeeId: manager.id,
+    })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  // --- Exchange difference -------------------------------------------------
+
+  it('exchange: a difference paid by bank must name the account', async () => {
+    const inv = await draft(cashier);
+    await pay(cashier, inv.id, { method: 'card', amount: Number(inv.total), bankAccountId: accountId });
+    expect((await cashier.as('post', `/invoices/${inv.id}/confirm`)).status).toBe(200);
+    const { rows: [line] } = await db.query(`SELECT id FROM invoice_items WHERE invoice_id = $1`, [inv.id]);
+    const request = (differencePayment) => require('../../server/services/returnService').createReturnRequest({
+      returnType: 'customer_replace', referenceType: 'invoice', referenceId: inv.id,
+      reason: 'customer_request', requestNote: 'Swap for two', requestedBy: manager.id,
+      items: [{ invoiceItemId: line.id, quantity: 1, condition: 'good' }],
+      replacementPlan: {
+        items: [{ variantId, quantity: 2 }], priceDifference: 50, differenceDirection: 'customer_pays',
+        differencePayment,
+      },
+    });
+    await expect(request({ method: 'bank' })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(request({ method: 'bank', bankAccountId: accountId })).resolves.toBeTruthy();
   });
 });

@@ -41,10 +41,17 @@ export interface ReplacementPlanItem {
   unitPrice: number;
 }
 
+// How the customer pays a positive exchange difference.
+export interface DifferencePayment {
+  method: 'cash' | 'bank';
+  bankAccountId: string | null;
+}
+
 export interface ReplacementPlan {
   items: ReplacementPlanItem[];
   priceDifference?: number;
   differenceDirection?: 'customer_pays' | 'refund_to_customer' | 'none' | string;
+  differencePayment?: DifferencePayment;
 }
 
 export interface ReturnHistoryEntry {

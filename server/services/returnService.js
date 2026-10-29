@@ -196,6 +196,11 @@ function parseDifferencePayment(raw) {
   if (raw.method !== 'cash' && raw.method !== 'bank') {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Difference payment must be cash or bank.');
   }
+  // Like card and transfer sales (SI-03), money into a bank names its account.
+  if (raw.method === 'bank' && !raw.bankAccountId) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+      'Choose the bank account the price difference is paid into.');
+  }
   return { method: raw.method, bankAccountId: raw.method === 'bank' ? raw.bankAccountId || null : null };
 }
 
