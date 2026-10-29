@@ -47,6 +47,8 @@ export const invoicePaymentSchema = z.object({
   timestamp: z.string(),
   notes: z.string().nullable(),
   idempotencyKey: z.string().nullable().optional(),
+  // On add/remove: the draft's updatedAt after its totals were recalculated.
+  invoiceUpdatedAt: z.string().optional(),
 });
 
 export const invoiceSchema = z.object({

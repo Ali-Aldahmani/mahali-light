@@ -73,6 +73,15 @@ function shape(row) {
   };
 }
 
+// Changing a draft's payments recalculates its totals, which moves its
+// updatedAt. The screen sends that back as expectedUpdatedAt on its next save
+// (invoice audit F23), so it needs the new value, or a retry after a refused
+// confirm (closed drawer, stock) would look like an edit from another screen.
+async function draftVersion(client, invoiceId) {
+  const { rows } = await client.query(`SELECT updated_at FROM invoices WHERE id = $1`, [invoiceId]);
+  return rows[0].updated_at;
+}
+
 async function list(req, res, next) {
   try {
     const { rows } = await query(
@@ -124,7 +133,7 @@ async function create(req, res, next) {
           throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
             'This payment key was already used with different payment details.', { status: 409 });
         }
-        return { payment, invoice: inv, replayed: true };
+        return { payment, invoice: inv, invoiceUpdatedAt: inv.updated_at, replayed: true };
       }
       // Confirmed invoices are fully allocated (cash/bank/credit). Collections
       // against credit belong to customer payments, not a second sale payment.
@@ -172,6 +181,7 @@ async function create(req, res, next) {
       );
 
       await recalculateAndPersistTotals(client, invoiceId);
+      const invoiceUpdatedAt = await draftVersion(client, invoiceId);
 
       await client.query(
         `INSERT INTO invoice_history (invoice_id, action, performed_by, new_snapshot, notes)
@@ -191,10 +201,11 @@ async function create(req, res, next) {
           WHERE p.id = $1`,
         [insertRows[0].id],
       );
-      return { payment: full[0], invoice: inv };
+      return { payment: full[0], invoice: inv, invoiceUpdatedAt };
     });
 
-    if (result.replayed) return ok(res, shape(result.payment));
+    const payload = { ...shape(result.payment), invoiceUpdatedAt: result.invoiceUpdatedAt };
+    if (result.replayed) return ok(res, payload);
 
     await logActivity({
       entityType: 'invoice',
@@ -204,7 +215,7 @@ async function create(req, res, next) {
       newValue: { method: pay.method, tender: pay.tender, amount: body.amount },
     });
 
-    return created(res, shape(result.payment));
+    return created(res, payload);
   } catch (err) {
     next(err);
   }
@@ -218,7 +229,7 @@ async function create(req, res, next) {
 async function remove(req, res, next) {
   try {
     const { id: invoiceId, paymentId } = req.params;
-    await withTransaction(async (client) => {
+    const invoiceUpdatedAt = await withTransaction(async (client) => {
       const { rows: invRows } = await client.query(
         `SELECT status, owner_id FROM invoices WHERE id = $1 FOR UPDATE`,
         [invoiceId],
@@ -261,8 +272,9 @@ async function remove(req, res, next) {
         performedBy: req.user.id,
         oldValue: { method: rows[0].method, amount: Number(rows[0].amount) },
       });
+      return draftVersion(client, invoiceId);
     });
-    return ok(res, { removed: true });
+    return ok(res, { removed: true, invoiceUpdatedAt });
   } catch (err) {
     next(err);
   }

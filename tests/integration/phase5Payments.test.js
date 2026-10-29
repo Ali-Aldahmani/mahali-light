@@ -157,6 +157,27 @@ describe.skipIf(!enabled)('phase 5 payments on real PostgreSQL', () => {
     expect((await cashier.as('post', `/invoices/${inv.id}/confirm`)).status).toBe(200);
   });
 
+  it('SI-06: after a refused cash sale the till can re-save the draft with the version its payment returned', async () => {
+    const inv = await draft(manager);
+    const paid = await pay(manager, inv.id, { method: 'cash', amount: Number(inv.total) });
+    const { rows: [now] } = await db.query(`SELECT updated_at FROM invoices WHERE id = $1`, [inv.id]);
+    expect(new Date(paid.body.data.invoiceUpdatedAt).getTime()).toBe(now.updated_at.getTime());
+    expect((await manager.as('post', `/invoices/${inv.id}/confirm`)).status).toBe(409);
+
+    const resave = (expectedUpdatedAt) => manager.as('put', `/invoices/${inv.id}/items`)
+      .send({ items: [{ variantId, quantity: 1 }], expectedUpdatedAt });
+    // The version from creating the draft is out of date once a payment is added.
+    expect((await resave(new Date(inv.updatedAt).toISOString())).status).toBe(409);
+    const ok = await resave(new Date(paid.body.data.invoiceUpdatedAt).toISOString());
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+
+    const { rows: [p] } = await db.query(`SELECT id FROM invoice_payments WHERE invoice_id = $1`, [inv.id]);
+    const removed = await manager.as('delete', `/invoices/${inv.id}/payments/${p.id}`);
+    expect(removed.status).toBe(200);
+    const { rows: [after] } = await db.query(`SELECT updated_at FROM invoices WHERE id = $1`, [inv.id]);
+    expect(new Date(removed.body.data.invoiceUpdatedAt).getTime()).toBe(after.updated_at.getTime());
+  });
+
   it('SI-06: only a manager can override, and only with a reason', async () => {
     const mine = await draft(cashier);
     await pay(cashier, mine.id, { method: 'cash', amount: Number(mine.total) });

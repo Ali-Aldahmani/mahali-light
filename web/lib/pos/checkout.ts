@@ -206,6 +206,12 @@ export async function submitSale({
     }
     throw cancelledSaleError();
   }
+  // Adding or removing a payment moves the draft's updatedAt. Remember the
+  // new one, or retrying after a refused confirm (closed drawer, stock) is
+  // refused as "changed on another screen".
+  const track = (res: any) => {
+    if (res?.invoiceUpdatedAt) onDraftSaved?.(saved.id, saved.invoiceNumber, res.invoiceUpdatedAt);
+  };
   // A draft that already has allocations (resumed sale, or a retry after the
   // cart changed): keep the ones this payment plan still has unchanged —
   // they replay by key — and take off any that no longer match, so the
@@ -218,19 +224,19 @@ export async function submitSale({
     for (const p of existing) {
       const want = p.idempotencyKey ? planned.get(p.idempotencyKey) : undefined;
       const same = want && samePayment(want, p);
-      if (!same) await removeInvoicePayment(saved.id, p.id);
+      if (!same) track(await removeInvoicePayment(saved.id, p.id));
     }
   }
   for (const pm of allocations) {
     if (!pm.amount || Number(pm.amount) <= 0) continue;
-    await addInvoicePayment(saved.id, {
+    track(await addInvoicePayment(saved.id, {
       idempotencyKey: pm.id,
       method: pm.method,
       amount: Number(pm.amount),
       ...(pm.method === 'card' || pm.method === 'transfer'
         ? { bankAccountId: pm.bankAccountId || null, reference: pm.reference || null }
         : {}),
-    });
+    }));
   }
   const confirmed = await confirmInvoice(saved.id, closedDrawerReason);
   return { invoiceId: saved.id, confirmed };

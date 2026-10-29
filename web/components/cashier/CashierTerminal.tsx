@@ -404,6 +404,20 @@ export default function CashierTerminal() {
     setDialog('pay');
   }, [payBlockedReason]);
 
+  // The draft was changed on another screen since this one loaded it (invoice
+  // audit F23), so the server refused to overwrite it. Reloading the page
+  // wouldn't help (the sale backup holds the same old version), so load the
+  // server's version for the cashier to check and take payment again.
+  const resumeSaleRef = useRef<(invoiceId: string) => Promise<void>>();
+  const reloadIfChangedElsewhere = useCallback(async (err: any): Promise<boolean> => {
+    const draftId = usePosStore.getState().draftInvoiceId;
+    if (err?.code !== 'RESOURCE_CONFLICT' || !draftId || !resumeSaleRef.current) return false;
+    setDialog(null);
+    await resumeSaleRef.current(draftId);
+    toast.info('This sale was changed on another screen. Its latest version is loaded: check it and take payment again.');
+    return true;
+  }, []);
+
   const confirmPay = useCallback(async (closedDrawerReason?: string | null) => {
     const state = usePosStore.getState();
     const t = computeTotals(state);
@@ -460,6 +474,7 @@ export default function CashierTerminal() {
         if (useAuthStore.getState().hasPermission('cash.override_closed_drawer')) setDrawerOverrideOpen(true);
         return;
       }
+      if (await reloadIfChangedElsewhere(err)) return;
       if (!isConnectionError(err)) {
         setPayError(checkoutErrorMessage(err));
         return;
@@ -476,7 +491,7 @@ export default function CashierTerminal() {
     } finally {
       setSubmitting(false);
     }
-  }, [refreshInvoiceSummary]);
+  }, [refreshInvoiceSummary, reloadIfChangedElsewhere]);
 
   // ---- Hold / resume (server drafts) -------------------------------------
   const holdSale = useCallback(async (): Promise<boolean> => {
@@ -507,12 +522,13 @@ export default function CashierTerminal() {
       toast.success(`Sale held${saved.invoiceNumber ? ` as ${saved.invoiceNumber}` : ''}.`);
       return true;
     } catch (err: any) {
+      if (await reloadIfChangedElsewhere(err)) return false;
       toast.error(err?.message ? `Could not hold sale: ${err.message}` : 'Could not hold sale.');
       return false;
     } finally {
       setHolding(false);
     }
-  }, []);
+  }, [reloadIfChangedElsewhere]);
 
   const resumeSale = useCallback(
     async (invoiceId: string) => {
@@ -587,10 +603,13 @@ export default function CashierTerminal() {
           // Payments already on the draft come back with their keys, so
           // completing the sale replays them instead of adding them twice;
           // any the cashier changes are replaced at checkout (F14).
+          // A card or transfer comes back as that tender with its account and
+          // reference, not as the stored method 'bank' (SI-03).
           payments: (detail.payments || []).map((p: any) => ({
             id: p.idempotencyKey || p.id,
-            method: p.method,
+            method: p.tender || p.method,
             amount: Number(p.amount),
+            ...(p.tender ? { bankAccountId: p.bankAccountId || null, reference: p.reference || null } : {}),
           })),
         });
         setSelectedId(lines[0]?.variantId ?? null);
@@ -604,6 +623,7 @@ export default function CashierTerminal() {
     },
     [holdSale, closeDialog, user?.id],
   );
+  resumeSaleRef.current = resumeSale;
 
   // ---- Exit --------------------------------------------------------------
   const leave = useCallback(() => {

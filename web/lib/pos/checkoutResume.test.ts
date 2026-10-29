@@ -51,6 +51,16 @@ describe('completing a resumed draft that already has payments', () => {
     expect(api.confirmInvoice).toHaveBeenCalledWith('d1', null);
   });
 
+  it('remembers the version each payment leaves the draft at, so a retry is not a conflict', async () => {
+    api.createInvoice.mockResolvedValue({ id: 'n1', invoiceNumber: 'INV-3', status: 'draft', updatedAt: 'T0' });
+    api.addInvoicePayment.mockResolvedValue({ id: 'p1', invoiceUpdatedAt: 'T1' });
+    api.confirmInvoice.mockRejectedValue({ code: 'BIZ_DRAWER_CLOSED' });
+    const onDraftSaved = vi.fn();
+    await expect(submitSale({ draft, allocations: [{ id: 'k', method: 'cash', amount: 10 }], onDraftSaved }))
+      .rejects.toMatchObject({ code: 'BIZ_DRAWER_CLOSED' });
+    expect(onDraftSaved).toHaveBeenLastCalledWith('n1', 'INV-3', 'T1');
+  });
+
   it('a new sale never looks for allocations to remove', async () => {
     api.createInvoice.mockResolvedValue({ id: 'n1', invoiceNumber: 'INV-2', status: 'draft' });
     await submitSale({ draft, allocations: [{ id: 'k', method: 'cash', amount: 10 }] });
