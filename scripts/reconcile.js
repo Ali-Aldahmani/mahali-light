@@ -215,6 +215,39 @@ const CHECKS = [
                 - COALESCE((SELECT SUM(current_balance) FROM bank_accounts), 0)) > 0.005`,
   },
   {
+    id: 'movement_arithmetic',
+    title: 'Stock movements where before + quantity ≠ after',
+    // Quarantine moves store the change to stock on hand, so the same rule holds.
+    sql: `
+      SELECT to_char(timestamp, 'YYYY-MM-DD HH24:MI') || ' ' || movement_type AS item,
+             qty_after::float8 AS recorded,
+             (qty_before + quantity)::float8 AS expected
+        FROM stock_movements
+       WHERE ABS(qty_after - (qty_before + quantity)) > 0.005`,
+  },
+  {
+    id: 'po_received_vs_movements',
+    title: 'Purchase-order quantity received vs the stock that came in for it',
+    sql: `
+      SELECT po.po_number || ' · ' || p.name AS item,
+             r.received::float8 AS recorded,
+             COALESCE(m.moved, 0)::float8 AS expected
+        FROM (
+          SELECT purchase_order_id, variant_id, SUM(quantity_received) AS received
+            FROM purchase_order_items GROUP BY purchase_order_id, variant_id
+        ) r
+        JOIN purchase_orders po ON po.id = r.purchase_order_id
+        JOIN product_variants v ON v.id = r.variant_id
+        JOIN products p ON p.id = v.product_id
+        LEFT JOIN (
+          SELECT reference_id, variant_id, SUM(quantity) AS moved
+            FROM stock_movements
+           WHERE movement_type = 'purchase' AND reference_type = 'purchase_order'
+           GROUP BY reference_id, variant_id
+        ) m ON m.reference_id = r.purchase_order_id AND m.variant_id = r.variant_id
+       WHERE ABS(r.received - COALESCE(m.moved, 0)) > 0.005`,
+  },
+  {
     id: 'barcode_collisions',
     title: 'Barcodes that belong to more than one active product (a scan can pick the wrong one)',
     // Any of the three barcode columns counts, compared the way migration 052

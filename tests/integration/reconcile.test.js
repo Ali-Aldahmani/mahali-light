@@ -70,6 +70,36 @@ describe.skipIf(!enabled)('reconciliation report on real PostgreSQL', () => {
     expect(rows).toEqual([expect.objectContaining({ item: 'PO-RECON-1', recorded: 40, expected: 0 })]);
   });
 
+  it('flags a PO received quantity with no stock that came in for it (Phase 8)', async () => {
+    const { rows: [s] } = await db.query(`INSERT INTO suppliers (name) VALUES ('Cable Co') RETURNING id`);
+    const { rows: [p] } = await db.query(`INSERT INTO products (name) VALUES ('Cable drum') RETURNING id`);
+    const { rows: [v] } = await db.query(
+      `INSERT INTO product_variants (product_id, sku, selling_price, cost_price, stock_qty)
+       VALUES ($1, 'CABLE-1', 10, 5, 0) RETURNING id`, [p.id]);
+    const { rows: [po] } = await db.query(
+      `INSERT INTO purchase_orders (po_number, supplier_id, status, total_cost, amount_paid, balance_due)
+       VALUES ('PO-RECON-2', $1, 'received', 0, 0, 0) RETURNING id`, [s.id]);
+    await db.query(
+      `INSERT INTO purchase_order_items (purchase_order_id, product_id, variant_id, quantity, cost_price_per_unit, total_cost, quantity_received)
+       VALUES ($1, $2, $3, 4, 0, 0, 4)`, [po.id, p.id, v.id]);
+    expect(await differences('po_received_vs_movements')).toEqual([
+      expect.objectContaining({ item: 'PO-RECON-2 · Cable drum', recorded: 4, expected: 0 }),
+    ]);
+  });
+
+  it('flags a stock movement whose numbers don\'t add up (Phase 8)', async () => {
+    const { rows: [p] } = await db.query(`INSERT INTO products (name) VALUES ('Lamp') RETURNING id`);
+    const { rows: [v] } = await db.query(
+      `INSERT INTO product_variants (product_id, sku, selling_price, cost_price, stock_qty)
+       VALUES ($1, 'LAMP-1', 10, 5, 7) RETURNING id`, [p.id]);
+    await db.query(
+      `INSERT INTO stock_movements (product_id, variant_id, movement_type, quantity, qty_before, qty_after)
+       VALUES ($1, $2, 'adjustment', 2, 3, 7)`, [p.id, v.id]);
+    expect(await differences('movement_arithmetic')).toEqual([
+      expect.objectContaining({ recorded: 7, expected: 5 }),
+    ]);
+  });
+
   it('flags a drawer reopened with a different amount than it closed with', async () => {
     const { rows: [d] } = await db.query(`SELECT id FROM cash_drawer LIMIT 1`);
     const rows = [

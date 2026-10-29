@@ -6,7 +6,7 @@ This report covers the work done against the `*_AUDIT.md` reports in this folder
 
 **Status:**
 - **Round 1** (the first nine audits): Phases 0–5 are done, and so are the findings the phases left open (section 3, "Open findings closed on 26 Oct").
-- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phases 1–5 are done (section 3, "Round 2, Phase 1" to "Round 2, Phase 5"). Phases 6–8 are in [AUDIT_ROUND2_HANDOFF.md](AUDIT_ROUND2_HANDOFF.md) and the round 2 plan.
+- **Round 2** (the authentication, inventory and sales & invoices audits of 26 Oct): Phases 1–5 and 8 are done (section 3). Phases 6 (FIFO, waiting for the accountant) and 7 (database rules) are in [AUDIT_ROUND2_HANDOFF.md](AUDIT_ROUND2_HANDOFF.md) and the round 2 plan. The authentication audit is fully closed and its report was deleted.
 
 What's left in section 5 is accountant checks, your decisions, feature work the audits list as missing, and round 2 Phases 2–8.
 
@@ -83,8 +83,8 @@ The plan's phases covered each audit's headline findings. The findings they left
 | Warranty audit | Fixed in Phases 1, 2, 4 and on 26 Oct (F16–F18). Per-unit warranties and the "missing features" list: your decision |
 | User presence & logout audit | Fixed in Phases 1, 5 and on 26 Oct (F08, F11, F16). HTTPS on the LAN (F14/F15): round 2, Phase 3 on 27 Oct |
 | AI/ML feasibility audit | Not a defect list. No action needed now |
-| Authentication & authorization audit (round 2) | Phase 1 on 27 Oct: AUTH-05 to AUTH-08. Phase 2 on 27 Oct: AUTH-04. Phase 3 on 27 Oct: AUTH-01, AUTH-02, AUTH-03, AUTH-09. All findings closed |
-| Inventory integrity audit (round 2) | Phase 1 on 27 Oct: INV-002, INV-004, INV-005, INV-008. Phase 4 on 27 Oct: INV-003, INV-006, INV-007. Open: INV-001 (FIFO) in Phase 6, INV-010 in Phase 7, INV-009 (write down single location) |
+| Authentication & authorization audit (round 2) | Phase 1 on 27 Oct: AUTH-05 to AUTH-08. Phase 2 on 27 Oct: AUTH-04. Phase 3 on 27 Oct: AUTH-01, AUTH-02, AUTH-03, AUTH-09. Phase 8 on 29 Oct: AUTH-13 (CI). All findings closed; report deleted |
+| Inventory integrity audit (round 2) | Phase 1 on 27 Oct: INV-002, INV-004, INV-005, INV-008. Phase 4 on 27 Oct: INV-003, INV-006, INV-007. INV-009: single stock location written into the README (29 Oct). INV-015: CI runs the database suites (Phase 8). Open: INV-001 (FIFO) in Phase 6, INV-010 in Phase 7 |
 | Sales & invoices audit (round 2) | Phase 1 on 27 Oct: SI-01, SI-04, SI-07, SI-08. Phase 5 on 27–29 Oct: SI-02, SI-03, SI-06. Open: SI-05 (database rules) in Phase 7 |
 
 ---
@@ -187,6 +187,12 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 - **Exchange difference (round 1 item):** the return screen asks how a positive difference is paid; a bank difference must name its account.
 - **No cheques (round 1 item):** supplier payments accept cash and bank transfer only.
 
+### Round 2, Phase 8: tests and CI (29 Oct)
+- **Database suites can't skip in CI (AUTH-13, INV-015):** `REQUIRE_DB_TESTS=1` in `build.yml` and `release.yml`. `tests/globalSetup.js` then fails the run if the test database isn't reachable, instead of the PostgreSQL suites skipping quietly. Locally they may still skip.
+- **Every signed-in route checks a permission:** `requireAuth`, `requirePermission` and `requireAnyPermission` tag the middleware they return. `tests/contracts/routePermissions.contract.test.js` walks every router and fails on a signed-in route with no permission check, unless it is listed with a reason (30 are: own session and notifications, handlers that check inside, and harmless reads).
+- **Reconciliation: 17 checks** (was 15): stock movements where before + quantity ≠ after, and purchase-order quantity received vs the stock that came in for it.
+- **INV-009:** the README states the shop has one stock location (no warehouses, bins or transfers) and no longer claims stock transfers. It also no longer lists cheques, and describes Caddy as the HTTPS front door for every device.
+
 ### Other work in this push
 - **Purchase-order discussion** (`8e8f75d`, migration 042): comments, replies and reactions on each PO. Comments can't be edited or deleted, are permission-gated and update live. The thread scrolls and opens on the latest comment.
 - **Notification bell** (`b92f390`): the unread badge shows on page load, and notifications missed while offline are re-read after a reconnect.
@@ -198,16 +204,17 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 ## 4. How it was verified
 
 - Every fix has a test that **fails on the old code and passes on the new** (checked by running the tests with the old files restored).
-- Server: **616 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
+- Server: **621 tests pass**, 6 skipped (two files disabled with `describe.skip`), run with `RUN_PG_CONCURRENCY=1` so the live concurrency test is included.
 - Round 2, Phase 1: `auditRound2Phase1` has 15 tests on real PostgreSQL. The race tests hold a lock on a second connection to force the interleaving the audits describe. 14 fail on the old code; the lock-order test also passes there, because PostgreSQL happened to lock in id order already. The UI changes (cancel reason, discount cap, Unlock sign-in) were not checked in the running app.
 - Round 2, Phase 2: `liveEventAudience` runs a real Socket.IO server: a Manager denied `cash.view`, a custom role with only `cash.view`, Warehouse and Admin; stock updates on the till and in the store room; an edit decision reaching the requester once; a permission change on reconnect. All four fail on the old code. Live updates were not checked in the running app.
 - Round 2, Phase 3: `sessionLifetime` runs a real HTTP and Socket.IO server: idle, closed-screen and maximum-length sign-out, activity only from input, token rotation with the one-minute overlap, a connection outliving its first token, sign-out on all devices, and plain HTTP and plain-HTTP sockets refused. 6 of 9 fail on the old code; the other 3 call the new sweep and HTTPS check directly. New web tests cover refresh timing, the idle warning and sign-out, activity reporting and the sign-out retry. Caddy validates the new config and Compose publishes only 80 and 443 to the LAN, but the full Docker stack was not built and run end to end.
 - Round 2, Phase 4: `inventoryPhase4` covers duplicate codes in any field, case or spacing, scans, deactivation, a clash from before the upgrade (still editable, scanned to the oldest product, reported), movement costs through cost changes and a sale and cancellation, and reorder alerts on level changes and in the hourly sweep. 9 of 10 fail on the old code; the plain scan with no clash already worked. Not checked in the running app.
 - Round 2, Phase 5: `draftOwnership` (3 tests) and `phase5Payments` (12 tests) cover ownership and take-over, account and tender rules, closed-drawer refusal and override, the drawer-close approver (same user, wrong password, no permission, a valid manager), the exchange difference account and cheque refusal. Six older suites now open the drawer in their setup instead of relying on a sale to open it. The old-code comparison wasn't run for this phase. Not checked in the running app beyond the sign-in page.
+- Round 2, Phase 8: the full server run passes with `REQUIRE_DB_TESTS=1`, and it fails with a clear message when the database is unreachable. Reconcile tests cover both new checks. The reconciliation on the dev database shows 0 differences across 17 checks.
 - New end-to-end suites: `presenceLifecycle` (real HTTP and Socket.IO server), `treasuryLedger` (runs every treasury movement, then the reconciliation), `receivablesAging`, `warrantyClaims`, `invoiceDraftRules`, `dbConstraints`, `createRetries`. Supplier-return, split-refund, exchange-difference and PO-cancellation tests sit in the existing suites.
 - Web: all tests pass; the TypeScript check is clean. (The web count includes tests of the separate, uncommitted record-level audit log work.)
 - Checked in the running app: login, dashboard, live connection on the right port, online-users list, the bell badge, and sign-out confirmation.
-- The reconciliation run on a fresh local install (setup wizard plus migrations) shows **0 differences across 14 checks** (15 checks since round 2, Phase 4 added the barcode check).
+- The reconciliation run on a fresh local install (setup wizard plus migrations) shows **0 differences across 14 checks** (17 checks since round 2: Phase 4 added the barcode check, Phase 8 two stock checks).
 - The full server run occasionally dies with `Error: Channel closed` during the migration-upgrade test. That is the test runner, not a failing test; a rerun passes.
 
 ### Reconciliation baseline (copy of live data, 24 Oct 2026)
@@ -221,8 +228,8 @@ Phase 4 only fixes movements **from now on**. Both differences above stay in the
 
 ## 5. What is still to do
 
-### Round 2, Phases 6–8
-See the round 2 plan for details and the decisions each phase needs: FIFO costing (Phase 6), database rules (7), and CI that fails when database tests are skipped (8).
+### Round 2, Phases 6–7
+See the round 2 plan and AUDIT_ROUND2_HANDOFF.md: FIFO costing (Phase 6, needs the accountant's sign-off) and database rules (Phase 7, after Phase 6).
 
 ### Needs your accountant
 - **Confirm the account mapping in Phase 4.** Owner money goes to Owner Equity 3001. Over/short goes to 5015. Warranty replacements go to 5016. If you'd rather use other accounts (for example a separate "Owner Drawings" account), it is a small change in `journalService.TREASURY_CODES`.

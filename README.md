@@ -19,9 +19,10 @@ over the shop's LAN. Several tills share one PostgreSQL database.
   backups, in-app updates).
 - **PostgreSQL 16** — permanent database.
 - **Socket.io** — realtime events (stock, force-logout, notifications), hosted on Express.
-- **Caddy (`web-tls`)** — HTTPS front door on `:443` with an auto-generated
-  self-signed cert, so phones can use the camera for barcode scanning
-  (browsers only allow camera access over HTTPS).
+- **Caddy (`web-tls`)** — the HTTPS front door on `:443` for every till and
+  phone (pages, API and live updates), with an auto-generated self-signed
+  cert; port 80 redirects to it. Trusting the cert on each device:
+  `docs/HTTPS_SETUP.md`.
 - **Hardware Agent** (optional, per till) — silent thermal print / local printers. Not required for ordinary use.
 - **FastAPI** (optional) — future ML/AI only. **Not** part of normal POS startup and **not** a replacement for Express.
 
@@ -35,7 +36,7 @@ Normal tills do **not** install Node, Python, or PostgreSQL — only a browser.
 **POS & Sales:**
 - Product management with barcode scanning (camera-based on phones)
 - Multi-line invoice creation with item-level discounts
-- Multiple payment methods: cash, card, bank transfer, check
+- Payment methods: cash, card, bank transfer (each into a chosen bank account) and customer credit. Cheques are not supported.
 - Cash drawer management with opening/closing balances
 - Returns and exchanges with refund handling
 - Customer profiles and credit limits
@@ -45,7 +46,8 @@ Normal tills do **not** install Node, Python, or PostgreSQL — only a browser.
 - Stock level tracking with real-time updates
 - Purchase order management with supplier integration
 - Purchase returns and supplier payments
-- Stock transfers and adjustments
+- Stock adjustments and stock counts
+- **One stock location.** Each product has a single stock figure for the shop; there are no warehouses, bins or stock transfers between locations. A second location would need per-location stock and a transfer document first (inventory audit INV-009).
 - Barcode lookup integration (UPCitemdb, configurable)
 - Low stock alerts and reorder points
 

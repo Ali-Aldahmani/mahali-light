@@ -1,9 +1,16 @@
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 
+// Marks a middleware as a permission check, so a test can confirm that every
+// signed-in route has one (tests/contracts/routePermissions.contract.test.js).
+function tagPermissionCheck(keys, fn) {
+  fn.permissionCheck = keys;
+  return fn;
+}
+
 // requirePermission('user.create') or requirePermission('user.create', 'user.edit')
 // User must have ALL listed permissions.
 function requirePermission(...keys) {
-  return (req, _res, next) => {
+  return tagPermissionCheck(keys, (req, _res, next) => {
     if (!req.user) {
       return next(new AppError(ERROR_CODES.AUTH_TOKEN_MISSING, undefined, { status: 401 }));
     }
@@ -18,13 +25,13 @@ function requirePermission(...keys) {
       );
     }
     next();
-  };
+  });
 }
 
 // requireAnyPermission('return.approve', 'invoice.edit_approve', ...)
 // User must have at least one listed permission (or '*').
 function requireAnyPermission(...keys) {
-  return (req, _res, next) => {
+  return tagPermissionCheck(keys, (req, _res, next) => {
     if (!req.user) {
       return next(new AppError(ERROR_CODES.AUTH_TOKEN_MISSING, undefined, { status: 401 }));
     }
@@ -38,7 +45,7 @@ function requireAnyPermission(...keys) {
         details: { anyOf: keys },
       }),
     );
-  };
+  });
 }
 
 module.exports = { requirePermission, requireAnyPermission };

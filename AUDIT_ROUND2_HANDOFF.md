@@ -9,9 +9,9 @@ Start a new session with: *"Read AUDIT_ROUND2_HANDOFF.md and continue from 'Star
 
 ## Start here: Phase 6 (FIFO costing)
 
-Phase 5 is done and in AUDIT_FIX_PROGRESS.md. Next is **Phase 6, FIFO costing (INV-001)**, under "Phases 6–8" below.
+Phases 5 and 8 and INV-009 are done and in AUDIT_FIX_PROGRESS.md. Next is **Phase 6, FIFO costing (INV-001)**, under "Phases 6–8" below, then **Phase 7** (database rules).
 
-**Before writing code, ask the user** to get the accountant's sign-off on three points: the FIFO cutover (opening layers at today's stock and cost, no journal on the day), the round 1 account mapping, and the one-off opening adjustment. Also rehearse the cutover on a copy of live data. If that sign-off isn't there, Phase 8 (CI) and INV-009 (write down single location) need no decisions and can go first.
+**Before writing code, ask the user** to get the accountant's sign-off on three points: the FIFO cutover (opening layers at today's stock and cost, no journal on the day), the round 1 account mapping, and the one-off opening adjustment. Also rehearse the cutover on a copy of live data. Phase 8 and INV-009 were done first while waiting for it.
 
 **Known flaky test:** `presenceLifecycle` › "an unattended screen goes idle while staying connected (F08)" failed once in a full run on 29 Oct and passed 3 of 3 alone. The full run after that passed. If it keeps failing, make its timing more tolerant rather than changing presence code.
 
@@ -30,9 +30,9 @@ Phase 5 is done and in AUDIT_FIX_PROGRESS.md. Next is **Phase 6, FIFO costing (I
 | 5 | Draft ownership, card/transfer, closed drawer, drawer-close approver, exchange tender, no cheques | Done | `0ae6d0d`, `6fd5feb`, `ae9b3ac`, and the commit after this update |
 | 6 | FIFO costing (INV-001) | Not started; needs accountant sign-off | |
 | 7 | Database rules (SI-05, INV-010) | Not started; after 5–6 | |
-| 8 | CI fails on skipped DB tests (AUTH-13, INV-015), route-permission test, more reconcile checks | Not started | |
+| 8 | CI fails on skipped DB tests (AUTH-13, INV-015), route-permission test, two more reconcile checks; INV-009 note | Done | the commit after this update |
 
-Tests at the end of Phase 5: server **616 passed, 6 skipped**. Web **215 passed**. Web type check clean.
+Tests at the end of Phase 8: server **621 passed, 6 skipped** (with `REQUIRE_DB_TESTS=1`). Web **215 passed**. Web type check clean.
 
 ---
 
@@ -119,13 +119,9 @@ Tests at the end of Phase 5: server **616 passed, 6 skipped**. Web **215 passed*
   - Validate the `NOT VALID` CHECKs from 047 against a live copy.
   - New `NOT VALID` CHECKs: status and type values, the payment method list, non-negative money, `qty_after = qty_before + quantity`, line and invoice arithmetic.
   - Validate them in the following release.
-- **8. CI:**
-  - `REQUIRE_DB_TESTS=1` in `.github/workflows/build.yml` and `release.yml`, so database suites that skip fail the build.
-  - A router-walk test that every authenticated route has permission middleware.
-  - Reconcile checks: `stock_qty` vs the movement sum, PO received vs purchase movements.
-  - After Phase 8, delete `AUTHENTICATION_AUTHORIZATION_AUDIT.md` (all its findings are then closed).
+- **8. CI: done (29 Oct).** `REQUIRE_DB_TESTS=1` in both workflows; `routePermissions.contract.test.js`; reconcile checks `movement_arithmetic` and `po_received_vs_movements` (stock vs movements already existed as `stock_vs_movements`). The authentication audit report was deleted, all its findings being closed.
 
-Also open: **INV-009**. The user agreed the shop is single-location. Write that into README.md and docs/SETUP_GUIDE.md and close the finding.
+**INV-009: done (29 Oct).** The README states the single stock location.
 
 ---
 

@@ -57,6 +57,8 @@ jobs:
           INVOICE_TEST_PG_PORT: 5432
           INVOICE_TEST_PG_USER: postgres
           INVOICE_TEST_PG_PASSWORD: postgres
+          # The PostgreSQL suites must run, not skip (AUTH-13, INV-015).
+          REQUIRE_DB_TESTS: 1
           RUN_PG_CONCURRENCY: 1
 
       - name: Run frontend tests

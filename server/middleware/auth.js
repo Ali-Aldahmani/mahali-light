@@ -108,7 +108,7 @@ async function findSessionByToken(token) {
 }
 
 function requireAuth() {
-  return async (req, _res, next) => {
+  const check = async (req, _res, next) => {
     try {
       const header = req.headers.authorization || '';
       if (!header.startsWith('Bearer ')) {
@@ -179,6 +179,9 @@ function requireAuth() {
       next(err);
     }
   };
+  // Lets a test find signed-in routes (routePermissions.contract.test.js).
+  check.requiresAuth = true;
+  return check;
 }
 
 module.exports = {
