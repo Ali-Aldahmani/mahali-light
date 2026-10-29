@@ -209,9 +209,9 @@ describe.skipIf(!enabled)('phase 5 payments on real PostgreSQL', () => {
     const cashierApprover = await withPassword('Cashier');
     const otherManager = await withPassword('Manager');
 
-    expect((await closeAs(me, { ...body, approver: { username: me.username, password: me.password } })).status).toBe(403);
-    expect((await closeAs(me, { ...body, approver: { username: otherManager.username, password: 'wrong-password' } })).status).toBe(401);
-    expect((await closeAs(me, { ...body, approver: { username: cashierApprover.username, password: cashierApprover.password } })).status).toBe(403);
+    expect((await closeAs(me, { ...body, approver: { username: me.username, password: me.password } })).status).toBe(409);
+    expect((await closeAs(me, { ...body, approver: { username: otherManager.username, password: 'wrong-password' } })).status).toBe(409);
+    expect((await closeAs(me, { ...body, approver: { username: cashierApprover.username, password: cashierApprover.password } })).status).toBe(409);
 
     const ok = await closeAs(me, { ...body, approver: { username: otherManager.username, password: otherManager.password } });
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);

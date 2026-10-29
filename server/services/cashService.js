@@ -445,8 +445,11 @@ async function openDrawer({ openingBalance, employeeId, notes = null, io = null 
 // second person, not forced by whoever is closing. They sign in on the till:
 // a different active user with cash.approve_close. Returns their user id.
 async function verifyCloseApprover(client, approver, closingUserId) {
-  const refuse = (message, status = 403) => new AppError(
-    ERROR_CODES.AUTH_NO_PERMISSION, message, { status, details: { reason: 'approver_refused' } },
+  // A business-rule refusal (409), not AUTH_NO_PERMISSION / 401: those make
+  // the app show its "Access denied" box or treat the closer's own session
+  // as the problem. The close screen shows the message itself.
+  const refuse = (message) => new AppError(
+    ERROR_CODES.BIZ_INVALID_STATE, message, { status: 409, details: { reason: 'approver_refused' } },
   );
   const { rows } = await client.query(
     `SELECT id, password_hash, is_active FROM users WHERE username = $1`, [approver.username],
@@ -454,7 +457,7 @@ async function verifyCloseApprover(client, approver, closingUserId) {
   const user = rows[0];
   const passwordOk = user ? await bcrypt.compare(approver.password, user.password_hash) : false;
   if (!user || !passwordOk || !user.is_active) {
-    throw refuse('The approver\'s username or password is wrong.', 401);
+    throw refuse('The approver\'s username or password is wrong.');
   }
   if (user.id === closingUserId) {
     throw refuse('Someone other than the person closing the drawer must approve the difference.');
