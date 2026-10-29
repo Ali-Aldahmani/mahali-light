@@ -284,6 +284,9 @@ export function checkoutErrorMessage(err: any): string {
       return err.message || 'Some items no longer have enough stock.';
     case 'BIZ_GUEST_NO_CREDIT':
       return 'Credit payments require a registered customer.';
+    case 'BIZ_DRAWER_CLOSED':
+      // Sales audit SI-06: no cash sale with the drawer closed.
+      return 'The cash drawer is closed. Open it before taking cash, or take the payment by card or transfer.';
     case 'BIZ_CREDIT_LIMIT_EXCEEDED':
       return err.message || 'Sale would exceed the customer credit limit.';
     case 'BIZ_PRICING_RESTRICTION_VIOLATION':

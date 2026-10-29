@@ -25,6 +25,8 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     createdDatabase = true;
     db = require('../../server/db/postgres');
     await require('../../server/db/migrate').runMigrations();
+    // A cash sale needs an open drawer (sales audit SI-06).
+    await require('../../server/services/cashService').openDrawer({ openingBalance: 0, employeeId: null });
     await db.query(`INSERT INTO financial_periods (name,period_type,start_date,end_date)
       SELECT 'Regression current year','yearly',date_trunc('year', CURRENT_DATE)::date,
         (date_trunc('year', CURRENT_DATE) + INTERVAL '1 year - 1 day')::date
@@ -120,7 +122,8 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     const inv = await draft({ customerId: c.id });
     const before = await cash();
     expect((await pay(inv, 40)).status).toBe(201);
-    expect((await pay(inv, 35, 'bank')).status).toBe(201);
+    // A bank payment names its account (sales audit SI-03).
+    expect((await pay(inv, 35, 'bank', undefined, { bankAccountId: bank.id })).status).toBe(201);
     expect((await pay(inv, 25, 'credit')).status).toBe(201);
     await invoices.confirmInvoice({ invoiceId: inv.id, employeeId: userId });
     await db.query('UPDATE bank_accounts SET is_default=false');

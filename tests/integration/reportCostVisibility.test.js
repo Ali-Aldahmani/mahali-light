@@ -41,6 +41,8 @@ describe.skipIf(!enabled)('report cost visibility on real PostgreSQL', () => {
     db = require('../../server/db/postgres');
     await require('../../server/db/migrate').runMigrations();
     await require('../../server/db/seed').run();
+    // A cash sale needs an open drawer (sales audit SI-06).
+    await require('../../server/services/cashService').openDrawer({ openingBalance: 0, employeeId: null });
     auth = require('../../server/middleware/auth');
     reportService = require('../../server/services/reportService');
 

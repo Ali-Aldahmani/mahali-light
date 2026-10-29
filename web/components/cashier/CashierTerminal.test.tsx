@@ -341,7 +341,7 @@ describe('Cashier Mode — payment, hold and exit', () => {
       expect.objectContaining({ items: [{ variantId: 'v1', quantity: 1, unitPrice: 10, discountAmount: 0, serialNumber: null }] }),
     );
     expect(addInvoicePayment).toHaveBeenCalledWith('inv1', expect.objectContaining({ method: 'cash', amount: 10.5 }));
-    expect(confirmInvoice).toHaveBeenCalledWith('inv1');
+    expect(confirmInvoice).toHaveBeenCalledWith('inv1', null);
     expect(usePosStore.getState().cart).toHaveLength(0);
   });
 

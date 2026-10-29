@@ -48,6 +48,8 @@ describe.skipIf(!enabled)('draft invoice rules on real PostgreSQL', () => {
     db = require('../../server/db/postgres');
     await require('../../server/db/migrate').runMigrations();
     await require('../../server/db/seed').run();
+    // A cash sale needs an open drawer (sales audit SI-06).
+    await require('../../server/services/cashService').openDrawer({ openingBalance: 0, employeeId: null });
     const auth = require('../../server/middleware/auth');
     const { rows: [{ id: userId }] } = await db.query(`SELECT id FROM users WHERE username = 'admin'`);
     token = auth.signToken({ sub: userId });

@@ -37,6 +37,7 @@ import { toast } from '@/store/toastStore';
 import { searchProducts } from '@/services/productService';
 import { listCategoriesFlat } from '@/services/categoryService';
 import { getInvoice, takeOverInvoice } from '@/services/invoiceService';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { printReceipt } from '@/services/printService';
 import {
   checkoutErrorMessage,
@@ -824,6 +825,20 @@ export default function CashierTerminal() {
         onRemove={(id) => usePosStore.getState().removePayment(id)}
         onCancel={closeDialog}
         onConfirm={() => confirmPay()}
+      />
+
+      {/* Sales audit SI-06: a manager may take cash with the drawer closed. */}
+      <ConfirmDialog
+        open={drawerOverrideOpen}
+        onClose={() => setDrawerOverrideOpen(false)}
+        onConfirm={(reason?: string) => {
+          setDrawerOverrideOpen(false);
+          confirmPay(reason);
+        }}
+        title="Take cash with the drawer closed?"
+        description="The sale goes ahead and opens the drawer. It is logged as a cash-control exception."
+        confirmLabel="Take the cash"
+        reasonLabel="Reason"
       />
 
       <CashierSuccessDialog

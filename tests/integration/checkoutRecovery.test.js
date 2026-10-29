@@ -57,6 +57,8 @@ describe.skipIf(!enabled)('checkout recovery on real PostgreSQL', () => {
     db = require('../../server/db/postgres');
     await require('../../server/db/migrate').runMigrations();
     await require('../../server/db/seed').run();
+    // A cash sale needs an open drawer (sales audit SI-06).
+    await require('../../server/services/cashService').openDrawer({ openingBalance: 0, employeeId: null });
     await db.query(`INSERT INTO financial_periods (name,period_type,start_date,end_date)
       SELECT 'Checkout current year','yearly',date_trunc('year', CURRENT_DATE)::date,
         (date_trunc('year', CURRENT_DATE) + INTERVAL '1 year - 1 day')::date
