@@ -48,8 +48,11 @@ const USER_SELECT = `
             WHERE s.user_id = u.id AND s.logout_at IS NULL
          ) AS last_active_at,
          EXISTS (
+           -- Same rule as the online list (presenceService.listPresence):
+           -- signed in AND connected. A closed screen is offline even
+           -- before its session times out (presence audit F07).
            SELECT 1 FROM user_sessions s
-            WHERE s.user_id = u.id AND s.logout_at IS NULL
+            WHERE s.user_id = u.id AND s.logout_at IS NULL AND s.status <> 'offline'
          ) AS is_online
     FROM users u
     LEFT JOIN roles r ON r.id = u.role_id

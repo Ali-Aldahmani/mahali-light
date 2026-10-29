@@ -16,6 +16,7 @@ import UserFormSlideOver from './UserFormSlideOver';
 import { deactivateUser, forceLogout, listUsers, unlockLogin } from '@/services/userService';
 import { listRoles } from '@/services/roleService';
 import { useAuthStore } from '@/store/authStore';
+import { usePresenceStore } from '@/store/presenceStore';
 import { toast } from '@/store/toastStore';
 import { timeAgo } from '@/lib/utils/format';
 import RowActions from '@/components/ui/RowActions';
@@ -25,7 +26,17 @@ export default function UsersPage() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const currentUserId = useAuthStore((s) => s.user?.id);
 
-  const [users, setUsers] = useState<any[]>([]);
+  const [fetchedUsers, setUsers] = useState<any[]>([]);
+  // Online badges follow the live presence list once it has loaded, so a
+  // till that closes or signs in shows here without a refresh (presence
+  // audit F07). Until then, the server's answer is used.
+  const presenceLoaded = usePresenceStore((s) => s.loaded);
+  const onlineUsers = usePresenceStore((s) => s.onlineUsers);
+  const users = useMemo(() => {
+    if (!presenceLoaded) return fetchedUsers;
+    const online = new Set(onlineUsers.map((u) => String(u.userId)));
+    return fetchedUsers.map((u) => ({ ...u, isOnline: online.has(String(u.id)) }));
+  }, [fetchedUsers, presenceLoaded, onlineUsers]);
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0 });
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);

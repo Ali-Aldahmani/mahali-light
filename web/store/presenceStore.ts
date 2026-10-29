@@ -25,6 +25,9 @@ interface PresenceState {
   // Bumped by every live update, so a snapshot that was requested before an
   // update and answered after it is known to be stale and read again.
   revision: number;
+  // True once a full list has arrived, so an empty list means "nobody" and
+  // not "not loaded yet".
+  loaded: boolean;
   setOnlineUsers: (users: PresenceUser[]) => void;
   applyUpdate: (update: { userId: string | number; entry: PresenceUser | null }) => void;
   refresh: () => Promise<void>;
@@ -36,8 +39,9 @@ let inFlight: Promise<void> | null = null;
 export const usePresenceStore = create<PresenceState>()((set, get) => ({
   onlineUsers: [],
   revision: 0,
+  loaded: false,
 
-  setOnlineUsers: (users) => set({ onlineUsers: users }),
+  setOnlineUsers: (users) => set({ onlineUsers: users, loaded: true }),
 
   applyUpdate: ({ userId, entry }) => {
     const others = get().onlineUsers.filter((u) => u.userId !== userId);
@@ -55,7 +59,7 @@ export const usePresenceStore = create<PresenceState>()((set, get) => ({
           const before = get().revision;
           const rows = await listOnline();
           if (get().revision === before) {
-            set({ onlineUsers: rows || [] });
+            set({ onlineUsers: rows || [], loaded: true });
             return;
           }
         }
@@ -66,5 +70,5 @@ export const usePresenceStore = create<PresenceState>()((set, get) => ({
     return inFlight;
   },
 
-  clear: () => set({ onlineUsers: [], revision: get().revision + 1 }),
+  clear: () => set({ onlineUsers: [], loaded: false, revision: get().revision + 1 }),
 }));

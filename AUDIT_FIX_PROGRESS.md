@@ -75,13 +75,13 @@ The plan's phases covered each audit's headline findings. The findings they left
 | Audit | Result |
 |---|---|
 | Customer profile financial audit | Fixed by `b14d912` before this work began (timeline, transactional audit with old/new values, net cards, edit conflicts, live sync) |
-| PO, cash drawer & payment audit | Fixed in Phases 1–4. Cheques: no longer offered (round 2, Phase 5) |
+| PO, cash drawer & payment audit | Fixed in Phases 1–4. Cheques: no longer offered (round 2, Phase 5). Open: F03 (one shared drawer or one per till, your decision); the report stays until then |
 | Purchase order, inventory & payment audit | Fixed in Phases 1–4 and on 26 Oct (draft deletion, cancelling a confirmed PO) |
 | Idempotency & duplicate operations audit | Fixed in Phase 3 and on 26 Oct (the remaining creates) |
 | Transaction atomicity audit | Fixed in Phase 2 and on 26 Oct (database constraints, TXA-011). FIFO: your decision |
 | Invoice financial integrity audit | Fixed in Phases 1–4 and on 26 Oct (F11, F13, F14, F21, F23, F24). FIFO, serial ownership (F18) and per-invoice settlement (F20): decisions / feature work |
 | Warranty audit | Fixed in Phases 1, 2, 4 and on 26 Oct (F16–F18). Per-unit warranties and the "missing features" list: your decision |
-| User presence & logout audit | Fixed in Phases 1, 5 and on 26 Oct (F08, F11, F16). HTTPS on the LAN (F14/F15): round 2, Phase 3 on 27 Oct |
+| User presence & logout audit | Fixed in Phases 1, 5 and on 26 Oct (F08, F11, F16). HTTPS on the LAN (F14/F15): round 2, Phase 3 on 27 Oct. F07 on 29 Oct. All findings closed; report deleted |
 | AI/ML feasibility audit | Not a defect list. No action needed now |
 | Authentication & authorization audit (round 2) | Phase 1 on 27 Oct: AUTH-05 to AUTH-08. Phase 2 on 27 Oct: AUTH-04. Phase 3 on 27 Oct: AUTH-01, AUTH-02, AUTH-03, AUTH-09. Phase 8 on 29 Oct: AUTH-13 (CI). All findings closed; report deleted |
 | Inventory integrity audit (round 2) | Phase 1 on 27 Oct: INV-002, INV-004, INV-005, INV-008. Phase 4 on 27 Oct: INV-003, INV-006, INV-007. INV-009: single stock location written into the README (29 Oct). INV-015: CI runs the database suites (Phase 8). Open: INV-001 (FIFO) in Phase 6, INV-010 in Phase 7 |
@@ -193,6 +193,9 @@ Stock adjustments, warranties, audit entries, notifications and expense receipts
 - **Reconciliation: 17 checks** (was 15): stock movements where before + quantity ≠ after, and purchase-order quantity received vs the stock that came in for it.
 - **INV-009:** the README states the shop has one stock location (no warehouses, bins or transfers) and no longer claims stock transfers. It also no longer lists cheques, and describes Caddy as the HTTPS front door for every device.
 
+### Presence F07, found open on 29 Oct
+- The Users page counted anyone with an unclosed session as online, even with their screen closed, and didn't update live. It now uses the same rule as the online list (signed in and connected), and its badges follow the live presence list once loaded. `presenceLifecycle` has a test that fails on the old code. With this, every presence finding is closed and `USER_PRESENCE_AND_LOGOUT_AUDIT.md` was deleted.
+
 ### Other work in this push
 - **Purchase-order discussion** (`8e8f75d`, migration 042): comments, replies and reactions on each PO. Comments can't be edited or deleted, are permission-gated and update live. The thread scrolls and opens on the latest comment.
 - **Notification bell** (`b92f390`): the unread badge shows on page load, and notifications missed while offline are re-read after a reconnect.
@@ -241,7 +244,7 @@ Not defects in existing code, and each needs a product decision first: serial-nu
 
 ### Decisions only you can make
 - **FIFO costing:** sales currently use the latest purchase cost.
-- **One shared drawer or one per till.** Still one shared drawer.
+- **One shared drawer or one per till** (PO cash drawer audit F03). Still one shared drawer; deciding this closes that audit.
 - **Warranty per unit** (with serials) instead of per sale line.
 
 ---

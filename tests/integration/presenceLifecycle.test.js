@@ -271,4 +271,19 @@ describe.skipIf(!enabled)('presence and logout on real PostgreSQL', () => {
       `SELECT COUNT(*) AS n FROM user_sessions WHERE logout_at IS NULL AND status = 'online'`)).rows[0].n) === 0)).toBe(true);
     other.close();
   });
+
+  it('the Users page counts a closed screen as offline, like the online list (F07)', async () => {
+    const cashier = await makeUser('Cashier');
+    const token = await login(cashier);
+    const isOnline = async () => {
+      const res = await request(baseUrl).get('/users').query({ search: cashier.username }).auth(adminToken, { type: 'bearer' });
+      return res.body.data.find((u) => u.id === cashier.id)?.isOnline;
+    };
+    const s = await connect(token);
+    expect(await isOnline()).toBe(true);
+    s.disconnect();
+    // Still signed in, but the screen is gone.
+    expect(await until(async () => (await isOnline()) === false)).toBe(true);
+    expect((await sessionRow(token)).logout_at).toBeNull();
+  });
 });
