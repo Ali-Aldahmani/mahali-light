@@ -364,6 +364,49 @@ async function loadPaymentsForInvoice(client, invoiceId) {
 // slip a restricted item below its minimum / max-discount floor. Only call
 // where the invoice discount can be set or changed (draft create/update,
 // edit-request approval), never on payment/return recalculations.
+// Decision (review 5 Nov): a held sale keeps the price the customer was quoted,
+// but at confirm it must still be allowed today. Drafts never expire, so
+// before, a product deactivated or given a minimum price after the sale was
+// parked still went through at the old terms.
+async function assertDraftStillSellable(client, invoiceId) {
+  const { rows: items } = await client.query(
+    `SELECT it.product_id, it.product_name, it.quantity, it.line_total, it.is_custom,
+            v.selling_price, v.is_active AND p.is_active AS sellable
+       FROM invoice_items it
+       LEFT JOIN product_variants v ON v.id = it.variant_id
+       LEFT JOIN products p ON p.id = v.product_id
+      WHERE it.invoice_id = $1`,
+    [invoiceId],
+  );
+  const catalog = items.filter((it) => !it.is_custom && it.product_id);
+  const retired = catalog.find((it) => it.sellable === false);
+  if (retired) {
+    throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+      `${retired.product_name} has been deactivated since this sale was started. Remove it to continue.`,
+      { status: 409 });
+  }
+  const restrictions = await pricingRestrictionService.getRestrictionsMap(
+    client, catalog.map((it) => it.product_id),
+  );
+  if (!restrictions.size) return;
+  const { rows: [inv] } = await client.query(`SELECT invoice_discount FROM invoices WHERE id = $1`, [invoiceId]);
+  const invDisc = money(inv?.invoice_discount || 0);
+  const base = money(items.reduce((s, it) => s + Number(it.line_total || 0), 0));
+  for (const it of catalog) {
+    const restriction = restrictions.get(it.product_id);
+    const qty = Number(it.quantity);
+    if (!restriction || !(qty > 0)) continue;
+    const lineTotal = Number(it.line_total || 0);
+    const share = base > 0 ? (invDisc * lineTotal) / base : 0;
+    pricingRestrictionService.assertPriceAllowed({
+      restriction,
+      catalogPrice: it.selling_price,
+      netUnitPrice: (lineTotal - share) / qty,
+      productName: it.product_name,
+    });
+  }
+}
+
 async function assertInvoiceDiscountAllowed(client, invoiceId) {
   const { rows: invRows } = await client.query(
     `SELECT invoice_discount FROM invoices WHERE id = $1`,
@@ -575,6 +618,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null, closedDrawerRe
     if (!items.length) {
       throw new AppError(ERROR_CODES.BIZ_INVOICE_EMPTY);
     }
+    await assertDraftStillSellable(client, invoiceId);
     const totals = await recalculateAndPersistTotals(client, invoiceId);
     if (totals.balanceDue > 0) {
       throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,

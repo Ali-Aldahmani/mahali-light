@@ -219,13 +219,19 @@ function NewReturnRequestPageContent() {
     ] as any);
   }, [step, returnType, totalValue, refundPlan.length, invoice]);
 
+  // VAT included, like the returned value it is compared with (the server
+  // prices replacements the same way).
   const replacementTotal = useMemo(
-    () =>
-      replacementItems.reduce(
-        (acc, it) => acc + Number(it.unitPrice || 0) * Number(it.quantity || 0),
-        0,
-      ),
-    [replacementItems],
+    () => {
+      const vat = 1 + Number((invoice as any)?.taxRate || 0) / 100;
+      return round2(
+        replacementItems.reduce(
+          (acc, it) => acc + Number(it.unitPrice || 0) * Number(it.quantity || 0) * vat,
+          0,
+        ),
+      );
+    },
+    [replacementItems, invoice],
   );
 
   const priceDifference = round2(replacementTotal - totalValue);

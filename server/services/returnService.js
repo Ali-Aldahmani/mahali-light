@@ -294,7 +294,7 @@ async function loadFrozenReplacementPlan(client, plan) {
 // Resolve replacement lines from catalog selling prices — never trust client unitPrice.
 // Used only at request-creation time; approval reuses the frozen snapshot this
 // produces via loadFrozenReplacementPlan instead of calling this again.
-async function resolveReplacementPlan(client, plan) {
+async function resolveReplacementPlan(client, plan, taxRate = 0) {
   if (!plan) return null;
   let parsed = plan;
   if (typeof parsed === 'string') {
@@ -326,13 +326,18 @@ async function resolveReplacementPlan(client, plan) {
     const v = await loadCatalogVariant(client, it.variantId);
     const qty = Math.max(0, Number(it.quantity) || 0);
     const unitPrice = money(v.selling_price);
+    // Decision (review 5 Nov): the returned value is what the customer paid,
+    // VAT included, so the replacement is valued with VAT too. Comparing it
+    // ex-VAT charged 95 instead of 105 for 2 LEDs against 1, and over-refunded
+    // VAT on a cheaper replacement.
+    const rate = Number(taxRate) || 0;
     items.push({
       variantId: v.id,
       productId: v.product_id,
       productName: v.product_name,
       quantity: qty,
       unitPrice,
-      lineTotal: money(unitPrice * qty),
+      lineTotal: money(unitPrice * qty * (1 + rate / 100)),
     });
   }
   const replacementTotal = money(items.reduce((sum, it) => sum + it.lineTotal, 0));
@@ -666,7 +671,7 @@ async function createReturnRequest({
     const totalValue = totalsFor(resolvedItems);
     const validatedReplacementPlan =
       returnType === 'customer_replace'
-        ? await resolveReplacementPlan(client, replacementPlan)
+        ? await resolveReplacementPlan(client, replacementPlan, invoice?.tax_rate)
         : null;
     const replacementTotal = validatedReplacementPlan
       ? money(validatedReplacementPlan.items.reduce((sum, it) => sum + it.lineTotal, 0)) : 0;
@@ -1093,12 +1098,22 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
       }
     }
 
-    if (invoice && request.return_type !== 'supplier_return') {
-      const returnedCost = money(items.reduce((sum, it) => {
-        if (stockActionFor(it.condition) === 'disposed') return sum;
-        const original = originalItems.find((line) => line.id === it.invoice_item_id);
-        return sum + Number(it.quantity) * Number(original.cost_price_at_time);
-      }, 0));
+    if (request.return_type !== 'supplier_return') {
+      // Decision (review 5 Nov): goods back from a no-invoice return go into
+      // the ledger too, at today's cost (there is no sale to read it from).
+      // Their refund has no VAT reversal: without a tax invoice there is no
+      // output tax to reverse.
+      let returnedCost = 0;
+      for (const it of items) {
+        if (stockActionFor(it.condition) === 'disposed') continue;
+        const original = invoice ? originalItems.find((line) => line.id === it.invoice_item_id) : null;
+        let unitCost = original ? Number(original.cost_price_at_time) : null;
+        if (unitCost == null && it.variant_id) {
+          const { rows: [v] } = await client.query(`SELECT cost_price FROM product_variants WHERE id = $1`, [it.variant_id]);
+          unitCost = Number(v?.cost_price || 0);
+        }
+        returnedCost = money(returnedCost + Number(it.quantity) * Number(unitCost || 0));
+      }
       await journalService.postReturnedInventoryEntry(client, {
         returnOrderId: orderId, returnOrderNumber: orderNumber, amount: returnedCost,
         date: todayStoreDate(), userId: managerId,

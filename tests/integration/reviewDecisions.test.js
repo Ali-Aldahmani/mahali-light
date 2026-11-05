@@ -60,6 +60,7 @@ describe.skipIf(!enabled)('review decisions on real PostgreSQL', () => {
     app.use('/customers', require('../../server/routes/customers'));
     app.use('/return-requests', require('../../server/routes/returnRequests'));
     app.use('/customer-payments', require('../../server/routes/customerPayments'));
+    app.use('/products', require('../../server/routes/products'));
     app.use(require('../../server/middleware/errors').errorHandler);
 
     manager = await user('Manager');
@@ -143,6 +144,40 @@ describe.skipIf(!enabled)('review decisions on real PostgreSQL', () => {
     const day = new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10);
     const then = await getVATReport({ startDate: day, endDate: day });
     expect(then.outputTax).toBeGreaterThanOrEqual(10);
+  });
+
+  it('a held sale is checked against today\'s price rules at confirm', async () => {
+    const res = await cashier.as('post', '/invoices').send({ items: [{ variantId, quantity: 1 }] });
+    const inv = res.body.data;
+    await cashier.as('post', `/invoices/${inv.id}/payments`).send({
+      idempotencyKey: randomUUID(), method: 'card', amount: Number(inv.total),
+      bankAccountId: (await db.query(`INSERT INTO bank_accounts (bank_name, account_name) VALUES ('B', 'A') RETURNING id`)).rows[0].id,
+    });
+    // A minimum above the held price is set while the sale is parked.
+    await db.query(
+      `INSERT INTO pricing_restrictions (product_id, min_price) VALUES ($1, 150)`, [productId]);
+    const confirmed = await cashier.as('post', `/invoices/${inv.id}/confirm`);
+    expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(422);
+    await db.query(`DELETE FROM pricing_restrictions WHERE product_id = $1`, [productId]);
+  });
+
+  it('cost 0 is refused while there is stock', async () => {
+    const res = await manager.as('put', `/products/${productId}/variants/${variantId}`).send({ costPrice: 0 });
+    expect(res.status).toBe(400);
+  });
+
+  it('opening stock reaches the ledger', async () => {
+    const created = await manager.as('post', `/products/${productId}/variants`).send({
+      sku: `OPEN-${randomUUID().slice(0, 6)}`, sellingPrice: 10, costPrice: 4, openingStock: 5,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const { rows: [row] } = await db.query(
+      `SELECT COALESCE(SUM(jl.debit), 0)::float8 AS debit
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+         JOIN chart_of_accounts ca ON ca.id = jl.account_id
+        WHERE je.reference_type = 'stock_movement' AND ca.code = '1004'`);
+    expect(row.debit).toBeGreaterThanOrEqual(20);
   });
 
   it('a drawer opened by a reversal is logged', async () => {

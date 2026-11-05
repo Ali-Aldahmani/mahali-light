@@ -254,6 +254,14 @@ async function update(req, res, next) {
       });
     }
 
+    // Decision (review 5 Nov): cost 0 revalues everything on the shelf at zero
+    // and makes later sales book no cost, so it is refused while there is stock.
+    if (body.costPrice === 0 && Number(existing[0].stock_qty) > 0 && Number(existing[0].cost_price) > 0) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+        'A cost of 0 would value the stock on hand at nothing. Enter the real cost.',
+        { status: 400, details: { field: 'costPrice' } });
+    }
+
     const newAlerts = await withTransaction(async (client) => {
       if (body.sku && body.sku !== existing[0].sku) {
         const { rows: dup } = await client.query(
@@ -344,6 +352,11 @@ async function update(req, res, next) {
       entityId: vid,
       action: 'variant.updated',
       performedBy: req.user.id,
+      // The old price and cost, so the history shows what a change replaced.
+      oldValue: {
+        sellingPrice: Number(existing[0].selling_price),
+        costPrice: Number(existing[0].cost_price),
+      },
       newValue: body,
     });
     emitProductChange(req, 'product_updated', { id, action: 'variant_updated', variantId: vid });

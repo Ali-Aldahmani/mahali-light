@@ -11,6 +11,10 @@ const { emitEvent } = require('../socket/events');
 // purchases + quarantine moves are excluded — those flow through invoice /
 // PO receive / refund entries and posting again here would double-count.
 const ADJUSTMENT_JOURNAL_TYPES = new Set([
+  // Decision (review 5 Nov): stock entered as opening stock is the owner's
+  // investment, so it is booked like an adjustment (inventory against owner
+  // equity). It entered stock with no ledger entry before.
+  'opening_stock',
   'adjustment',
   'adjustment_in',
   'adjustment_out',
