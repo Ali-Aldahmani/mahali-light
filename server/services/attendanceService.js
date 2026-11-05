@@ -109,7 +109,8 @@ async function checkIn({ employeeId, method = 'app_login', userId = null, io = n
       if (existing.check_in && existing.check_out) {
         const { rows: reopened } = await client.query(
           `UPDATE attendance
-              SET check_out = NULL, updated_at = NOW()
+              SET check_out = NULL, working_hours = NULL, overtime_hours = 0,
+                  shortage_hours = 0, updated_at = NOW()
             WHERE id = $1
             RETURNING *`,
           [existing.id],

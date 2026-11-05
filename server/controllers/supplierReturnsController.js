@@ -9,6 +9,7 @@ const { applyStockMovement } = require('../services/stockService');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
 const journalService = require('../services/journalService');
 const { emitEvent } = require('../socket/events');
+const { recalculatePOTotals } = require('../services/purchaseOrderService');
 
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -327,6 +328,9 @@ async function create(req, res, next) {
         });
       }
 
+      // What the PO still owes drops by what went back.
+      if (body.purchaseOrderId) await recalculatePOTotals(client, body.purchaseOrderId);
+
       // The goods leave at cost, so the ledger does what the approved-return
       // flow (returnService) does: DR Accounts Payable, CR Inventory and the
       // input VAT claimed on them (audit Phase 4, PO F15). Before, this
@@ -450,6 +454,9 @@ async function resolve(req, res, next) {
           WHERE id = $3`,
         [body.resolution, body.resolutionNotes || null, id],
       );
+      // Rejected or replaced: the goods came back, so the PO is owed in full again.
+      const { rows: [sr] } = await client.query(`SELECT purchase_order_id FROM supplier_returns WHERE id = $1`, [id]);
+      if (sr?.purchase_order_id) await recalculatePOTotals(client, sr.purchase_order_id);
     });
 
     await logActivity({

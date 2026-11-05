@@ -494,7 +494,7 @@ async function getAtRiskCustomers({
     customer_name: r.name,
     phone: r.phone,
     credit_balance: money(r.credit_balance),
-    credit_limit: money(r.credit_limit),
+    credit_limit: r.credit_limit == null ? null : money(r.credit_limit),
     last_purchase: r.last_purchase,
     last_purchase_days_ago: r.last_purchase_days_ago,
     lifetime_invoices: r.lifetime_invoices,

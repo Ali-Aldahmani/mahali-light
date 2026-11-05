@@ -20,7 +20,8 @@ export default function CreditBalanceBadge({
     );
   }
 
-  const overLimit = limit > 0 && b > Number(limit) + 0.001;
+  // null/undefined: no limit. 0: no credit at all, so any balance is over it.
+  const overLimit = limit != null && b > Number(limit) + 0.001;
   const tone = overLimit ? 'error' : 'warning';
   return (
     <Badge tone={tone} size={size} dot>

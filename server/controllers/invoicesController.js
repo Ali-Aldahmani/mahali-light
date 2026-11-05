@@ -43,6 +43,42 @@ function assertCanAddItems(req, items) {
   }
 }
 
+// API cart lines to the service's line shape (create and checkout replay).
+function toServiceItems(items = []) {
+  return items.map((i) => ({
+    variant_id: i.variantId,
+    quantity: i.quantity,
+    unit_price: i.unitPrice,
+    discount_amount: i.discountAmount,
+    discount_percent: i.discountPercent,
+    serial_number: i.serialNumber,
+    is_custom: i.isCustom,
+    custom_description: i.customDescription,
+    custom_cost_price: i.customCostPrice,
+    third_party_name: i.thirdPartyName,
+  }));
+}
+
+// Whether a replayed checkout still has the cart its draft holds, so a plain
+// retry doesn't rewrite the lines and move the draft's version.
+async function draftMatchesCart(client, invoiceId, body) {
+  const { rows: [inv] } = await client.query(
+    `SELECT customer_id, invoice_discount FROM invoices WHERE id = $1`, [invoiceId],
+  );
+  const { rows: lines } = await client.query(
+    `SELECT variant_id, quantity, is_custom FROM invoice_items WHERE invoice_id = $1 ORDER BY position, created_at`,
+    [invoiceId],
+  );
+  const wanted = body.items || [];
+  if ((inv.customer_id || null) !== (body.customerId || null)) return false;
+  if (Number(inv.invoice_discount || 0) !== Number(body.invoiceDiscount || 0)) return false;
+  if (lines.length !== wanted.length) return false;
+  return lines.every((line, i) => !wanted[i].isCustom && !line.is_custom
+    && line.variant_id === wanted[i].variantId
+    && Math.abs(Number(line.quantity) - Number(wanted[i].quantity)) < 0.0001
+    && !wanted[i].discountAmount && !wanted[i].discountPercent && wanted[i].unitPrice == null);
+}
+
 function assertDiscountAuthority(req, { items = [], invoiceDiscount = 0 }) {
   if (canOverridePrice(req)) return;
   const hasLineDiscount = items.some(
@@ -448,25 +484,16 @@ async function create(req, res, next) {
           // changed the cart, returning the old draft as it was let the till
           // pay for and confirm the old cart. While it is still this cashier's
           // draft, it takes the cart as it is now.
-          if (prior.status === 'draft' && (!prior.owner_id || prior.owner_id === req.user.id)) {
+          const unchanged = prior.status === 'draft'
+            && await draftMatchesCart(client, prior.id, body);
+          if (prior.status === 'draft' && !unchanged && (!prior.owner_id || prior.owner_id === req.user.id)) {
             await client.query(
               `UPDATE invoices SET customer_id = $1, invoice_discount = $2, notes = COALESCE($3, notes),
                       updated_by = $4, updated_at = NOW()
                 WHERE id = $5`,
               [body.customerId || null, body.invoiceDiscount || 0, body.notes || null, req.user.id, prior.id],
             );
-            await replaceItems(client, prior.id, body.items.map((i) => ({
-              variant_id: i.variantId,
-              quantity: i.quantity,
-              unit_price: i.unitPrice,
-              discount_amount: i.discountAmount,
-              discount_percent: i.discountPercent,
-              serial_number: i.serialNumber,
-              is_custom: i.isCustom,
-              custom_description: i.customDescription,
-              custom_cost_price: i.customCostPrice,
-              third_party_name: i.thirdPartyName,
-            })), { allowPriceOverride: canOverridePrice(req) });
+            await replaceItems(client, prior.id, toServiceItems(body.items), { allowPriceOverride: canOverridePrice(req) });
             await assertInvoiceDiscountAllowed(client, prior.id);
             await recalculateAndPersistTotals(client, prior.id);
           }
@@ -499,23 +526,7 @@ async function create(req, res, next) {
       const id = rows[0].id;
 
       if (body.items.length) {
-        await replaceItems(
-          client,
-          id,
-          body.items.map((i) => ({
-            variant_id: i.variantId,
-            quantity: i.quantity,
-            unit_price: i.unitPrice,
-            discount_amount: i.discountAmount,
-            discount_percent: i.discountPercent,
-            serial_number: i.serialNumber,
-            is_custom: i.isCustom,
-            custom_description: i.customDescription,
-            custom_cost_price: i.customCostPrice,
-            third_party_name: i.thirdPartyName,
-          })),
-          { allowPriceOverride: canOverridePrice(req) },
-        );
+        await replaceItems(client, id, toServiceItems(body.items), { allowPriceOverride: canOverridePrice(req) });
       }
 
       await assertInvoiceDiscountAllowed(client, id);

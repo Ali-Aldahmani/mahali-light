@@ -158,6 +158,21 @@ describe.skipIf(!enabled)('inventory review fixes on real PostgreSQL', () => {
     expect((await supplierReturn(po, 2)).status).toBe(201);
   });
 
+  it('paying what is left after a return marks the PO paid', async () => {
+    const po = await receivedPo(5);
+    expect((await supplierReturn(po, 2)).status).toBe(201);
+    const before = await manager.as('get', `/purchase-orders/${po}`);
+    const owed = Number(before.body.data.balanceDue);
+    const { rows: [account] } = await db.query(
+      `INSERT INTO bank_accounts (bank_name, account_name, current_balance) VALUES ('PO bank', 'Main', 100000) RETURNING id`);
+    const paid = await manager.as('post', `/purchase-orders/${po}/payments`).set('Idempotency-Key', randomUUID())
+      .send({ amount: owed, paymentMethod: 'bank_transfer', bankAccountId: account.id });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(201);
+    const { rows: [row] } = await db.query(`SELECT payment_status, balance_due FROM purchase_orders WHERE id = $1`, [po]);
+    expect(row.payment_status).toBe('paid');
+    expect(Number(row.balance_due)).toBe(0);
+  });
+
   it('a PO line cannot pair a variant with another product', async () => {
     const res = await manager.as('post', '/purchase-orders').set('Idempotency-Key', randomUUID()).send({
       supplierId, items: [{ variantId, productId: otherProductId, quantity: 1, costPricePerUnit: 20 }],

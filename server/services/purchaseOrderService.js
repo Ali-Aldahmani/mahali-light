@@ -61,7 +61,22 @@ async function resolvePoLineCost(client, { variantId, productId = null, clientCo
   return requested;
 }
 
+// Value of goods sent back on a PO and not taken back by the supplier
+// (rejected or replaced returns came back, so they don't count).
+async function returnedValueOf(client, poId) {
+  const { rows } = await client.query(
+    `SELECT COALESCE(SUM(total_value), 0)::numeric AS value
+       FROM supplier_returns
+      WHERE purchase_order_id = $1
+        AND COALESCE(resolution, '') NOT IN ('rejected', 'replaced')`,
+    [poId],
+  );
+  return money(rows[0].value);
+}
+
 // Compute and persist totals on the purchase_orders row from its items.
+// What is owed is net of goods sent back (review 5 Nov), so paying the net
+// amount marks the PO paid instead of leaving it partial and overdue.
 async function recalculatePOTotals(client, poId) {
   const { rows } = await client.query(
     `SELECT COALESCE(SUM(quantity * cost_price_per_unit), 0)::numeric AS subtotal
@@ -71,23 +86,24 @@ async function recalculatePOTotals(client, poId) {
   const subtotal = money(rows[0].subtotal);
   const taxAmount = await resolvePoTaxAmount(client, subtotal);
   const totalCost = money(subtotal + taxAmount);
+  const owed = money(totalCost - await returnedValueOf(client, poId));
 
   await client.query(
     `UPDATE purchase_orders
         SET subtotal = $1,
             tax_amount = $2,
             total_cost = $3,
-            balance_due = $3 - COALESCE(amount_paid, 0),
+            balance_due = $5 - COALESCE(amount_paid, 0),
             -- Recomputed with the total, so a draft edited after a payment
             -- doesn't keep a stale status. Nothing paid is always 'unpaid'
             -- (an empty draft isn't "paid").
             payment_status = CASE
               WHEN COALESCE(amount_paid, 0) <= 0 THEN 'unpaid'
-              WHEN $3 - amount_paid <= 0.0001 THEN 'paid'
+              WHEN $5 - amount_paid <= 0.0001 THEN 'paid'
               ELSE 'partial' END,
             updated_at = NOW()
       WHERE id = $4`,
-    [subtotal, taxAmount, totalCost, poId],
+    [subtotal, taxAmount, totalCost, poId, owed],
   );
 }
 
@@ -343,6 +359,7 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
 }
 
 module.exports = {
+  returnedValueOf,
   generatePoNumber,
   recalculatePOTotals,
   resolvePoTaxAmount,

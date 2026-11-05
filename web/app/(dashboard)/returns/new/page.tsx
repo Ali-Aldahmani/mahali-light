@@ -228,9 +228,10 @@ function NewReturnRequestPageContent() {
   const replacementTotal = useMemo(
     () => {
       const vat = 1 + Number((invoice as any)?.taxRate || 0) / 100;
+      // Each line rounded, as the server does, so the totals match to the fil.
       return round2(
         replacementItems.reduce(
-          (acc, it) => acc + Number(it.unitPrice || 0) * Number(it.quantity || 0) * vat,
+          (acc, it) => acc + round2(Number(it.unitPrice || 0) * Number(it.quantity || 0) * vat),
           0,
         ),
       );

@@ -2,6 +2,7 @@ const { withTransaction } = require('../db/postgres');
 const { storeDate, todayStoreDate } = require('../utils/dates');
 const journalService = require('./journalService');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { returnedValueOf } = require('./purchaseOrderService');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const { logActivity } = require('../utils/activityLog');
@@ -85,14 +86,8 @@ async function addPayment({
     // Decision (review 5 Nov): goods sent back reduce what is owed. Accounts
     // Payable is already debited for them, so paying the full order left it in
     // debit. Rejected or replaced returns don't count (the goods came back).
-    const { rows: [returned] } = await client.query(
-      `SELECT COALESCE(SUM(total_value), 0)::float8 AS value
-         FROM supplier_returns
-        WHERE purchase_order_id = $1
-          AND COALESCE(resolution, '') NOT IN ('rejected', 'replaced')`,
-      [poId],
-    );
-    const balance = money(totalCost - alreadyPaid - money(returned.value));
+    const owed = money(totalCost - await returnedValueOf(client, poId));
+    const balance = money(owed - alreadyPaid);
 
     if (amt - balance > 0.001) {
       throw new AppError(
@@ -123,8 +118,8 @@ async function addPayment({
     const payment = paymentRows[0];
 
     const newPaid = money(alreadyPaid + amt);
-    const newBalance = money(totalCost - newPaid);
-    const newStatus = computePaymentStatus(totalCost, newPaid);
+    const newBalance = money(owed - newPaid);
+    const newStatus = computePaymentStatus(owed, newPaid);
 
     await client.query(
       `UPDATE purchase_orders
@@ -286,10 +281,10 @@ async function deletePayment({ paymentId, userId = null, reason = null }) {
       [paymentId, reversedBy, reason],
     );
 
-    const totalCost = money(po.total_cost);
+    const owed = money(money(po.total_cost) - await returnedValueOf(client, po.id));
     const newPaid = money(money(po.amount_paid) - money(pm.amount));
-    const newBalance = money(totalCost - newPaid);
-    const newStatus = computePaymentStatus(totalCost, newPaid);
+    const newBalance = money(owed - newPaid);
+    const newStatus = computePaymentStatus(owed, newPaid);
 
     await client.query(
       `UPDATE purchase_orders

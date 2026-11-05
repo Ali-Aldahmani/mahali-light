@@ -137,6 +137,7 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
 
   // Called when a new notification arrives via socket.
   addNotification: (notification) => {
+    const isNew = !get().notifications.some((n) => n.id === notification.id);
     set((s) => {
       // Dedupe — if the same id is already there, replace it (server may
       // have rewritten an existing row via batching).
@@ -158,7 +159,7 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
     }
     // Something must show without opening the bell, and Cashier Mode has no
     // bell at all (review 5 Nov, notes.txt).
-    if (!get().panelOpen && notification.title) {
+    if (isNew && !get().panelOpen && notification.title) {
       const show = notification.severity === 'critical' || notification.severity === 'error'
         ? toast.error
         : notification.severity === 'warning' ? toast.warning : toast.info;

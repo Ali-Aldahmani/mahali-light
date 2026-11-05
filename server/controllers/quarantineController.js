@@ -6,7 +6,7 @@ const { withTransaction } = require('../db/postgres');
 const { ok } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
-const { applyStockMovement } = require('../services/stockService');
+const { applyStockMovement, isVariantUnderActiveCount } = require('../services/stockService');
 const { quantitySchema } = require('../utils/quantity');
 const { emitEvent } = require('../socket/events');
 
@@ -25,6 +25,12 @@ async function resolveQuarantine(req, res, next) {
         `SELECT product_id FROM product_variants WHERE id = $1`, [variantId],
       );
       if (!rows.length) throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+      // Same rule as adjustments: a count in progress would apply its own
+      // correction on top of this.
+      if (await isVariantUnderActiveCount(variantId, client)) {
+        throw new AppError(ERROR_CODES.BIZ_STOCK_COUNT_IN_PROGRESS,
+          'This item is part of an active stock count.', { status: 409 });
+      }
       const common = {
         client,
         variantId,

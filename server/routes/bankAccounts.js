@@ -1,13 +1,21 @@
 const express = require('express');
 const ctrl = require('../controllers/bankAccountsController');
 const { requireAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, requireAnyPermission } = require('../middleware/permissions');
 
 const router = express.Router();
 router.use(requireAuth());
 
 router.get('/', requirePermission('bank.view'), ctrl.list);
-router.get('/for-payments', requirePermission('invoice.create'), ctrl.listForPayments);
+router.get(
+  '/for-payments',
+  // Every screen that takes or makes a bank payment names the account now.
+  requireAnyPermission(
+    'invoice.create', 'customer.collect_payment', 'return.request',
+    'supplier.purchase_order.pay', 'bills.pay', 'bills.manage',
+  ),
+  ctrl.listForPayments,
+);
 router.post('/', requirePermission('bank.transact'), ctrl.create);
 router.get('/:id', requirePermission('bank.view'), ctrl.getOne);
 router.put('/:id', requirePermission('bank.transact'), ctrl.update);

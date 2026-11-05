@@ -308,8 +308,10 @@ async function updateSettings(req, res, next) {
     const body = settingsSchema.parse(req.body || {});
     // These choose the program the server runs and where every full database
     // dump lands, which is more than configuring a schedule.
+    // The settings page sends every field, so compare with what is stored.
+    const current = await backupService.loadSettings();
     const pathChange = ['pg_dump_path', 'pg_restore_path', 'local_path', 'nas_path', 'nas_ip']
-      .some((key) => body[key] !== undefined);
+      .some((key) => body[key] !== undefined && (body[key] || null) !== (current?.[key] || null));
     if (pathChange && !isAdminActor(req.user)) {
       throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, 'Only an Admin can change backup locations.', { status: 403 });
     }

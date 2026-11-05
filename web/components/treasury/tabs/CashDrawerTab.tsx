@@ -589,28 +589,14 @@ function CloseDrawerSlideOver({
           }
         />
         {needsApprover && (
-          <div className="space-y-3 rounded-card border border-warning/30 bg-warning-light px-3 py-3">
-            <p className="text-xs text-ink">
-              The difference is above the tolerance. A manager other than you signs in here to approve it.
-            </p>
-            <Input
-              id="close-approver-username"
-              label="Approver username"
-              value={approverUsername}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApproverUsername(e.target.value)}
-              autoComplete="off"
-              required
-            />
-            <Input
-              id="close-approver-password"
-              label="Approver password"
-              type="password"
-              value={approverPassword}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApproverPassword(e.target.value)}
-              autoComplete="off"
-              required
-            />
-          </div>
+          <ApproverFields
+            idPrefix="close"
+            username={approverUsername}
+            password={approverPassword}
+            onUsername={setApproverUsername}
+            onPassword={setApproverPassword}
+            message="The difference is above the tolerance. A manager other than you signs in here to approve it."
+          />
         )}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" type="button" onClick={onClose}>
