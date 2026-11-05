@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { businessDateSchema } = require('../utils/validate');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const expenseService = require('../services/expenseService');
@@ -46,7 +47,7 @@ const createSchema = z.object({
   categoryId: z.string().uuid().nullable().optional(),
   description: z.string().min(1).max(500),
   amount: z.coerce.number().positive(),
-  expenseDate: z.string().optional(),
+  expenseDate: businessDateSchema.optional(),
   paymentMethod: z.enum(['cash', 'bank']),
   bankAccountId: z.string().uuid().nullable().optional(),
   fundingSource: z.enum(['showroom', 'owner']).optional().default('showroom'),

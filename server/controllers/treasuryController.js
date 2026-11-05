@@ -5,10 +5,15 @@ const cashService = require('../services/cashService');
 const bankService = require('../services/bankService');
 
 // Build the full snapshot the Treasury overview tab + dashboard hangs off.
-async function summary(_req, res, next) {
+async function summary(req, res, next) {
   try {
+    // The route needs only cash.view, which a Cashier holds for the drawer.
+    // Bank balances, debts and the shop's net position need bank.view.
+    const canSeeBanks = (req.user?.permissions || []).includes('bank.view');
     const drawerState = await cashService.getDrawerState();
-    const accounts = await bankService.listAccounts({ includeInactive: false });
+    const accounts = canSeeBanks
+      ? await bankService.listAccounts({ includeInactive: false })
+      : [];
 
     const banksTotal = accounts.reduce(
       (acc, a) => acc + Number(a.currentBalance || 0),
@@ -47,9 +52,9 @@ async function summary(_req, res, next) {
       `SELECT direction, COALESCE(SUM(amount), 0)::numeric AS total,
               COUNT(*)::int AS count
          FROM bank_transactions
-        WHERE transaction_date = $1
+        WHERE transaction_date = $1 AND $2::boolean
         GROUP BY direction`,
-      [today],
+      [today, canSeeBanks],
     );
     let moneyIn = 0;
     let moneyOut = 0;
@@ -84,12 +89,15 @@ async function summary(_req, res, next) {
           FROM bank_transactions t
           LEFT JOIN users u ON u.id = t.employee_id
           LEFT JOIN bank_accounts b ON b.id = t.bank_account_id
+         WHERE $1::boolean
       )
        ORDER BY timestamp DESC
        LIMIT 12`,
+      [canSeeBanks],
     );
 
     return ok(res, {
+      canSeeBanks,
       cash: {
         balance: cash,
         status: drawerState.status,
@@ -107,10 +115,10 @@ async function summary(_req, res, next) {
           isDefault: a.isDefault,
         })),
       },
-      receivables,
-      payables,
-      totalAssets,
-      netPosition,
+      receivables: canSeeBanks ? receivables : 0,
+      payables: canSeeBanks ? payables : 0,
+      totalAssets: canSeeBanks ? totalAssets : 0,
+      netPosition: canSeeBanks ? netPosition : 0,
       today: {
         moneyIn: round2(moneyIn),
         moneyOut: round2(moneyOut),

@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { businessDateSchema } = require('../utils/validate');
 const { todayStoreDate } = require('../utils/dates');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
@@ -113,7 +114,7 @@ async function listTransactions(req, res, next) {
 
 const depositSchema = z.object({
   amount: z.number().positive(),
-  transactionDate: z.string().optional().nullable(),
+  transactionDate: businessDateSchema.optional().nullable(),
   description: z.string().max(500).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   referenceType: z.string().max(30).optional().nullable(),
@@ -252,7 +253,7 @@ const transferSchema = z.object({
   toType: z.enum(['cash_drawer', 'bank_account']),
   toId: z.string().uuid().optional().nullable(),
   amount: z.number().positive(),
-  transferDate: z.string().optional().nullable(),
+  transferDate: businessDateSchema.optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   allowOverdraft: z.boolean().optional().default(false),
 });

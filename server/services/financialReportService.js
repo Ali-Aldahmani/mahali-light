@@ -78,9 +78,14 @@ async function breakdownByAccount({ from, to, accountType, excludeCodes = [] }) 
             COALESCE(SUM(jl.debit), 0)::float8 AS debit,
             COALESCE(SUM(jl.credit), 0)::float8 AS credit
        FROM chart_of_accounts ca
-       LEFT JOIN journal_lines jl ON jl.account_id = ca.id
-       LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
-        AND je.date BETWEEN $1::date AND $2::date
+       -- Lines and entries join first: filtering the date on a separate LEFT
+       -- JOIN kept every line ever posted, so revenue and expenses were
+       -- all-time figures whatever period was asked for.
+       LEFT JOIN (
+         journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+          AND je.date BETWEEN $1::date AND $2::date
+       ) ON jl.account_id = ca.id
       WHERE ca.type = $3
         AND ($4::text[] IS NULL OR ca.code <> ALL($4::text[]))
       GROUP BY ca.code, ca.name, ca.type

@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { businessDateSchema } = require('../utils/validate');
 const { query } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -16,7 +17,7 @@ const { emitEvent } = require('../socket/events');
 const createSchema = z.object({
   amount: z.number().positive(),
   paymentMethod: z.enum(['cash', 'bank_transfer']),
-  paymentDate: z.string().optional().nullable(),
+  paymentDate: businessDateSchema.optional().nullable(),
   bankAccountId: z.string().uuid().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
 });

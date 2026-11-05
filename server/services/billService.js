@@ -328,6 +328,17 @@ async function updateBill(id, input, userId) {
 
 async function setStatus({ id, status, userId }) {
   return withTransaction(async (client) => {
+    const { rows: current } = await client.query(
+      `SELECT status FROM bills WHERE id = $1 FOR UPDATE`,
+      [id],
+    );
+    if (!current.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
+    // Cancelled is final, as in updateBill.
+    if (current[0].status === 'cancelled') {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE, 'A cancelled bill cannot be changed.', { status: 409 });
+    }
     const { rows } = await client.query(
       `UPDATE bills
           SET status = $1, updated_at = NOW()
@@ -335,9 +346,6 @@ async function setStatus({ id, status, userId }) {
         RETURNING *`,
       [status, id],
     );
-    if (!rows.length) {
-      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
-    }
     // Pausing / cancelling clears any open upcoming payments so the sweep
     // doesn't fire reminders. Resuming re-creates the next payment if there
     // isn't already an open one.
@@ -351,8 +359,12 @@ async function setStatus({ id, status, userId }) {
     if (status === 'active') {
       const { rows: openRows } = await client.query(
         `SELECT 1 FROM bill_payments
-          WHERE bill_id = $1 AND status IN ('upcoming','due','overdue') LIMIT 1`,
-        [id],
+          WHERE bill_id = $1
+            AND (status IN ('upcoming','due','overdue')
+                 -- This due date was already paid: resuming mustn't bill it again.
+                 OR (status = 'paid' AND due_date = $2::date))
+          LIMIT 1`,
+        [id, dateOnly(rows[0].next_due_date)],
       );
       if (!openRows.length) {
         await client.query(

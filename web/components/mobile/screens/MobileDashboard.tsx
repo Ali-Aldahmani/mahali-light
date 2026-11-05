@@ -121,12 +121,15 @@ export default function MobileDashboard() {
         </div>
       ) : (
         <section aria-label="Key metrics" className="grid grid-cols-2 gap-3">
-          <KpiCard
-            label="Net profit"
-            value={k.net_profit}
-            hint={typeof k.net_margin_pct === 'number' ? `${k.net_margin_pct.toFixed(1)}% margin` : undefined}
-            icon="/mobile/kpi-profit.svg"
-          />
+          {/* null: the server hides these from this user, so don't show them as 0. */}
+          {k.net_profit !== null && (
+            <KpiCard
+              label="Net profit"
+              value={k.net_profit}
+              hint={typeof k.net_margin_pct === 'number' ? `${k.net_margin_pct.toFixed(1)}% margin` : undefined}
+              icon="/mobile/kpi-profit.svg"
+            />
+          )}
           <KpiCard
             label="Revenue (period)"
             value={k.revenue}
@@ -140,12 +143,14 @@ export default function MobileDashboard() {
             hint="Outstanding from customers"
             icon="/mobile/kpi-receivables.svg"
           />
-          <KpiCard
-            label="Payables"
-            value={k.payables_total}
-            hint="Outstanding to suppliers"
-            icon="/mobile/kpi-payables.svg"
-          />
+          {k.payables_total !== null && (
+            <KpiCard
+              label="Payables"
+              value={k.payables_total}
+              hint="Outstanding to suppliers"
+              icon="/mobile/kpi-payables.svg"
+            />
+          )}
         </section>
       )}
 

@@ -7,6 +7,7 @@ const journalService = require('./journalService');
 const { emitEvent } = require('../socket/events');
 const bcrypt = require('bcrypt');
 const { loadUserContext } = require('../middleware/auth');
+const { reserveAttempt, clearAttempts } = require('./loginLockout');
 
 const { TREASURY_CODES: GL } = journalService;
 
@@ -444,13 +445,20 @@ async function openDrawer({ openingBalance, employeeId, notes = null, io = null 
 // Round 1 open item: a difference above the tolerance is approved by a
 // second person, not forced by whoever is closing. They sign in on the till:
 // a different active user with cash.approve_close. Returns their user id.
-async function verifyCloseApprover(client, approver, closingUserId) {
+async function verifyCloseApprover(client, approver, closingUserId, ipAddress = null) {
   // A business-rule refusal (409), not AUTH_NO_PERMISSION / 401: those make
   // the app show its "Access denied" box or treat the closer's own session
   // as the problem. The close screen shows the message itself.
   const refuse = (message) => new AppError(
     ERROR_CODES.BIZ_INVALID_STATE, message, { status: 409, details: { reason: 'approver_refused' } },
   );
+  // This checks a password, so it shares the sign-in lockout: otherwise anyone
+  // with cash.adjust could guess the Admin password here, with no limit.
+  // The count commits on its own connection, so a refusal can't roll it back.
+  const lockoutKey = `approver:${approver.username}`.slice(0, 50);
+  if (await reserveAttempt(lockoutKey, ipAddress)) {
+    throw refuse('Too many wrong attempts for this approver. Try again later.');
+  }
   const { rows } = await client.query(
     `SELECT id, password_hash, is_active FROM users WHERE username = $1`, [approver.username],
   );
@@ -459,6 +467,7 @@ async function verifyCloseApprover(client, approver, closingUserId) {
   if (!user || !passwordOk || !user.is_active) {
     throw refuse('The approver\'s username or password is wrong.');
   }
+  await clearAttempts(lockoutKey, ipAddress);
   if (user.id === closingUserId) {
     throw refuse('Someone other than the person closing the drawer must approve the difference.');
   }
@@ -475,6 +484,7 @@ async function closeDrawer({
   employeeId,
   notes = null,
   approver = null,
+  ipAddress = null,
   io = null,
 }) {
   const counted = money(closingBalance);
@@ -534,7 +544,7 @@ async function closeDrawer({
           },
         );
       }
-      approvedBy = await verifyCloseApprover(client, approver, employeeId);
+      approvedBy = await verifyCloseApprover(client, approver, employeeId, ipAddress);
     }
     if (Math.abs(discrepancy) > 0.0001 && !notes) {
       throw new AppError(

@@ -1,3 +1,5 @@
+const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+
 // Single source of truth for the store's business day.
 //
 // The store trades in one timezone (Asia/Dubai by default). "Today", the day
@@ -69,4 +71,20 @@ function applyProcessTimezone() {
   }
 }
 
-module.exports = { STORE_TIMEZONE, storeDate, todayStoreDate, applyProcessTimezone };
+// Reports build one row (and sometimes several queries) per day, so an open
+// range like 0001-01-01..9999-12-31 from a dashboard user could stall the
+// database connections the tills depend on. Ten years covers every real report.
+const MAX_REPORT_RANGE_DAYS = 3660;
+
+function assertReportRange(startDate, endDate) {
+  const start = new Date(`${startDate}T00:00:00Z`).getTime();
+  const end = new Date(`${endDate}T00:00:00Z`).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Use dates in the form YYYY-MM-DD.', { status: 400 });
+  }
+  if ((end - start) / 86400000 > MAX_REPORT_RANGE_DAYS) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'That date range is too long. Choose ten years or less.', { status: 400 });
+  }
+}
+
+module.exports = { STORE_TIMEZONE, storeDate, todayStoreDate, applyProcessTimezone, assertReportRange };

@@ -51,7 +51,7 @@ const STATUS_TONES: Record<string, string> = {
 export default function AdjustmentsTab() {
   const permissions = useAuthStore((s) => s.permissions);
   const canApprove = permissions.includes('stock.adjust_approve');
-  const canRequest = permissions.includes('stock.adjust_request');
+  const canRequest = permissions.includes('stock.adjust_request') || permissions.includes('stock.adjust_direct');
 
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState('pending');
@@ -287,7 +287,7 @@ export default function AdjustmentsTab() {
         }
       />
 
-      <PermissionGate permission="stock.adjust_request">
+      <PermissionGate permissions={['stock.adjust_request', 'stock.adjust_direct']}>
         <RequestAdjustmentSlideOver
           open={requestOpen}
           onClose={() => setRequestOpen(false)}

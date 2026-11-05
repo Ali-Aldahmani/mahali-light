@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { businessDateSchema } = require('../utils/validate');
 const { todayStoreDate } = require('../utils/dates');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
@@ -71,6 +72,7 @@ async function close(req, res, next) {
       employeeId: req.user.id,
       notes: body.notes || null,
       approver: body.approver || null,
+      ipAddress: req.ip || null,
       io,
     });
     const state = await cashService.getDrawerState();
@@ -224,7 +226,7 @@ const transferSchema = z.object({
   toType: z.enum(['bank_account']),
   toId: z.string().uuid(),
   amount: z.number().positive(),
-  transferDate: z.string().optional().nullable(),
+  transferDate: businessDateSchema.optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
 });
 

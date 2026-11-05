@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { businessDateSchema } = require('../utils/validate');
 const { ok, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const billService = require('../services/billService');
@@ -47,7 +48,7 @@ const paySchema = z.object({
   amountPaid: z.coerce.number().positive(),
   paymentMethod: z.enum(['cash', 'bank']),
   bankAccountId: z.string().uuid().nullable().optional(),
-  paidDate: z.string().optional(),
+  paidDate: businessDateSchema.optional(),
   notes: z.string().max(1000).nullable().optional(),
 });
 

@@ -383,6 +383,10 @@ async function updateAccount(id, body, employeeId) {
     if (body.accountNumber !== undefined) set('account_number', body.accountNumber);
     if (body.iban !== undefined) set('iban', body.iban);
     if (body.currency !== undefined) set('currency', body.currency);
+    // Same rule as deactivateAccount: an account holding money can't be hidden.
+    if (body.isActive === false && Math.abs(Number(rows[0].current_balance)) > 0.001) {
+      throw new AppError(ERROR_CODES.BIZ_BANK_HAS_BALANCE, undefined, { status: 409 });
+    }
     if (body.isActive !== undefined) set('is_active', !!body.isActive);
     if (body.isDefault !== undefined) set('is_default', !!body.isDefault);
     if (body.notes !== undefined) set('notes', body.notes);

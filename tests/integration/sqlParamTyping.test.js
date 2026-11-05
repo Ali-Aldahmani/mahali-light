@@ -163,7 +163,10 @@ describe.skipIf(!enabled)('SQL statements Postgres used to reject, on real Postg
   ])('can %s an attendance correction', async (action, date) => {
     const { rows: [att] } = await db.query(
       `INSERT INTO attendance (employee_id, date, check_in, status)
-       VALUES ($1, $2::date, $2::date + TIME '09:30', 'present') RETURNING id`,
+       VALUES ($1, $2::date, $2::date + TIME '09:30', 'present')
+       -- An earlier test approves leave on fixed dates, which can be this day.
+       ON CONFLICT (employee_id, date) DO UPDATE SET check_in = EXCLUDED.check_in, status = 'present'
+       RETURNING id`,
       [employeeId, date],
     );
     const submitted = await call('post', '/attendance/corrections', {

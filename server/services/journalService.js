@@ -189,11 +189,22 @@ async function assertPeriodOpenFor(date, client) {
       { status: 409 },
     );
   }
-  if (period.status === 'closed') {
+  // Closing a quarter or year must lock the dates inside it, even while the
+  // month row is still open. The shared lock makes a posting wait for a close
+  // that is in progress instead of slipping past it.
+  const exec = client || { query: (sql, params) => query(sql, params) };
+  const { rows: covering } = await exec.query(
+    `SELECT id, name, status FROM financial_periods
+      WHERE start_date <= $1::date AND end_date >= $1::date
+      FOR SHARE`,
+    [dateOnly(date)],
+  );
+  const closed = covering.find((p) => p.status === 'closed');
+  if (closed) {
     throw new AppError(
       ERROR_CODES.BIZ_PERIOD_CLOSED,
-      `Period "${period.name}" is closed.`,
-      { status: 409, details: { periodId: period.id, periodName: period.name } },
+      `Period "${closed.name}" is closed.`,
+      { status: 409, details: { periodId: closed.id, periodName: closed.name } },
     );
   }
   return period;

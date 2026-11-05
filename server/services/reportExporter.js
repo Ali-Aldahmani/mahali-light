@@ -72,6 +72,14 @@ function formatCell(value, type) {
   }
 }
 
+// Spreadsheets run a text cell starting with = + - or @ as a formula, and names
+// in reports come from anyone who can add a customer or product. Plain numbers
+// stay as they are, so negative amounts are not affected.
+function csvSafeCell(text) {
+  if (typeof text !== 'string' || text === '' || !Number.isNaN(Number(text))) return text;
+  return /^\s*[=+\-@]/.test(text) ? `'${text}` : text;
+}
+
 function escapeHtml(str) {
   if (str == null) return '';
   return String(str)
@@ -101,7 +109,7 @@ async function exportToCSV(report) {
 
     stream.write(cols.map((c) => c.label));
     for (const row of rows) {
-      stream.write(cols.map((c) => formatCell(row[c.key], c.type)));
+      stream.write(cols.map((c) => csvSafeCell(formatCell(row[c.key], c.type))));
     }
     if (report.totals) {
       stream.write(
@@ -368,6 +376,7 @@ function safeName(input) {
 }
 
 module.exports = {
+  csvSafeCell,
   exportToCSV,
   exportToExcel,
   exportToPDF,

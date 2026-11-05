@@ -1,4 +1,5 @@
 const { query } = require('../db/postgres');
+const { assertReportRange } = require('../utils/dates');
 
 // =======================================================================
 // Helpers
@@ -48,6 +49,7 @@ function parseDateRange(params = {}) {
   const defEnd = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
   const startDate = (params.start_date || params.startDate || defStart).toString().slice(0, 10);
   const endDate = (params.end_date || params.endDate || defEnd).toString().slice(0, 10);
+  assertReportRange(startDate, endDate);
   return { startDate, endDate };
 }
 

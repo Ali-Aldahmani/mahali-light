@@ -5,7 +5,7 @@ const counts = require('../controllers/stockCountsController');
 const alerts = require('../controllers/reorderAlertsController');
 const reports = require('../controllers/stockReportsController');
 const { requireAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, requireAnyPermission } = require('../middleware/permissions');
 
 const router = express.Router();
 router.use(requireAuth());
@@ -28,7 +28,9 @@ router.get(
 router.get('/adjustments', requirePermission('stock.view'), adjustments.list);
 router.post(
   '/adjustments',
-  requirePermission('stock.adjust_request'),
+  // A user who may adjust directly (Manager) doesn't also hold the "request"
+  // permission. The controller only honours applyDirectly for adjust_direct.
+  requireAnyPermission('stock.adjust_request', 'stock.adjust_direct'),
   adjustments.create,
 );
 router.get(

@@ -248,10 +248,30 @@ async function productSeasonality(req, res, next) {
   }
 }
 
+// The dashboard routes need only analytics.view_dashboard, which Cashier and
+// Warehouse hold. Profit, stock value and what the shop owes are the same
+// figures the report endpoints hide from them.
+const FINANCE_KPI_FIELDS = [
+  'gross_profit', 'gross_margin_pct', 'net_profit', 'net_margin_pct',
+  'expenses', 'expense_ratio_pct', 'inventory_value', 'inventory_turnover',
+  'payables_total',
+];
+
+function canSeeFinanceKpis(req) {
+  const owned = req.user?.permissions || [];
+  return owned.includes('finance.view_dashboard') || owned.includes('product.view_cost');
+}
+
 async function kpis(req, res, next) {
   try {
     const parsed = rangeSchema.parse(req.query);
     const data = await analyticsService.getKPIs(parsed);
+    if (!canSeeFinanceKpis(req)) {
+      for (const field of FINANCE_KPI_FIELDS) {
+        data[field] = null;
+        if (data.previous_period) delete data.previous_period[field];
+      }
+    }
     ok(res, data);
   } catch (err) {
     next(err.errors ? zodFail(err) : err);
@@ -260,7 +280,12 @@ async function kpis(req, res, next) {
 
 async function kpiSeries(req, res, next) {
   try {
-    ok(res, await analyticsService.getKpiSeries(req.query));
+    const data = await analyticsService.getKpiSeries(req.query);
+    if (!canSeeFinanceKpis(req)) {
+      data.net_profit = [];
+      data.payables = [];
+    }
+    ok(res, data);
   } catch (err) {
     next(err.errors ? zodFail(err) : err);
   }

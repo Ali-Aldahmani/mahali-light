@@ -71,7 +71,7 @@ function downloadCsv(filename: string, csv: string) {
 export default function StockLevelsTab() {
   const router = useRouter();
   const permissions = useAuthStore((s) => s.permissions);
-  const canRequestAdj = permissions.includes('stock.adjust_request');
+  const canRequestAdj = permissions.includes('stock.adjust_request') || permissions.includes('stock.adjust_direct');
   const canSeeCost = permissions.includes('product.view_cost');
   const categoriesFlat = useProductStore((s) => s.categoriesFlat);
   const ensureCats = useProductStore((s) => s.fetchCategories);
@@ -379,7 +379,7 @@ export default function StockLevelsTab() {
         >
           Export CSV
         </Button>
-        <PermissionGate permission="stock.adjust_request">
+        <PermissionGate permissions={['stock.adjust_request', 'stock.adjust_direct']}>
           <Button
             leftIcon={<Plus className="h-4 w-4" />}
             onClick={() => {

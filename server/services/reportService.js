@@ -1,5 +1,5 @@
 const { query } = require('../db/postgres');
-const { storeDate, todayStoreDate } = require('../utils/dates');
+const { storeDate, todayStoreDate, assertReportRange } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const financialReportService = require('./financialReportService');
 const errorLogService = require('./errorLogService');
@@ -35,10 +35,10 @@ function parseDateRange(params = {}) {
   const m = now.getMonth();
   const defStart = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
   const defEnd = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
-  return {
-    startDate: dateOnly(params.start_date) || defStart,
-    endDate: dateOnly(params.end_date) || defEnd,
-  };
+  const startDate = dateOnly(params.start_date) || defStart;
+  const endDate = dateOnly(params.end_date) || defEnd;
+  assertReportRange(startDate, endDate);
+  return { startDate, endDate };
 }
 
 // Pretty period label for headers/PDFs.
@@ -2139,7 +2139,7 @@ async function customCostingSales(params) {
   const { startDate, endDate } = parseDateRange(params);
   const { rows } = await query(
     `SELECT i.confirmed_at, i.invoice_number, i.tax_rate,
-            ii.product_name, ii.sku, ii.quantity, ii.unit_price, ii.cost_price_at_time
+            ii.product_name, ii.sku, ii.quantity, ii.unit_price, ii.line_total, ii.cost_price_at_time
        FROM invoice_items ii
        JOIN invoices i ON i.id = ii.invoice_id
       WHERE i.status = 'confirmed'
@@ -2152,7 +2152,8 @@ async function customCostingSales(params) {
     const unitPrice = Number(r.unit_price);
     const costPrice = Number(r.cost_price_at_time);
     const taxRate = Number(r.tax_rate) || 0;
-    const totalSale = money(qty * unitPrice);
+    // What the line actually sold for, after its discount (not list price).
+    const totalSale = money(Number(r.line_total));
     const vatOutput = money(totalSale * (taxRate / 100));
     const totalCost = money(qty * costPrice);
     const vatInput = money(totalCost * (taxRate / 100));

@@ -80,28 +80,33 @@ export default function DashboardSparkCards({
           formatValue={money}
         />
       </Card>
-      <Card>
-        <Sparkline
-          label="Payables"
-          value={money(kpis?.payables_total)}
-          change="Outstanding to suppliers"
-          tone="accent"
-          data={series?.payables ?? []}
-          labels={labels}
-          formatValue={money}
-        />
-      </Card>
-      <Card>
-        <Sparkline
-          label={`Net profit · ${periodLabel}`}
-          value={money(profit)}
-          change={`${Number(kpis?.net_margin_pct || 0).toFixed(1)}% margin`}
-          tone={profit < 0 ? 'danger' : 'success'}
-          data={series?.net_profit ?? []}
-          labels={labels}
-          formatValue={money}
-        />
-      </Card>
+      {/* null: the server hides these from this user, so don't show them as 0. */}
+      {kpis?.payables_total !== null && (
+        <Card>
+          <Sparkline
+            label="Payables"
+            value={money(kpis?.payables_total)}
+            change="Outstanding to suppliers"
+            tone="accent"
+            data={series?.payables ?? []}
+            labels={labels}
+            formatValue={money}
+          />
+        </Card>
+      )}
+      {kpis?.net_profit !== null && (
+        <Card>
+          <Sparkline
+            label={`Net profit · ${periodLabel}`}
+            value={money(profit)}
+            change={`${Number(kpis?.net_margin_pct || 0).toFixed(1)}% margin`}
+            tone={profit < 0 ? 'danger' : 'success'}
+            data={series?.net_profit ?? []}
+            labels={labels}
+            formatValue={money}
+          />
+        </Card>
+      )}
     </div>
   );
 }

@@ -32,6 +32,7 @@ interface RecentActivity {
 
 interface TreasurySummary {
   cash: { balance: number; status: string };
+  canSeeBanks?: boolean;
   banks: { total: number; accounts: unknown[] };
   receivables: number;
   payables: number;
@@ -93,37 +94,44 @@ export default function OverviewTab({ onJumpTab }: OverviewTabProps) {
           tone="cash"
           onClick={() => onJumpTab?.('cash')}
         />
-        <TreasuryCard
-          label="Total in banks"
-          value={summary.banks.total}
-          hint={`${summary.banks.accounts.length} account${summary.banks.accounts.length === 1 ? '' : 's'}`}
-          Icon={Building2}
-          tone="bank"
-          onClick={() => onJumpTab?.('banks')}
-        />
-        <TreasuryCard
-          label="Customer receivables"
-          value={summary.receivables}
-          Icon={UserPlus}
-          tone="receivables"
-        />
-        <TreasuryCard
-          label="Supplier payables"
-          value={summary.payables}
-          Icon={Truck}
-          tone="payables"
-        />
+        {/* A user without bank.view gets no figures for these from the server. */}
+        {summary.canSeeBanks !== false && (
+          <>
+            <TreasuryCard
+              label="Total in banks"
+              value={summary.banks.total}
+              hint={`${summary.banks.accounts.length} account${summary.banks.accounts.length === 1 ? '' : 's'}`}
+              Icon={Building2}
+              tone="bank"
+              onClick={() => onJumpTab?.('banks')}
+            />
+            <TreasuryCard
+              label="Customer receivables"
+              value={summary.receivables}
+              Icon={UserPlus}
+              tone="receivables"
+            />
+            <TreasuryCard
+              label="Supplier payables"
+              value={summary.payables}
+              Icon={Truck}
+              tone="payables"
+            />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <NetPositionCard
-            cash={summary.cash.balance}
-            banks={summary.banks.total}
-            receivables={summary.receivables}
-            payables={summary.payables}
-          />
-        </div>
+        {summary.canSeeBanks !== false && (
+          <div className="lg:col-span-2">
+            <NetPositionCard
+              cash={summary.cash.balance}
+              banks={summary.banks.total}
+              receivables={summary.receivables}
+              payables={summary.payables}
+            />
+          </div>
+        )}
 
         <div className="rounded-card border border-border bg-surface p-5 shadow-sm">
           <div className="text-sm font-semibold text-ink">Today&apos;s money flow</div>
