@@ -52,6 +52,7 @@ describe.skipIf(!enabled)('review follow-up features on real PostgreSQL', () => 
     app.use('/customers', require('../../server/routes/customers'));
     app.use('/return-requests', require('../../server/routes/returnRequests'));
     app.use('/stock', require('../../server/routes/stock'));
+    app.use('/invoices', require('../../server/routes/invoices'));
     app.use(require('../../server/middleware/errors').errorHandler);
   }, 30000);
 
@@ -92,5 +93,28 @@ describe.skipIf(!enabled)('review follow-up features on real PostgreSQL', () => 
     const tooMany = await manager.as('post', `/stock/quarantine/${variantId}`)
       .send({ action: 'release', quantity: 5, reason: 'More than is there' });
     expect(tooMany.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it('a replayed checkout with a changed cart updates its draft instead of keeping the old cart', async () => {
+    const checkoutId = randomUUID();
+    const first = await manager.as('post', '/invoices').send({ checkoutId, items: [{ variantId, quantity: 1 }] });
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const again = await manager.as('post', '/invoices').send({ checkoutId, items: [{ variantId, quantity: 3 }] });
+    expect(again.body.data.id).toBe(first.body.data.id);
+    const { rows: [line] } = await db.query(`SELECT quantity FROM invoice_items WHERE invoice_id = $1`, [first.body.data.id]);
+    expect(Number(line.quantity)).toBe(3);
+  });
+
+  it('a session nobody closed is closed later, without invented overtime', async () => {
+    const { rows: [emp] } = await db.query(`INSERT INTO employees (name, standard_hours) VALUES ('Forgot to sign out', 8) RETURNING id`);
+    const day = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+    await db.query(
+      `INSERT INTO attendance (employee_id, date, check_in, status) VALUES ($1, $2::date, $2::date + TIME '09:00', 'present')`,
+      [emp.id, day]);
+    await require('../../server/services/attendanceService').closeMissedSessions();
+    const { rows: [row] } = await db.query(`SELECT check_out, working_hours, overtime_hours FROM attendance WHERE employee_id = $1`, [emp.id]);
+    expect(row.check_out).not.toBeNull();
+    expect(Number(row.overtime_hours)).toBe(0);
+    expect(Number(row.working_hours)).toBeLessThanOrEqual(8);
   });
 });

@@ -303,7 +303,7 @@ async function updateBill(id, input, userId) {
               bank_account_id = $4,
               updated_at = NOW()
         WHERE bill_id = $5
-          AND status IN ('upcoming','due')`,
+          AND status IN ('upcoming','due','overdue')`,
       [
         patch.next_due_date,
         patch.is_variable_amount ? 0 : money(patch.amount || 0),

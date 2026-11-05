@@ -215,8 +215,10 @@ async function submitLeave({
   }
 
   return withTransaction(async (client) => {
+    // Locked so two requests for the same person (a double submit) take turns:
+    // both used to pass the overlap check below and could both be approved.
     const { rows: empRows } = await client.query(
-      `SELECT id, name, is_active FROM employees WHERE id = $1`,
+      `SELECT id, name, is_active FROM employees WHERE id = $1 FOR UPDATE`,
       [employeeId],
     );
     if (!empRows.length || !empRows[0].is_active) {

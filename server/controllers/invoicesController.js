@@ -439,11 +439,38 @@ async function create(req, res, next) {
           `checkout:${body.checkoutId}`,
         ]);
         const { rows: existing } = await client.query(
-          `SELECT id, invoice_number FROM invoices WHERE checkout_id = $1`,
+          `SELECT id, invoice_number, status, owner_id FROM invoices WHERE checkout_id = $1 FOR UPDATE`,
           [body.checkoutId],
         );
         if (existing.length) {
-          return { id: existing[0].id, invoiceNumber: existing[0].invoice_number, existing: true };
+          const prior = existing[0];
+          // Review 5 Nov: if the first response was lost and the cashier then
+          // changed the cart, returning the old draft as it was let the till
+          // pay for and confirm the old cart. While it is still this cashier's
+          // draft, it takes the cart as it is now.
+          if (prior.status === 'draft' && (!prior.owner_id || prior.owner_id === req.user.id)) {
+            await client.query(
+              `UPDATE invoices SET customer_id = $1, invoice_discount = $2, notes = COALESCE($3, notes),
+                      updated_by = $4, updated_at = NOW()
+                WHERE id = $5`,
+              [body.customerId || null, body.invoiceDiscount || 0, body.notes || null, req.user.id, prior.id],
+            );
+            await replaceItems(client, prior.id, body.items.map((i) => ({
+              variant_id: i.variantId,
+              quantity: i.quantity,
+              unit_price: i.unitPrice,
+              discount_amount: i.discountAmount,
+              discount_percent: i.discountPercent,
+              serial_number: i.serialNumber,
+              is_custom: i.isCustom,
+              custom_description: i.customDescription,
+              custom_cost_price: i.customCostPrice,
+              third_party_name: i.thirdPartyName,
+            })), { allowPriceOverride: canOverridePrice(req) });
+            await assertInvoiceDiscountAllowed(client, prior.id);
+            await recalculateAndPersistTotals(client, prior.id);
+          }
+          return { id: prior.id, invoiceNumber: prior.invoice_number, existing: true };
         }
       }
 
@@ -581,7 +608,9 @@ async function updateItems(req, res, next) {
           WHERE id = $5`,
         [
           body.customerId ?? null,
-          body.invoiceDiscount,
+          // Review 5 Nov: a left-out discount kept the old one on a new cart.
+          // Without override_price nobody may carry a discount over unseen.
+          body.invoiceDiscount !== undefined ? body.invoiceDiscount : (canOverridePrice(req) ? null : 0),
           body.notes,
           req.user.id,
           id,

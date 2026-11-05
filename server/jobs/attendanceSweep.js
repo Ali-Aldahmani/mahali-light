@@ -1,4 +1,4 @@
-const { markAbsentForDay } = require('../services/attendanceService');
+const { markAbsentForDay, closeMissedSessions } = require('../services/attendanceService');
 
 // Daily end-of-day sweep at 23:59 local time:
 //   1. Auto check-out anyone still open (timeout method)
@@ -43,6 +43,10 @@ function schedule(io) {
 }
 
 function startAttendanceSweepJob(io) {
+  // Close sessions from days the server was off at 23:59.
+  closeMissedSessions()
+    .then((rows) => { if (rows.length) console.log(`[attendanceSweep] closed ${rows.length} missed session(s)`); })
+    .catch((err) => console.error('[attendanceSweep] catch-up failed:', err.message));
   schedule(io);
 }
 

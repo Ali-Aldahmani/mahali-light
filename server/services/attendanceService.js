@@ -649,47 +649,62 @@ async function reviewCorrection({
 // =======================================================================
 // Daily sweep — mark absentees + auto-close still-checked-in records
 // =======================================================================
+// Review 5 Nov: closes every session left open on or before `day`. Weekends and
+// holidays used to return before this ran, and a server that was off at 23:59
+// never closed that day at all. A session nobody signed out of is credited at
+// most the standard hours: closing it at 23:59 used to give a 09:00 start about
+// seven hours of overtime nobody worked.
+async function closeOpenSessions(client, day) {
+  const { rows: openRows } = await client.query(
+    `SELECT a.id, a.employee_id, a.check_in, a.date::text AS day, e.standard_hours
+       FROM attendance a
+       JOIN employees e ON e.id = a.employee_id
+      WHERE a.date <= $1::date
+        AND a.check_in IS NOT NULL
+        AND a.check_out IS NULL`,
+    [day],
+  );
+  for (const r of openRows) {
+    const standardHours = Number(r.standard_hours || 8);
+    const ci = new Date(r.check_in);
+    const endOfDay = new Date(`${String(r.day).slice(0, 10)}T23:59:00`);
+    const ms = endOfDay - ci;
+    const workingHours = money(Math.min(standardHours, Math.max(0, ms / (60 * 60 * 1000))));
+    const overtime = 0;
+    const shortage = money(Math.max(0, standardHours - workingHours));
+    await client.query(
+      `UPDATE attendance
+          SET check_out = $1,
+              check_out_method = 'timeout',
+              working_hours = $2,
+              overtime_hours = $3,
+              shortage_hours = $4,
+              updated_at = NOW()
+        WHERE id = $5`,
+      [endOfDay.toISOString(), workingHours, overtime, shortage, r.id],
+    );
+  }
+  return openRows;
+}
+
+// Called at start-up so days the server missed are closed too.
+async function closeMissedSessions() {
+  const yesterday = new Date(Date.now() - 86_400_000);
+  const day = storeDate(yesterday);
+  return withTransaction((client) => closeOpenSessions(client, day));
+}
+
 async function markAbsentForDay({ date = null, io = null } = {}) {
   const day = date || todayDateString();
-  if (isUaeWeekend(day)) {
-    return { dryRun: true, reason: 'weekend', day, marked: 0 };
-  }
-  if (await isHoliday(null, day)) {
-    return { dryRun: true, reason: 'holiday', day, marked: 0 };
-  }
+  const nonWorkingReason = isUaeWeekend(day)
+    ? 'weekend'
+    : (await isHoliday(null, day)) ? 'holiday' : null;
 
   return withTransaction(async (client) => {
-    // Auto-close any record still open (no check-out) at end-of-day.
-    const { rows: openRows } = await client.query(
-      `SELECT a.id, a.employee_id, a.check_in, e.standard_hours
-         FROM attendance a
-         JOIN employees e ON e.id = a.employee_id
-        WHERE a.date = $1::date
-          AND a.check_in IS NOT NULL
-          AND a.check_out IS NULL`,
-      [day],
-    );
-    for (const r of openRows) {
-      const standardHours = Number(r.standard_hours || 8);
-      const ci = new Date(r.check_in);
-      const endOfDay = new Date(`${day}T23:59:00`);
-      const ms = endOfDay - ci;
-      const workingHours = money(Math.max(0, ms / (60 * 60 * 1000)));
-      const overtime = money(Math.max(0, workingHours - standardHours));
-      const shortage = money(Math.max(0, standardHours - workingHours));
-      await client.query(
-        `UPDATE attendance
-            SET check_out = $1,
-                check_out_method = 'timeout',
-                working_hours = $2,
-                overtime_hours = $3,
-                shortage_hours = $4,
-                updated_at = NOW()
-          WHERE id = $5`,
-        [endOfDay.toISOString(), workingHours, overtime, shortage, r.id],
-      );
+    const openRows = await closeOpenSessions(client, day);
+    if (nonWorkingReason) {
+      return { dryRun: true, reason: nonWorkingReason, day, marked: 0, autoClosed: openRows.length };
     }
-
     // Mark absent: every active employee with NO attendance row today AND
     // no approved leave covering today.
     const { rows: absentRows } = await client.query(
@@ -1055,6 +1070,7 @@ async function createLeaveAttendanceRecords(client, { employeeId, startDate, end
 }
 
 module.exports = {
+  closeMissedSessions,
   checkIn,
   checkOut,
   checkInSafe,
