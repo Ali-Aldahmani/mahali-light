@@ -161,6 +161,40 @@ function validateRefundPlan(plan, expectedTotal, { required = false } = {}) {
   return rows;
 }
 
+// Decision (review 5 Nov): money only goes back the way it came in. Across all
+// returns on an invoice, cash and bank refunds can't exceed what the invoice
+// was paid in cash and bank; the rest must be refunded as credit, which lowers
+// the customer's debt. Before, a sale on credit could be refunded in cash while
+// the customer still owed for it. Debt the customer settled later through a
+// collection isn't tied to an invoice, so that part comes back as credit too.
+async function assertRefundMatchesTender(client, { invoiceId, plan, excludeRequestId = null }) {
+  if (!invoiceId || !Array.isArray(plan)) return;
+  const moneyOut = money(plan
+    .filter((p) => p.method === 'cash' || p.method === 'bank')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0));
+  if (moneyOut <= 0) return;
+  const { rows: [row] } = await client.query(
+    `SELECT
+       (SELECT COALESCE(SUM(amount), 0) FROM invoice_payments
+         WHERE invoice_id = $1 AND method <> 'credit')::float8 AS paid,
+       (SELECT COALESCE(SUM((p->>'amount')::numeric), 0)
+          FROM return_requests rr, jsonb_array_elements(COALESCE(rr.refund_plan, '[]'::jsonb)) p
+         WHERE rr.reference_type = 'invoice' AND rr.reference_id = $1
+           AND rr.status IN ('approved', 'completed')
+           AND ($2::uuid IS NULL OR rr.id <> $2)
+           AND p->>'method' IN ('cash', 'bank'))::float8 AS refunded`,
+    [invoiceId, excludeRequestId],
+  );
+  const allowed = money(Math.max(0, row.paid - row.refunded));
+  if (moneyOut - allowed > 0.001) {
+    throw new AppError(
+      ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH,
+      `Only ${allowed.toFixed(2)} AED can be refunded in cash or by bank: the rest of this sale was on credit, so refund it as credit.`,
+      { status: 409, details: { cashOrBankAllowed: allowed, requested: moneyOut } },
+    );
+  }
+}
+
 async function loadCatalogVariant(client, variantId) {
   const { rows } = await client.query(
     `SELECT v.id, v.product_id, v.sku, v.selling_price, v.cost_price,
@@ -639,6 +673,9 @@ async function createReturnRequest({
     const validatedRefundPlan = returnType === 'supplier_return' ? null : validateRefundPlan(
       refundPlan, returnType === 'customer_replace' ? Math.max(0, money(totalValue - replacementTotal)) : totalValue,
     );
+    if (referenceType === 'invoice') {
+      await assertRefundMatchesTender(client, { invoiceId: referenceId, plan: validatedRefundPlan });
+    }
 
     const requestNumber = await nextRequestNumber(client);
 
@@ -845,6 +882,11 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
       ? Math.max(0, money(totalValue - replacementTotal)) : totalValue;
     const refundPlan = request.return_type === 'supplier_return' ? null
       : validateRefundPlan(request.refund_plan, expectedRefund, { required: true });
+    if (request.reference_type === 'invoice') {
+      await assertRefundMatchesTender(client, {
+        invoiceId: request.reference_id, plan: refundPlan, excludeRequestId: request.id,
+      });
+    }
 
     // --- Build the return_order shell ----------------------------------
     const orderNumber = await nextOrderNumber(client);

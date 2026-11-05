@@ -71,7 +71,8 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     return (await db.query(`INSERT INTO product_variants (product_id,sku,selling_price,cost_price,stock_qty)
       VALUES ($1,$2,$3,$4,$5) RETURNING *`, [product.id, randomUUID(), price, cost, stock])).rows[0];
   }
-  async function customer(limit = 0) {
+  // null = no credit limit (migration 056; 0 now means no credit).
+  async function customer(limit = null) {
     return (await db.query(`INSERT INTO customers (name,credit_limit) VALUES ('Regression customer',$1) RETURNING *`, [limit])).rows[0];
   }
   async function draft({ v, quantity = 1, price = 100, discount = 0, invoiceDiscount = 0, taxRate = 0, customerId = null } = {}) {

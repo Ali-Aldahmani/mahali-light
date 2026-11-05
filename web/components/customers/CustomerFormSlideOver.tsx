@@ -108,7 +108,7 @@ export default function CustomerFormSlideOver({
           companyName: customer.companyName || '',
           trnNumber: customer.trnNumber || '',
           address: customer.address || '',
-          creditLimit: Number(customer.creditLimit || 0),
+          creditLimit: customer.creditLimit == null ? '' : Number(customer.creditLimit),
           notes: customer.notes || '',
           isActive: customer.isActive ?? true,
         });
@@ -172,7 +172,8 @@ export default function CustomerFormSlideOver({
         companyName: form.companyName.trim() || null,
         trnNumber: form.trnNumber.trim() || null,
         address: form.address || null,
-        creditLimit: Number(form.creditLimit) || 0,
+        // Blank means no limit; 0 means no credit sales.
+        creditLimit: form.creditLimit === '' || form.creditLimit == null ? null : Number(form.creditLimit),
         notes: form.notes || null,
       };
       if (isEdit) {
@@ -291,9 +292,11 @@ export default function CustomerFormSlideOver({
           disabled={!canEditCreditLimit}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setField('creditLimit', e.target.value)}
           hint={
-            Number(form.creditLimit) === 0
-              ? 'No limit (set above 0 to cap credit sales).'
-              : 'Sales on credit cannot push the balance above this amount.'
+            form.creditLimit === '' || form.creditLimit == null
+              ? 'Blank: no limit on credit sales.'
+              : Number(form.creditLimit) === 0
+                ? 'No credit sales. Leave blank for no limit.'
+                : 'Sales on credit cannot push the balance above this amount.'
           }
           error={errors.creditLimit}
         />

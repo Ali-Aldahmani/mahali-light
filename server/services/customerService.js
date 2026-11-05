@@ -330,7 +330,8 @@ async function voidPayment({ paymentId, voidedBy = null }) {
 }
 
 // Helper used by Phase 6 invoicing — tests whether adding `addedCredit` to
-// the customer's balance would exceed their credit_limit (0 means unlimited).
+// the customer's balance would exceed their credit_limit (NULL means no limit,
+// 0 means no credit; migration 056).
 // Caller is responsible for the actual balance mutation. The row lock also
 // serialises with deactivation, and an inactive customer cannot take on new
 // debt.
@@ -351,8 +352,8 @@ async function assertWithinCreditLimit(client, customerId, addedCredit) {
       { status: 409 },
     );
   }
+  if (rows[0].credit_limit == null) return; // no limit (decision, review 5 Nov)
   const limit = money(rows[0].credit_limit);
-  if (limit <= 0) return; // unlimited
   const after = money(rows[0].credit_balance) + money(addedCredit);
   if (after - limit > 0.001) {
     throw new AppError(

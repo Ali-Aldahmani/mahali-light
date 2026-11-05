@@ -33,7 +33,8 @@ const fieldSchemas = {
     .optional()
     .nullable()
     .transform((v) => (v === '' ? null : v)),
-  creditLimit: z.number().finite().nonnegative().optional(),
+  // Decision (review 5 Nov): null means no limit, 0 means no credit at all.
+  creditLimit: z.number().finite().nonnegative().nullable().optional(),
   notes: z.string().max(4000).optional().nullable(),
 };
 
@@ -64,14 +65,14 @@ const EDITABLE = [
   ['address', 'address', blankToNull],
   ['companyName', 'company_name', blankToNull],
   ['trnNumber', 'trn_number', blankToNull],
-  ['creditLimit', 'credit_limit', (v) => Number(v || 0)],
+  ['creditLimit', 'credit_limit', (v) => (v == null || v === '' ? null : Number(v))],
   ['notes', 'notes', blankToNull],
   ['isActive', 'is_active', (v) => v !== false],
 ];
 
 function storedValue(row, key, column, normalize) {
   const v = row[column];
-  if (key === 'creditLimit') return Number(v || 0);
+  if (key === 'creditLimit') return v == null ? null : Number(v);
   if (key === 'isActive') return v !== false;
   return normalize(v);
 }
@@ -91,7 +92,7 @@ function shapeCustomer(row, opts = {}) {
     address: row.address,
     companyName: row.company_name,
     trnNumber: row.trn_number,
-    creditLimit: Number(row.credit_limit || 0),
+    creditLimit: row.credit_limit == null ? null : Number(row.credit_limit),
     notes: row.notes,
     isActive: row.is_active,
     createdAt: row.created_at,
@@ -449,7 +450,8 @@ async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
 
-    if (Number(body.creditLimit || 0) > 0) assertCanEditCreditLimit(req);
+    // Anything but the default "no credit" needs the permission (null is unlimited).
+    if (body.creditLimit !== 0) assertCanEditCreditLimit(req);
 
     if (!trnIsValid(body.trnNumber)) {
       throw new AppError(
@@ -549,7 +551,8 @@ async function update(req, res, next) {
       const current = existing[0];
 
       // A Cashier could otherwise lift a limit and then sell on credit past it.
-      if (body.creditLimit !== undefined && Number(body.creditLimit) !== Number(current.credit_limit || 0)) {
+      const storedLimit = current.credit_limit == null ? null : Number(current.credit_limit);
+      if (body.creditLimit !== undefined && (body.creditLimit == null ? null : Number(body.creditLimit)) !== storedLimit) {
         assertCanEditCreditLimit(req);
       }
       // Same rule as DELETE: otherwise an edit hides a debt from the
@@ -590,8 +593,11 @@ async function update(req, res, next) {
         if (body[key] === undefined) continue;
         const next = normalize(body[key]);
         const prev = storedValue(current, key, column, normalize);
+        // null (no limit) and 0 (no credit) are different limits.
         const same =
-          key === 'creditLimit' ? Math.abs(prev - next) <= 0.001 : prev === next;
+          key === 'creditLimit'
+            ? (prev == null || next == null ? prev === next : Math.abs(prev - next) <= 0.001)
+            : prev === next;
         if (same) continue;
         before[key] = prev;
         after[key] = next;
@@ -767,7 +773,7 @@ async function search(req, res, next) {
           name: r.name,
           phone: r.phone,
           companyName: r.company_name,
-          creditLimit: Number(r.credit_limit || 0),
+          creditLimit: r.credit_limit == null ? null : Number(r.credit_limit),
         };
         if (includeBalance) o.creditBalance = Number(r.credit_balance || 0);
         return o;
@@ -816,7 +822,7 @@ async function outstanding(req, res, next) {
         phone: r.phone,
         companyName: r.company_name,
         creditBalance: Number(r.credit_balance),
-        creditLimit: Number(r.credit_limit || 0),
+        creditLimit: r.credit_limit == null ? null : Number(r.credit_limit),
         lastPaymentDate: r.last_payment_date,
         daysSinceLastPayment: r.days_since_last_payment,
       })),

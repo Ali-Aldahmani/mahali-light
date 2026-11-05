@@ -209,7 +209,7 @@ describe.skipIf(!enabled)('audit phase 2 on real PostgreSQL', () => {
       await failAuditFor('cash_drawer.adjusted');
       try {
         await expect(cashService.recordManualAdjustment({
-          amount: 50, direction: 'out', reason: 'Petty cash', employeeId: adminId,
+          amount: 5, direction: 'out', reason: 'Petty cash', employeeId: adminId,
         })).rejects.toThrow(/forced audit failure/);
       } finally {
         await db.query(`DELETE FROM test_fail_audit`);

@@ -20,9 +20,15 @@ async function getState(_req, res, next) {
   }
 }
 
+const approverSchema = z.object({
+  username: z.string().trim().min(1).max(50),
+  password: z.string().min(1).max(200),
+}).optional().nullable();
+
 const openSchema = z.object({
-  openingBalance: z.number().nonnegative(),
+  openingBalance: z.number().finite().nonnegative(),
   notes: z.string().max(2000).optional().nullable(),
+  approver: approverSchema,
 });
 
 async function open(req, res, next) {
@@ -31,6 +37,8 @@ async function open(req, res, next) {
     const io = req.app.get('io');
     await cashService.openDrawer({
       openingBalance: body.openingBalance,
+      approver: body.approver || null,
+      ipAddress: req.ip || null,
       employeeId: req.user.id,
       notes: body.notes || null,
       io,
@@ -100,9 +108,10 @@ async function close(req, res, next) {
 }
 
 const adjustSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.number().finite().positive(),
   direction: z.enum(['in', 'out']),
   reason: z.string().min(3).max(2000),
+  approver: approverSchema,
 });
 
 async function adjust(req, res, next) {
@@ -114,6 +123,8 @@ async function adjust(req, res, next) {
       direction: body.direction,
       reason: body.reason,
       employeeId: req.user.id,
+      approver: body.approver || null,
+      ipAddress: req.ip || null,
       io,
       requestKey: requestKeyFrom(req, { required: true }),
     });

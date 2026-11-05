@@ -78,7 +78,17 @@ async function addPayment({
 
     const totalCost = money(po.total_cost);
     const alreadyPaid = money(po.amount_paid);
-    const balance = money(totalCost - alreadyPaid);
+    // Decision (review 5 Nov): goods sent back reduce what is owed. Accounts
+    // Payable is already debited for them, so paying the full order left it in
+    // debit. Rejected or replaced returns don't count (the goods came back).
+    const { rows: [returned] } = await client.query(
+      `SELECT COALESCE(SUM(total_value), 0)::float8 AS value
+         FROM supplier_returns
+        WHERE purchase_order_id = $1
+          AND COALESCE(resolution, '') NOT IN ('rejected', 'replaced')`,
+      [poId],
+    );
+    const balance = money(totalCost - alreadyPaid - money(returned.value));
 
     if (amt - balance > 0.001) {
       throw new AppError(

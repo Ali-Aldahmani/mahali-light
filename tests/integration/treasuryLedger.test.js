@@ -73,10 +73,26 @@ describe.skipIf(!enabled)('treasury and ledger on real PostgreSQL', () => {
     if (admin) await admin.end();
   });
 
+  // A second person for shortfalls and withdrawals above the tolerance.
+  let approver;
+  async function makeApprover() {
+    if (approver) return approver;
+    const bcrypt = require('bcrypt');
+    const { rows: [role] } = await db.query(`SELECT id FROM roles WHERE name = 'Manager'`);
+    await db.query(
+      `INSERT INTO users (username, password_hash, role_id) VALUES ('ledger_approver', $1, $2)`,
+      [await bcrypt.hash('approve this please', 4), role.id]);
+    approver = { username: 'ledger_approver', password: 'approve this please' };
+    return approver;
+  }
+
   it('every manual cash and bank movement keeps the ledger equal to the drawer and the banks', async () => {
     expect((await post('/cash-drawer/open', { openingBalance: 100 })).status).toBeLessThan(300);
     expect((await post('/cash-drawer/adjust', { amount: 50, direction: 'in', reason: 'Float top-up' })).status).toBeLessThan(300);
-    expect((await post('/cash-drawer/adjust', { amount: 20, direction: 'out', reason: 'Owner took cash' })).status).toBeLessThan(300);
+    expect((await post('/cash-drawer/adjust', { amount: 20, direction: 'out', reason: 'Owner took cash' })).status).toBe(409);
+    expect((await post('/cash-drawer/adjust', {
+      amount: 20, direction: 'out', reason: 'Owner took cash', approver: await makeApprover(),
+    })).status).toBeLessThan(300);
 
     const bankRes = await post('/bank-accounts', { bankName: 'Test Bank', accountName: 'Shop', openingBalance: 1000 });
     expect(bankRes.status).toBe(201);
@@ -97,7 +113,11 @@ describe.skipIf(!enabled)('treasury and ledger on real PostgreSQL', () => {
     expect(await balanceOf('5015')).toBe(5);
 
     // Reopened with a smaller float: 35 left the drawer between sessions.
-    expect((await post('/cash-drawer/open', { openingBalance: 100 })).status).toBeLessThan(300);
+    // A shortfall above the tolerance needs a second person and a reason.
+    expect((await post('/cash-drawer/open', { openingBalance: 100 })).status).toBe(409);
+    expect((await post('/cash-drawer/open', {
+      openingBalance: 100, notes: 'Owner took 35 overnight', approver: await makeApprover(),
+    })).status).toBeLessThan(300);
 
     expect(await differences('gl_cash_vs_drawer')).toEqual([]);
     expect(await differences('gl_bank_vs_accounts')).toEqual([]);

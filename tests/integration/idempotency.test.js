@@ -155,10 +155,11 @@ describe.skipIf(!enabled)('retry-safe commands on real PostgreSQL', () => {
 
   it('cash adjustment: the drawer moves once', async () => {
     const before = Number((await one(`SELECT current_balance FROM cash_drawer`)).current_balance);
-    const { first, second } = await twice('/cash-drawer/adjust', { amount: 30, direction: 'out', reason: 'Petty cash for tea' });
+    // At most the 10 AED tolerance: more needs a second person.
+    const { first, second } = await twice('/cash-drawer/adjust', { amount: 8, direction: 'out', reason: 'Petty cash for tea' });
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(Number((await one(`SELECT current_balance FROM cash_drawer`)).current_balance)).toBe(before - 30);
+    expect(Number((await one(`SELECT current_balance FROM cash_drawer`)).current_balance)).toBe(before - 8);
     expect(await n(`SELECT COUNT(*) AS n FROM cash_drawer_transactions WHERE notes = 'Petty cash for tea'`)).toBe(1);
   });
 

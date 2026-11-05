@@ -390,12 +390,25 @@ async function getVATReport({ startDate, endDate }) {
   // invoice's own rate before netting (mirrors the same fix in
   // analyticsService.js's getKPIs).
   const { rows: outRows } = await query(
+    // Decision (review 5 Nov): a sale counts in the period it was confirmed,
+    // even if it is cancelled later, and the cancellation is subtracted in the
+    // period it happened. Dropping cancelled sales rewrote periods that may
+    // already have been filed, and the later period showed no adjustment.
     `WITH sales AS (
        SELECT COALESCE(SUM(taxable_amount), 0)::float8 AS net_sales,
               COALESCE(SUM(tax_amount),     0)::float8 AS output_tax
          FROM invoices
-        WHERE status = 'confirmed'
+        WHERE status IN ('confirmed', 'cancelled')
+          AND confirmed_at IS NOT NULL
           AND confirmed_at::date BETWEEN $1::date AND $2::date
+     ),
+     cancels AS (
+       SELECT COALESCE(SUM(taxable_amount), 0)::float8 AS net_sales,
+              COALESCE(SUM(tax_amount),     0)::float8 AS output_tax
+         FROM invoices
+        WHERE status = 'cancelled'
+          AND confirmed_at IS NOT NULL
+          AND cancelled_at::date BETWEEN $1::date AND $2::date
      ),
      returns AS (
        SELECT COALESCE(SUM(
@@ -412,9 +425,9 @@ async function getVATReport({ startDate, endDate }) {
         WHERE ro.return_type IN ('customer_refund', 'customer_replace')
           AND ro.created_at::date BETWEEN $1::date AND $2::date
      )
-     SELECT sales.net_sales - returns.net_returns AS net_sales,
-            sales.output_tax - returns.tax_reversed AS output_tax
-       FROM sales, returns`,
+     SELECT sales.net_sales - cancels.net_sales - returns.net_returns AS net_sales,
+            sales.output_tax - cancels.output_tax - returns.tax_reversed AS output_tax
+       FROM sales, cancels, returns`,
     [from, to],
   );
   const netSales = money(outRows[0].net_sales || 0);

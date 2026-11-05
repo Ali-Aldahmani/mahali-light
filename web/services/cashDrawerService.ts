@@ -18,8 +18,10 @@ export function getDrawerState() {
   return apiGet('/cash-drawer');
 }
 
-export function openDrawer(openingBalance, notes = null) {
-  return apiPost('/cash-drawer/open', { openingBalance, notes });
+type Approver = { username: string; password: string } | null;
+
+export function openDrawer(openingBalance, notes = null, approver: Approver = null) {
+  return apiPost('/cash-drawer/open', { openingBalance, notes, approver });
 }
 
 // approver: the second person who signs in to approve a difference above the
@@ -37,8 +39,11 @@ export function closeDrawer({
 }
 
 // requestKey: see lib/requestKey — makes a retried submit safe.
-export function adjustDrawer({ amount, direction, reason }, requestKey?: string) {
-  return apiPost('/cash-drawer/adjust', { amount, direction, reason }, withRequestKey(requestKey));
+export function adjustDrawer(
+  { amount, direction, reason, approver = null }: { amount: number; direction: string; reason: string; approver?: Approver },
+  requestKey?: string,
+) {
+  return apiPost('/cash-drawer/adjust', { amount, direction, reason, approver }, withRequestKey(requestKey));
 }
 
 export function transferCashToBank({ toId, amount, transferDate, notes }, requestKey?: string) {

@@ -362,6 +362,42 @@ export default function CashDrawerTab({ actionParam = null }: CashDrawerTabProps
   );
 }
 
+// A second person signs in here when the server says a shortage needs approval
+// (closing, opening short, or taking cash out). Shared by the three forms.
+function ApproverFields({
+  idPrefix, username, password, onUsername, onPassword, message,
+}: {
+  idPrefix: string;
+  username: string;
+  password: string;
+  onUsername: (v: string) => void;
+  onPassword: (v: string) => void;
+  message: string;
+}) {
+  return (
+    <div className="space-y-3 rounded-card border border-warning/30 bg-warning-light px-3 py-3">
+      <p className="text-xs text-ink">{message}</p>
+      <Input
+        id={`${idPrefix}-approver-username`}
+        label="Approver username"
+        value={username}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUsername(e.target.value)}
+        autoComplete="off"
+        required
+      />
+      <Input
+        id={`${idPrefix}-approver-password`}
+        label="Approver password"
+        type="password"
+        value={password}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onPassword(e.target.value)}
+        autoComplete="off"
+        required
+      />
+    </div>
+  );
+}
+
 function OpenDrawerSlideOver({
   open,
   onClose,
@@ -374,19 +410,34 @@ function OpenDrawerSlideOver({
   const [opening, setOpening] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [needsApprover, setNeedsApprover] = useState('');
+  const [approverUsername, setApproverUsername] = useState('');
+  const [approverPassword, setApproverPassword] = useState('');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      await openDrawer(Number(opening) || 0, notes || null);
+      await openDrawer(
+        Number(opening) || 0,
+        notes || null,
+        needsApprover ? { username: approverUsername.trim(), password: approverPassword } : null,
+      );
       toast.success('Drawer opened.');
       onDone?.();
       onClose?.();
       setOpening('');
       setNotes('');
+      setNeedsApprover('');
+      setApproverUsername('');
+      setApproverPassword('');
     } catch (err: any) {
-      toast.error(err?.message || 'Could not open the drawer.');
+      if (err?.code === 'BIZ_DISCREPANCY_NEEDS_APPROVAL') {
+        setNeedsApprover(err.message || 'A second person must approve this.');
+      } else {
+        setApproverPassword('');
+        toast.error(err?.message || 'Could not open the drawer.');
+      }
     } finally {
       setSaving(false);
     }
@@ -414,7 +465,18 @@ function OpenDrawerSlideOver({
           value={notes}
           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
           rows={2}
+          hint={needsApprover ? 'Say why the drawer is short.' : undefined}
         />
+        {needsApprover && (
+          <ApproverFields
+            idPrefix="open"
+            username={approverUsername}
+            password={approverPassword}
+            onUsername={setApproverUsername}
+            onPassword={setApproverPassword}
+            message={`${needsApprover} Someone other than you signs in here.`}
+          />
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" type="button" onClick={onClose}>
             Cancel
@@ -580,6 +642,9 @@ function AdjustSlideOver({
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const [needsApprover, setNeedsApprover] = useState('');
+  const [approverUsername, setApproverUsername] = useState('');
+  const [approverPassword, setApproverPassword] = useState('');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -589,14 +654,26 @@ function AdjustSlideOver({
         amount: Number(amount) || 0,
         direction,
         reason,
+        approver: needsApprover ? { username: approverUsername.trim(), password: approverPassword } : null,
       }, requestKey.current());
       toast.success('Adjustment recorded.');
       onDone?.();
       onClose?.();
       setAmount('');
       setReason('');
+      setNeedsApprover('');
+      setApproverUsername('');
+      setApproverPassword('');
     } catch (err: any) {
-      toast.error(err?.message || 'Could not record the adjustment.');
+      if (err?.code === 'BIZ_DISCREPANCY_NEEDS_APPROVAL') {
+        // The refused attempt moved nothing; a new key keeps the approved
+        // retry from being read as a replay of it.
+        requestKey.renew();
+        setNeedsApprover(err.message || 'A second person must approve this.');
+      } else {
+        setApproverPassword('');
+        toast.error(err?.message || 'Could not record the adjustment.');
+      }
     } finally {
       setSaving(false);
     }

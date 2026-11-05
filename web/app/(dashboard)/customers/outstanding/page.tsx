@@ -116,7 +116,7 @@ function OutstandingReceivablesPageContent() {
           r.companyName || '',
           r.phone || '',
           Number(r.creditBalance || 0).toFixed(2),
-          Number(r.creditLimit || 0).toFixed(2),
+          r.creditLimit == null ? 'No limit' : Number(r.creditLimit).toFixed(2),
           r.lastPaymentDate ? formatDate(r.lastPaymentDate) : '',
           r.daysSinceLastPayment ?? '',
         ]

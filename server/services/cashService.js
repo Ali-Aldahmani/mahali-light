@@ -236,6 +236,18 @@ async function postTransactionWith(client, params) {
       );
       session = sessRows[0];
       autoOpened = true;
+      // Decision (review 5 Nov): reversals (a void, a deleted expense, a
+      // cancelled sale) may still open a closed drawer so a correction is never
+      // blocked, but it is logged with what caused it.
+      await logActivity({
+        client,
+        entityType: 'cash_drawer',
+        entityId: drawer.id,
+        action: 'cash_drawer.auto_opened',
+        performedBy: employeeId,
+        newValue: { sessionId: session.id, transactionType, amount: amt, referenceType, referenceId },
+        notes: autoOpenNote,
+      });
       await client.query(
         `UPDATE cash_drawer
             SET status = 'open',
@@ -343,7 +355,7 @@ async function recordCashOut(params) {
 // =======================================================================
 // Drawer lifecycle
 // =======================================================================
-async function openDrawer({ openingBalance, employeeId, notes = null, io = null }) {
+async function openDrawer({ openingBalance, employeeId, notes = null, approver = null, ipAddress = null, io = null }) {
   const amt = money(openingBalance);
   if (!Number.isFinite(amt) || amt < 0) {
     throw new AppError(
@@ -357,6 +369,25 @@ async function openDrawer({ openingBalance, employeeId, notes = null, io = null 
       throw new AppError(ERROR_CODES.BIZ_DRAWER_ALREADY_OPEN, undefined, {
         status: 409,
       });
+    }
+    // Decision (review 5 Nov): opening with less than the drawer held at its
+    // last close is a shortage, so it needs the same second person as a close.
+    // Before, closing at the expected amount and reopening at the real count
+    // booked the shortage to Owner Equity with nobody approving it.
+    const shortfall = money(money(drawer.current_balance) - amt);
+    let shortfallApprovedBy = null;
+    if (shortfall > DISCREPANCY_TOLERANCE) {
+      if (!approver) {
+        throw new AppError(
+          ERROR_CODES.BIZ_DISCREPANCY_NEEDS_APPROVAL,
+          `The drawer held ${money(drawer.current_balance).toFixed(2)} AED at its last close. Opening with ${shortfall.toFixed(2)} AED less needs a second person to approve.`,
+          { status: 409, details: { shortfall } },
+        );
+      }
+      if (!notes || String(notes).trim().length < 5) {
+        throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Say why the drawer is short (at least 5 characters).', { status: 400 });
+      }
+      shortfallApprovedBy = await verifyCloseApprover(client, approver, employeeId, ipAddress);
     }
     const { rows: sessRows } = await client.query(
       `INSERT INTO cash_drawer_sessions
@@ -417,7 +448,7 @@ async function openDrawer({ openingBalance, employeeId, notes = null, io = null 
       entityId: drawer.id,
       action: 'cash_drawer.opened',
       performedBy: employeeId,
-      newValue: { openingBalance: amt, sessionId: session.id },
+      newValue: { openingBalance: amt, sessionId: session.id, shortfall: shortfall > 0 ? shortfall : 0, shortfallApprovedBy },
     });
 
     return { drawer, session };
@@ -682,6 +713,8 @@ async function recordManualAdjustment({
   direction,
   reason,
   employeeId,
+  approver = null,
+  ipAddress = null,
   io = null,
   requestKey = null,
 }) {
@@ -701,6 +734,19 @@ async function recordManualAdjustment({
       userId: employeeId,
       payload: { amount: money(amount), direction, reason: reason.trim() },
     }, async () => {
+      // Decision (review 5 Nov): taking cash out by hand above the tolerance
+      // needs a second person, or it is a way round the close approval.
+      let approvedBy = null;
+      if (direction === 'out' && money(amount) > DISCREPANCY_TOLERANCE) {
+        if (!approver) {
+          throw new AppError(
+            ERROR_CODES.BIZ_DISCREPANCY_NEEDS_APPROVAL,
+            `Taking more than ${DISCREPANCY_TOLERANCE.toFixed(2)} AED out of the drawer needs a second person to approve.`,
+            { status: 409 },
+          );
+        }
+        approvedBy = await verifyCloseApprover(client, approver, employeeId, ipAddress);
+      }
       const posted = await postTransactionWith(client, {
         transactionType: type,
         direction,

@@ -205,9 +205,19 @@ function NewReturnRequestPageContent() {
   useEffect(() => {
     if (step !== 2 || returnType !== 'customer_refund') return;
     if (refundPlan.length > 0) return;
-    // Default: cash refund of the full amount.
-    setRefundPlan([{ method: 'cash', amount: round2(totalValue) }]);
-  }, [step, returnType, totalValue, refundPlan.length]);
+    // Default: money goes back the way it came in. What the sale took on
+    // credit is refunded as credit (it lowers the debt); the rest in cash.
+    // The server refuses a cash or bank refund beyond what was paid that way.
+    const onCredit = ((invoice as any)?.payments || [])
+      .filter((p: any) => p.method === 'credit')
+      .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+    const credit = round2(Math.min(totalValue, onCredit));
+    const cash = round2(totalValue - credit);
+    setRefundPlan([
+      ...(credit > 0 ? [{ method: 'credit', amount: credit }] : []),
+      ...(cash > 0 ? [{ method: 'cash', amount: cash }] : []),
+    ] as any);
+  }, [step, returnType, totalValue, refundPlan.length, invoice]);
 
   const replacementTotal = useMemo(
     () =>

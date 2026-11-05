@@ -424,7 +424,7 @@ function ContactCard({ customer }: { customer: CustomerProfile }) {
 }
 
 function CreditCardInfo({ customer }: { customer: CustomerProfile }) {
-  const limit = Number(customer.creditLimit || 0);
+  const limit = customer.creditLimit;
   return (
     <div className="rounded-card border border-border bg-surface p-4 shadow-card">
       <div className="text-xs text-ink-muted mb-2">Credit terms</div>
@@ -432,7 +432,7 @@ function CreditCardInfo({ customer }: { customer: CustomerProfile }) {
         <div className="flex items-center justify-between">
           <span className="text-ink-muted">Credit limit</span>
           <span className="font-medium">
-            {limit > 0 ? formatCurrency(limit) : 'No limit'}
+            {limit == null ? 'No limit' : Number(limit) > 0 ? formatCurrency(Number(limit)) : 'No credit'}
           </span>
         </div>
         <div className="flex items-center justify-between">
@@ -1023,7 +1023,7 @@ const FIELD_LABELS: Record<string, string> = {
 function showValue(key: string, v: unknown) {
   if (v === null || v === undefined || v === '') return '—';
   if (key === 'isActive') return v ? 'Active' : 'Inactive';
-  if (key === 'creditLimit') return Number(v) > 0 ? formatCurrency(Number(v)) : 'No limit';
+  if (key === 'creditLimit') return v == null ? 'No limit' : Number(v) > 0 ? formatCurrency(Number(v)) : 'No credit';
   return String(v);
 }
 
