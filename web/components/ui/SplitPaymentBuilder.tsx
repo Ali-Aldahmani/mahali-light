@@ -4,7 +4,7 @@ import Input from './Input';
 import { formatCurrency } from '@/lib/utils/format';
 import ChangeCalculator from './ChangeCalculator';
 import Select from './Select';
-import BankTenderFields, { isBankTender } from '@/components/payments/BankTenderFields';
+import BankTenderFields, { BankAccountSelect, isBankTender } from '@/components/payments/BankTenderFields';
 
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
@@ -155,6 +155,15 @@ function PaymentRow({ payment, customerLinked, onUpdate, onRemove }) {
       {isBankTender(payment.method) && (
         <div className="w-full">
           <BankTenderFields payment={payment} onChange={onUpdate} />
+        </div>
+      )}
+      {payment.method === 'bank' && (
+        <div className="w-full">
+          <BankAccountSelect
+            value={payment.bankAccountId}
+            onChange={(id) => onUpdate({ bankAccountId: id })}
+            label="Refund from"
+          />
         </div>
       )}
     </div>

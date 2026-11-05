@@ -24,6 +24,13 @@ router.get(
   movements.listForVariant,
 );
 
+// Quarantined stock: release or write off (review 5 Nov) ----------------------
+router.post(
+  '/quarantine/:variantId',
+  requirePermission('stock.adjust_direct'),
+  require('../controllers/quarantineController').resolveQuarantine,
+);
+
 // Adjustment requests ---------------------------------------------------------
 router.get('/adjustments', requirePermission('stock.view'), adjustments.list);
 router.post(

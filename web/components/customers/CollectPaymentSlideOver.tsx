@@ -6,6 +6,7 @@ import SlideOver from '@/components/ui/SlideOver';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { toast } from '@/store/toastStore';
+import { BankAccountSelect } from '@/components/payments/BankTenderFields';
 import { collectPayment } from '@/services/customerPaymentService';
 import { formatCurrency, storeDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
@@ -44,6 +45,7 @@ export default function CollectPaymentSlideOver({
   const balance = Number(customer?.creditBalance || 0);
   const [amount, setAmount] = useState<number | string>(balance);
   const [method, setMethod] = useState('cash');
+  const [bankAccountId, setBankAccountId] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -80,6 +82,9 @@ export default function CollectPaymentSlideOver({
         amount: amt,
         paymentMethod: method,
         paymentDate: date,
+        // The server needs the account for a transfer; it used to fall back
+        // to whichever account was the default.
+        bankAccountId: method === 'bank_transfer' ? bankAccountId : null,
         notes: notes || null,
       }, requestKey.current());
       toast.success('Payment recorded.');
@@ -185,6 +190,10 @@ export default function CollectPaymentSlideOver({
               })}
             </div>
           </div>
+
+          {method === 'bank_transfer' && (
+            <BankAccountSelect value={bankAccountId} onChange={setBankAccountId} label="Paid into" />
+          )}
 
           <DateField label="Payment date" value={date} onChange={setDate} required />
 

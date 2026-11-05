@@ -60,6 +60,37 @@ export function defaultBankAccountId(accounts: Account[]): string | null {
   return accounts.find((a) => a.isDefault)?.id || accounts[0]?.id || null;
 }
 
+// Just the account, for screens with no slip reference (collections, refunds,
+// supplier payments). Starts on the till's last account, else the default.
+export function BankAccountSelect({
+  value,
+  onChange,
+  label = 'Bank account',
+}: {
+  value: string | null | undefined;
+  onChange: (id: string | null) => void;
+  label?: string;
+}) {
+  const accounts = usePaymentBankAccounts();
+  useEffect(() => {
+    if (!value && accounts.length) onChange(defaultBankAccountId(accounts));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts.length, value]);
+  return (
+    <Select
+      label={label}
+      required
+      placeholder={accounts.length ? 'Bank account' : 'No bank account set up'}
+      value={value || ''}
+      onChange={(v) => {
+        if (v) remember(v);
+        onChange(v || null);
+      }}
+      options={accounts.map((a) => ({ value: a.id, label: `${a.bankName} · ${a.accountName}` }))}
+    />
+  );
+}
+
 export default function BankTenderFields({
   payment,
   onChange,

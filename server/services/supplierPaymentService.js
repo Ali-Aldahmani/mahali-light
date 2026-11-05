@@ -52,6 +52,10 @@ async function addPayment({
       status: 400,
     });
   }
+  // Sales audit SI-03 for supplier payments: name the account the money left.
+  if (method === 'bank_transfer' && !bankAccountId) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose the bank account the payment came from.', { status: 400 });
+  }
 
   // One business date for the payment row, the bank movement and the journal.
   const businessDate = paymentDate || todayStoreDate();

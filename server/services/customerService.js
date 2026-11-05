@@ -50,6 +50,12 @@ async function collectPayment({
       { status: 400 },
     );
   }
+  // Sales audit SI-03 for collections: no silent default account, and a cash
+  // collection doesn't carry one.
+  if (method === 'bank_transfer' && !bankAccountId) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose the bank account the money went into.', { status: 400 });
+  }
+  if (method === 'cash') bankAccountId = null;
 
   const collect = async (client) => {
     const { rows: customerRows } = await client.query(

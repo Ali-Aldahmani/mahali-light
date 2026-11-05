@@ -12,6 +12,7 @@ import { formatCurrency, storeDate } from '@/lib/utils/format';
 import type { PurchaseOrder } from './types';
 import DateField from '@/components/ui/DateField';
 import { useRequestKey } from '@/hooks/useRequestKey';
+import { BankAccountSelect } from '@/components/payments/BankTenderFields';
 
 const METHODS = [
   { value: 'cash', label: 'Cash', Icon: Banknote },
@@ -45,6 +46,7 @@ export default function AddPaymentSlideOver({
   const [amount, setAmount] = useState<number | string>(balance);
   const [payKind, setPayKind] = useState<'full' | 'half' | 'custom'>('full');
   const [method, setMethod] = useState('cash');
+  const [bankAccountId, setBankAccountId] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -81,6 +83,7 @@ export default function AddPaymentSlideOver({
         amount: amt,
         paymentMethod: method,
         paymentDate: date,
+        bankAccountId: method === 'bank_transfer' ? bankAccountId : null,
         notes: notes || null,
       }, requestKey.current());
       if (file && created?.payment?.id) {
@@ -198,6 +201,10 @@ export default function AddPaymentSlideOver({
             })}
           </div>
         </div>
+
+        {method === 'bank_transfer' && (
+          <BankAccountSelect value={bankAccountId} onChange={setBankAccountId} label="Paid from" />
+        )}
 
         <DateField label="Payment date" value={date} onChange={setDate} required />
 

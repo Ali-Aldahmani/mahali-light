@@ -1431,6 +1431,16 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
 
         if (cur) {
           if (newQty <= 0) {
+            // The line leaves the sale, and so does its cover (review 5 Nov):
+            // its warranty used to stay active and unlinked.
+            await client.query(
+              `UPDATE warranties
+                  SET status = 'void', voided_at = NOW(), voided_by = $2,
+                      void_reason = COALESCE(void_reason, 'Line removed by an approved edit'),
+                      updated_at = NOW()
+                WHERE invoice_item_id = $1 AND status = 'active'`,
+              [cur.id, managerId],
+            );
             await client.query(`DELETE FROM invoice_items WHERE id = $1`, [
               cur.id,
             ]);
@@ -1470,6 +1480,9 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
       }
       const items = await loadItemsForInvoice(client, req.invoice_id);
       if (!items.length) throw new AppError(ERROR_CODES.BIZ_INVOICE_EMPTY);
+      // A line added by the edit gets the cover a sale would give it; lines
+      // that already have one are left alone.
+      await createWarrantiesFromInvoice(req.invoice_id, { client, actorId: managerId });
       const payments = await loadPaymentsForInvoice(client, req.invoice_id);
       const date = todayStoreDate();
       await journalService.reverseSaleEntries(client, req.invoice_id, {

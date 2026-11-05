@@ -28,6 +28,7 @@ import { formatCurrency, formatDate, timeAgo } from '@/lib/utils/format';
 import type { DifferencePayment, Invoice, InvoiceItem, RefundPlanEntry, ReplacementPlanItem, SelectOption } from '../types';
 import { defaultBankAccountId, usePaymentBankAccounts } from '@/components/payments/BankTenderFields';
 import { useRequestKey } from '@/hooks/useRequestKey';
+import SupplierSelect from '@/components/ui/SupplierSelect';
 
 const REASON_OPTIONS: SelectOption[] = [
   { value: 'defective', label: 'Defective' },
@@ -92,6 +93,9 @@ function NewReturnRequestPageContent() {
   // map of invoiceItemId -> { qty, condition, serial }
 
   const [refundPlan, setRefundPlan] = useState<RefundPlanEntry[]>([]);
+  // A supplier return records who the goods go back to; without one it never
+  // appeared on any supplier's page.
+  const [returnSupplier, setReturnSupplier] = useState<any>(null);
   const [replacementItems, setReplacementItems] = useState<ReplacementPlanItem[]>([]);
   const [differencePayment, setDifferencePayment] = useState<DifferencePayment>({
     method: 'cash',
@@ -258,7 +262,7 @@ function NewReturnRequestPageContent() {
     if (returnType === 'customer_replace') {
       return replacementItems.length > 0;
     }
-    return true; // supplier_return — no refund plan needed.
+    return !!returnSupplier?.id; // supplier_return: no refund plan, but a supplier.
   }
 
   function next() {
@@ -329,7 +333,12 @@ function NewReturnRequestPageContent() {
       if (returnType === 'customer_refund') {
         refundPayload = refundPlan
           .filter((p) => Number(p.amount) > 0)
-          .map((p) => ({ method: p.method, amount: round2(p.amount), notes: p.notes || null }));
+          .map((p: any) => ({
+            method: p.method,
+            amount: round2(p.amount),
+            bankAccountId: p.method === 'bank' ? p.bankAccountId || null : null,
+            notes: p.notes || null,
+          }));
       } else if (
         returnType === 'customer_replace' &&
         priceDifference < 0
@@ -345,6 +354,7 @@ function NewReturnRequestPageContent() {
         referenceType: noInvoice ? 'manual' : 'invoice',
         referenceId: noInvoice ? null : invoice?.id || null,
         customerId: invoice?.customerId || null,
+        supplierId: returnType === 'supplier_return' ? returnSupplier?.id || null : null,
         noInvoiceReturn: !!noInvoice,
         approvedBy: noInvoice ? user?.id : null,
         reason,
@@ -414,7 +424,7 @@ function NewReturnRequestPageContent() {
           />
         )}
         {step === 2 && returnType === 'supplier_return' && (
-          <SupplierReturnPlanStep total={totalValue} />
+          <SupplierReturnPlanStep total={totalValue} supplier={returnSupplier} onSupplier={setReturnSupplier} />
         )}
         {step === 3 && (
           <ReviewStep
@@ -1237,10 +1247,15 @@ function ReplaceStep({
   );
 }
 
-function SupplierReturnPlanStep({ total }: { total: number }) {
+function SupplierReturnPlanStep({
+  total, supplier, onSupplier,
+}: { total: number; supplier: any; onSupplier: (s: any) => void }) {
   return (
     <div className="card p-5">
       <h3 className="text-sm font-semibold text-ink mb-2">Supplier return</h3>
+      <div className="mb-3">
+        <SupplierSelect label="Supplier" required value={supplier} onChange={onSupplier} />
+      </div>
       <p className="text-sm text-ink-muted mb-3">
         Stock will be removed from inventory when the manager approves this
         request. The supplier's purchase order balance can be reconciled in the

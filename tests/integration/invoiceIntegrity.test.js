@@ -264,7 +264,8 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
       SELECT 'F8 bank','Test',true WHERE NOT EXISTS (SELECT 1 FROM bank_accounts WHERE is_default)`);
     const inv = await sale({ price: 0.21, taxRate: 5 });
     expect(Number(inv.total)).toBe(0.22);
-    const r = await returnRequest(inv, { plan: [{ method: 'cash', amount: 0.11 }, { method: 'bank', amount: 0.11 }] });
+    const { rows: [f8Bank] } = await db.query(`SELECT id FROM bank_accounts WHERE is_default LIMIT 1`);
+    const r = await returnRequest(inv, { plan: [{ method: 'cash', amount: 0.11 }, { method: 'bank', amount: 0.11, bankAccountId: f8Bank.id }] });
     const result = await approve(r);
     // One tender of 0.22 reverses 0.01 VAT; rounding each 0.11 separately gave 0.02.
     expect(await net(result.order.id, '2002')).toBe(0.01);

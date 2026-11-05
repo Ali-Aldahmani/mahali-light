@@ -47,6 +47,10 @@ import CostTrendIndicator from '@/components/ui/CostTrendIndicator';
 import Table, { type TableColumn } from '@/components/ui/Table';
 import Badge from '@/components/ui/Badge';
 import EmptyState from '@/components/ui/EmptyState';
+import Modal from '@/components/ui/Modal';
+import Select from '@/components/ui/Select';
+import Input from '@/components/ui/Input';
+import { resolveSupplierReturn } from '@/services/supplierReturnService';
 import { fileUrl } from '@/lib/config';
 import SupplierFormSlideOver from '@/components/suppliers/SupplierFormSlideOver';
 import { onPurchaseOrderEvent } from '@/store/socketStore';
@@ -596,12 +600,71 @@ interface ReturnRequestRow {
   status: string;
 }
 
+const RESOLUTION_OPTIONS = [
+  { value: 'credit_note', label: 'Credit note received' },
+  { value: 'refunded', label: 'Refunded by the supplier' },
+  { value: 'replaced', label: 'Replaced (goods came back)' },
+  { value: 'rejected', label: 'Rejected (goods came back)' },
+];
+
+// Closing a return was possible only through the API. Rejected and replaced
+// bring the goods back into stock and reverse the journal on the server.
+function ResolveReturnModal({
+  row, onClose, onResolved,
+}: { row: LegacyReturnRow | null; onClose: () => void; onResolved: () => void }) {
+  const [resolution, setResolution] = useState('credit_note');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (row) {
+      setResolution('credit_note');
+      setNotes('');
+    }
+  }, [row]);
+  if (!row) return null;
+  async function submit() {
+    setSaving(true);
+    try {
+      await resolveSupplierReturn(row!.id, { resolution, resolutionNotes: notes.trim() || null });
+      toast.success(`Return ${row!.returnNumber} resolved.`);
+      onResolved();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not resolve the return.');
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Modal
+      open={!!row}
+      onClose={() => !saving && onClose()}
+      title={`Resolve return ${row.returnNumber}`}
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={submit} loading={saving}>Resolve</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Select label="What happened" value={resolution} onChange={(v: string) => setResolution(v)} options={RESOLUTION_OPTIONS} />
+        <Input label="Notes (optional)" value={notes} onChange={(e: any) => setNotes(e.target.value)} />
+      </div>
+    </Modal>
+  );
+}
+
 function ReturnsTab({ supplier }: { supplier: Supplier }) {
   const [data, setData] = useState<{ legacy: LegacyReturnRow[]; requests: ReturnRequestRow[] }>({
     legacy: [],
     requests: [],
   });
   const [loading, setLoading] = useState(true);
+  const [resolving, setResolving] = useState<LegacyReturnRow | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const canResolve = useAuthStore((s) => s.permissions).includes('supplier.purchase_order.create');
 
   useEffect(() => {
     setLoading(true);
@@ -618,7 +681,7 @@ function ReturnsTab({ supplier }: { supplier: Supplier }) {
         }
       })
       .finally(() => setLoading(false));
-  }, [supplier.id]);
+  }, [supplier.id, reloadKey]);
 
   const legacyColumns: TableColumn[] = [
     { key: 'returnNumber', header: 'Return #' },
@@ -663,6 +726,17 @@ function ReturnsTab({ supplier }: { supplier: Supplier }) {
           {r.status}
         </Badge>
       ),
+    },
+    {
+      key: 'resolve',
+      header: '',
+      align: 'right' as const,
+      render: (r: LegacyReturnRow) =>
+        canResolve && r.status !== 'resolved' ? (
+          <Button size="sm" variant="secondary" onClick={() => setResolving(r)}>
+            Resolve
+          </Button>
+        ) : null,
     },
   ];
 
@@ -748,6 +822,7 @@ function ReturnsTab({ supplier }: { supplier: Supplier }) {
 
   return (
     <div className="space-y-6">
+      <ResolveReturnModal row={resolving} onClose={() => setResolving(null)} onResolved={() => setReloadKey((k) => k + 1)} />
       {data.requests.length > 0 && (
         <div className="card overflow-hidden">
           <div className="border-b border-border bg-surface-2 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">

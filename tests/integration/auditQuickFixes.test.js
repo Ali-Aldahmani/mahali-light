@@ -170,7 +170,8 @@ describe.skipIf(!enabled)('audit quick fixes on real PostgreSQL', () => {
       );
 
       const { payment } = await payments.addPayment({
-        poId: po.id, amount: 50, method: 'bank_transfer', paymentDate: '2026-10-20', employeeId: userId,
+        // A bank payment names its account (SI-03); the account is still stored.
+        poId: po.id, amount: 50, method: 'bank_transfer', paymentDate: '2026-10-20', employeeId: userId, bankAccountId: bankA,
       });
       expect(payment.bank_account_id).toBe(bankA);
       const { rows: [saved] } = await db.query(`SELECT bank_account_id FROM supplier_payments WHERE id = $1`, [payment.id]);

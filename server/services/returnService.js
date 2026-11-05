@@ -121,7 +121,7 @@ function refundableLineValues(invoice, items) {
 
 // Validate the refund_plan adds up to the requested refund total. Returns the
 // normalised plan rows ready for persistence + execution.
-function validateRefundPlan(plan, expectedTotal, { required = false } = {}) {
+function validateRefundPlan(plan, expectedTotal, { required = false, requireBankAccount = false } = {}) {
   if (!Array.isArray(plan) || plan.length === 0) {
     if (required && expectedTotal > 0) {
       throw new AppError(ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH,
@@ -145,6 +145,11 @@ function validateRefundPlan(plan, expectedTotal, { required = false } = {}) {
       );
     }
     sum = money(sum + amount);
+    // New plans name the account a bank refund leaves from (SI-03). Plans saved
+    // before this still approve, falling back to the default account.
+    if (requireBankAccount && p.method === 'bank' && !p.bankAccountId) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose the bank account for the bank refund.', { status: 400 });
+    }
     return {
       method: p.method,
       amount,
@@ -675,8 +680,12 @@ async function createReturnRequest({
         : null;
     const replacementTotal = validatedReplacementPlan
       ? money(validatedReplacementPlan.items.reduce((sum, it) => sum + it.lineTotal, 0)) : 0;
+    if (returnType === 'supplier_return' && !supplierId) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose the supplier the goods go back to.', { status: 400 });
+    }
     const validatedRefundPlan = returnType === 'supplier_return' ? null : validateRefundPlan(
       refundPlan, returnType === 'customer_replace' ? Math.max(0, money(totalValue - replacementTotal)) : totalValue,
+      { requireBankAccount: true },
     );
     if (referenceType === 'invoice') {
       await assertRefundMatchesTender(client, { invoiceId: referenceId, plan: validatedRefundPlan });
@@ -1286,6 +1295,9 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
       });
       replacementInvoiceId = built.invoiceId;
       executionEvents.push(...built.stockEmits);
+      // The original unit's warranty was voided above; the unit the customer
+      // leaves with gets its own, as a sale would (review 5 Nov).
+      await require('./warrantyService').createWarrantiesFromInvoice(built.invoiceId, { client, actorId: managerId });
     }
 
     // --- Update return_order with the totals + links -------------------

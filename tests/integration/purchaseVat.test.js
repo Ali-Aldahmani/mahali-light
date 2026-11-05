@@ -152,7 +152,8 @@ describe.skipIf(!enabled)('purchase VAT on real PostgreSQL', () => {
   });
 
   it('paying the PO in full clears its payables (no longer driven negative)', async () => {
-    const res = await call('post', `/purchase-orders/${fullPo.poId}/payments`, { amount: 315, paymentMethod: 'bank_transfer' });
+    const { rows: [account] } = await db.query(`SELECT id FROM bank_accounts WHERE is_default LIMIT 1`);
+    const res = await call('post', `/purchase-orders/${fullPo.poId}/payments`, { amount: 315, paymentMethod: 'bank_transfer', bankAccountId: account.id });
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(await payablesOwed(fullPo.poId)).toBe(0); // was −15 before the fix
   });

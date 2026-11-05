@@ -1,4 +1,8 @@
-import { apiGet, apiGetWithMeta } from './http';
+import { apiGet, apiGetWithMeta, apiPost } from './http';
+
+export function resolveQuarantine(variantId: string, body: { action: 'release' | 'write_off'; quantity: number; reason: string }) {
+  return apiPost(`/stock/quarantine/${variantId}`, body);
+}
 
 function toParams(o: Record<string, any>): string {
   const p = new URLSearchParams();

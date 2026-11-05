@@ -31,6 +31,7 @@ import RequestAdjustmentSlideOver from './RequestAdjustmentSlideOver';
 import StockMovementsDrawer from './StockMovementsDrawer';
 import { onStockUpdate } from '@/store/socketStore';
 import RowActions from '@/components/ui/RowActions';
+import QuarantineModal from './QuarantineModal';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
@@ -85,6 +86,8 @@ export default function StockLevelsTab() {
   const [loading, setLoading] = useState(false);
 
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [quarantineVariant, setQuarantineVariant] = useState<any>(null);
+  const canResolveQuarantine = useAuthStore((s) => s.permissions).includes('stock.adjust_direct');
   const [adjustVariant, setAdjustVariant] = useState<any>(null);
   const [movementsOpen, setMovementsOpen] = useState(false);
   const [movementsVariant, setMovementsVariant] = useState<any>(null);
@@ -278,12 +281,19 @@ export default function StockLevelsTab() {
                 setAdjustOpen(true);
               },
             },
+            {
+              id: 'quarantine',
+              label: 'Quarantine…',
+              icon: <History />,
+              hidden: !canResolveQuarantine || !(Number(r.quarantineQty) > 0),
+              onClick: () => setQuarantineVariant(r),
+            },
           ]}
         />
       ),
     });
     return cols;
-  }, [router, canSeeCost, canRequestAdj]);
+  }, [router, canSeeCost, canRequestAdj, canResolveQuarantine]);
 
   function handleExport() {
     const cols: { label: string; value: (r: any) => any }[] = [
@@ -430,6 +440,8 @@ export default function StockLevelsTab() {
         onClose={() => setMovementsOpen(false)}
         variant={movementsVariant}
       />
+
+      <QuarantineModal variant={quarantineVariant} onClose={() => setQuarantineVariant(null)} />
     </div>
   );
 }

@@ -29,6 +29,7 @@ import { formatCurrency, formatQty, storeDate } from '@/lib/utils/format';
 import type { POItem, VariantSearchResult } from '@/components/purchases/types';
 import { newPoSavedMessage } from '@/lib/purchases/newPoMessage';
 import { newRequestKey } from '@/lib/requestKey';
+import { BankAccountSelect } from '@/components/payments/BankTenderFields';
 import type { Supplier } from '@/components/suppliers/types';
 import DateField from '@/components/ui/DateField';
 import { useRequestKey } from '@/hooks/useRequestKey';
@@ -85,6 +86,7 @@ function NewPurchaseOrderPageContent() {
   const [payKind, setPayKind] = useState<'full' | 'half' | 'custom'>('full');
   const [payAmount, setPayAmount] = useState<number | string>('');
   const [payMethod, setPayMethod] = useState<'cash' | 'bank_transfer'>('cash');
+  const [payBankAccountId, setPayBankAccountId] = useState<string | null>(null);
 
   // If a supplierId is passed in, fetch + preselect.
   useEffect(() => {
@@ -270,6 +272,7 @@ function NewPurchaseOrderPageContent() {
                 amount: amt,
                 paymentMethod: payMethod,
                 paymentDate: todayISO(),
+                bankAccountId: payMethod === 'bank_transfer' ? payBankAccountId : null,
                 notes: null,
               }, newRequestKey());
               paymentRecorded = true;
@@ -650,6 +653,11 @@ function NewPurchaseOrderPageContent() {
                         </button>
                       ))}
                     </div>
+                    {payMethod === 'bank_transfer' && (
+                      <div className="mt-3">
+                        <BankAccountSelect value={payBankAccountId} onChange={setPayBankAccountId} label="Paid from" />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
