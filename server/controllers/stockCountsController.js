@@ -2,6 +2,7 @@ const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { nonNegativeQuantitySchema } = require('../utils/quantity');
 const { logActivity } = require('../utils/activityLog');
 const { applyStockMovement, lockStockCounts } = require('../services/stockService');
@@ -56,6 +57,12 @@ function shapeCount(row) {
     netValueImpact:
       row.net_value_impact == null ? null : Number(row.net_value_impact),
   };
+}
+
+// A count of one variant would reveal its cost through the value impact.
+function hideValueImpact(req, count) {
+  if ((req.user?.permissions || []).includes('product.view_cost')) return count;
+  return { ...count, netValueImpact: null };
 }
 
 function shapeItem(row, includeCost) {
@@ -137,7 +144,7 @@ async function list(req, res, next) {
       page,
       limit,
       total: countRows[0].total,
-      active: activeRows.length ? shapeCount(activeRows[0]) : null,
+      active: activeRows.length ? hideValueImpact(req, shapeCount(activeRows[0])) : null,
     });
   } catch (err) {
     next(err);
@@ -154,7 +161,7 @@ async function getOne(req, res, next) {
     if (!rows.length) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
-    const count = shapeCount(rows[0]);
+    const count = hideValueImpact(req, shapeCount(rows[0]));
 
     const { rows: items } = await query(
       `SELECT ci.*,
@@ -424,7 +431,7 @@ async function updateItems(req, res, next) {
     );
     const { rows: full } = await query(`${COUNT_SQL} WHERE c.id = $1`, [id]);
     return ok(res, {
-      ...shapeCount(full[0]),
+      ...hideValueImpact(req, shapeCount(full[0])),
       items: items.map((r) => shapeItem(r, includeCost)),
     });
   } catch (err) {
@@ -484,14 +491,20 @@ async function submit(req, res, next) {
     }
 
     await refreshCountTotals(id);
-    await query(
+    // The status condition matters: a delayed submit must not flip a count that
+    // was approved meanwhile back to pending, or a second approval would apply
+    // the same correction twice.
+    const { rowCount: submitted } = await query(
       `UPDATE stock_counts
           SET status = 'pending_approval',
               submitted_by = $1,
               submitted_at = NOW()
-        WHERE id = $2`,
+        WHERE id = $2 AND status IN ('draft', 'in_progress')`,
       [req.user.id, id],
     );
+    if (!submitted) {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE, 'This count has already been submitted.', { status: 409 });
+    }
 
     await logActivity({
       entityType: 'stock_count',
@@ -528,7 +541,7 @@ async function submit(req, res, next) {
       });
     } catch (_e) { /* best-effort */ }
 
-    return ok(res, shapeCount(full[0]));
+    return ok(res, hideValueImpact(req, shapeCount(full[0])));
   } catch (err) {
     next(err);
   }
@@ -556,6 +569,7 @@ async function approve(req, res, next) {
           { status: 409 },
         );
       }
+      assertNotOwnRequest({ actor: req.user, requestedBy: count.submitted_by });
 
       // A counted line says "the shelf held counted_qty at counted_at". Sales
       // (and receipts, returns…) keep moving stock afterwards, so the
@@ -694,7 +708,7 @@ async function approve(req, res, next) {
     });
 
     const { rows } = await query(`${COUNT_SQL} WHERE c.id = $1`, [id]);
-    return ok(res, shapeCount(rows[0]));
+    return ok(res, hideValueImpact(req, shapeCount(rows[0])));
   } catch (err) {
     next(err);
   }
@@ -770,7 +784,7 @@ async function reject(req, res, next) {
     } catch (_e) { /* best-effort */ }
 
     const { rows: full } = await query(`${COUNT_SQL} WHERE c.id = $1`, [id]);
-    return ok(res, shapeCount(full[0]));
+    return ok(res, hideValueImpact(req, shapeCount(full[0])));
   } catch (err) {
     next(err);
   }

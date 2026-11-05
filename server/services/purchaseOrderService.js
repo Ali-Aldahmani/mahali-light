@@ -39,15 +39,20 @@ async function resolvePoTaxAmount(client, subtotal) {
 
 // Line cost defaults to catalog cost_price; only callers with cost visibility
 // may override (negotiated supplier pricing).
-async function resolvePoLineCost(client, { variantId, clientCost, canOverrideCost }) {
+async function resolvePoLineCost(client, { variantId, productId = null, clientCost, canOverrideCost }) {
   const { rows } = await client.query(
-    `SELECT cost_price FROM product_variants WHERE id = $1`,
+    `SELECT cost_price, product_id FROM product_variants WHERE id = $1`,
     [variantId],
   );
   if (!rows.length) {
     throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Product variant not found.', {
       status: 404,
     });
+  }
+  // Stock moves on the variant, but the movement and cost history are filed
+  // under this product, so a mismatched pair would misfile them.
+  if (productId && rows[0].product_id !== productId) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'That variant belongs to a different product.', { status: 400 });
   }
   const catalogCost = money(rows[0].cost_price);
   if (!canOverrideCost) return catalogCost;
@@ -220,7 +225,8 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
       );
       const currentCost = Number(variantRows[0]?.cost_price || 0);
       const newCost = Number(item.cost_price_per_unit);
-      if (Math.abs(currentCost - newCost) > 0.001) {
+      // A zero-priced line (free goods) must not revalue the whole shelf at zero.
+      if (newCost > 0 && Math.abs(currentCost - newCost) > 0.001) {
         await client.query(
           `UPDATE product_variants
               SET cost_price = $1, updated_at = NOW()

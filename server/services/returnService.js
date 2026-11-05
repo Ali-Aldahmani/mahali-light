@@ -3,6 +3,7 @@ const { runOnce } = require('../utils/operations');
 const { emitCustomerChanged } = require('../utils/customerEvents');
 const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement } = require('./stockService');
 const { logActivity } = require('../utils/activityLog');
@@ -762,7 +763,7 @@ async function createReturnRequest({
 // =======================================================================
 // Approve + execute
 // =======================================================================
-async function approveAndExecute({ requestId, managerId, notes = null, io = null }) {
+async function approveAndExecute({ requestId, managerId, approver = null, notes = null, io = null }) {
   return withTransaction(async (client) => {
     const { rows } = await client.query(
       `SELECT * FROM return_requests WHERE id = $1 FOR UPDATE`,
@@ -779,6 +780,8 @@ async function approveAndExecute({ requestId, managerId, notes = null, io = null
         status: 409,
       });
     }
+    // The route always passes who is approving; internal callers have no person.
+    if (approver) assertNotOwnRequest({ actor: approver, requestedBy: request.requested_by });
     const { rows: items } = await client.query(
       `SELECT * FROM return_request_items WHERE return_request_id = $1`,
       [requestId],

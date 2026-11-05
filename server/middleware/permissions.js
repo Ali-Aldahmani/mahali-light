@@ -48,4 +48,25 @@ function requireAnyPermission(...keys) {
   });
 }
 
-module.exports = { requirePermission, requireAnyPermission };
+// Removes fields from every JSON response on a route unless the user holds the
+// permission. For routes whose job is open to more people than some of the
+// figures in them are (a Warehouse user may see suppliers, not what they cost).
+function hideFieldsWithoutPermission(permission, fields) {
+  const hidden = new Set(fields);
+  const strip = (value) => {
+    if (Array.isArray(value)) return value.map(strip);
+    if (!value || typeof value !== 'object' || value instanceof Date) return value;
+    return Object.fromEntries(
+      Object.entries(value).filter(([key]) => !hidden.has(key)).map(([key, child]) => [key, strip(child)]),
+    );
+  };
+  return (req, res, next) => {
+    if (!(req.user?.permissions || []).includes(permission)) {
+      const json = res.json.bind(res);
+      res.json = (body) => json(strip(body));
+    }
+    next();
+  };
+}
+
+module.exports = { requirePermission, requireAnyPermission, hideFieldsWithoutPermission };

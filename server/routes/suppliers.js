@@ -1,10 +1,15 @@
 const express = require('express');
 const suppliers = require('../controllers/suppliersController');
 const { requireAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, hideFieldsWithoutPermission } = require('../middleware/permissions');
 
 const router = express.Router();
 router.use(requireAuth());
+// What the shop bought and owes is cost, which a Warehouse user doesn't see.
+router.use(hideFieldsWithoutPermission('product.view_cost', [
+  'totalSpent', 'outstandingBalance', 'totalOutstanding', 'subtotal', 'totalCost',
+  'amountPaid', 'balanceDue', 'amount', 'unitCost', 'totalValue', 'taxAmount',
+]));
 
 router.get('/', requirePermission('supplier.view'), suppliers.list);
 router.post('/', requirePermission('supplier.create'), suppliers.create);

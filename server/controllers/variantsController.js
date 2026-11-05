@@ -247,6 +247,12 @@ async function update(req, res, next) {
     if (!existing.length) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
+    // Same authority as DELETE, which this would otherwise sidestep.
+    if (body.isActive === false && existing[0].is_active && !(req.user?.permissions || []).includes('product.delete')) {
+      throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, undefined, {
+        status: 403, details: { missing: ['product.delete'] },
+      });
+    }
 
     const newAlerts = await withTransaction(async (client) => {
       if (body.sku && body.sku !== existing[0].sku) {

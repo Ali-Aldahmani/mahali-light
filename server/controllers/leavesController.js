@@ -113,6 +113,7 @@ async function approve(req, res, next) {
     const leave = await leaveService.approveLeave({
       leaveId: req.params.id,
       managerId: req.user.id,
+      approver: req.user,
       io,
     });
     return ok(res, leave);

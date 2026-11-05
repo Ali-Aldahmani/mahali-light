@@ -384,6 +384,7 @@ async function approve(req, res, next) {
     await returnService.approveAndExecute({
       requestId: req.params.id,
       managerId: req.user.id,
+      approver: req.user,
       notes: req.body?.notes || null,
       io,
     });

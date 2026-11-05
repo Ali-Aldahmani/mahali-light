@@ -1,6 +1,7 @@
 const { query, withTransaction } = require('../db/postgres');
 const { storeDate, todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { logActivity } = require('../utils/activityLog');
 const notificationService = require('./notificationService');
 const {
@@ -519,6 +520,7 @@ async function reviewCorrection({
   correctionId,
   decision, // 'approved' | 'rejected'
   reviewerId,
+  reviewer = null,
   rejectionReason = null,
   io = null,
 }) {
@@ -545,6 +547,11 @@ async function reviewCorrection({
         'This correction has already been reviewed.',
         { status: 409 },
       );
+    }
+    if (decision === 'approved') {
+      const actor = reviewer || { id: reviewerId };
+      assertNotOwnRequest({ actor, requestedBy: corr.requested_by });
+      assertNotOwnRequest({ actor: { ...actor, id: actor.employee_id }, requestedBy: corr.employee_id });
     }
 
     await client.query(

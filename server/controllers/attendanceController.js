@@ -233,6 +233,7 @@ async function approveCorrection(req, res, next) {
       correctionId: req.params.id,
       decision: 'approved',
       reviewerId: req.user.id,
+      reviewer: req.user,
       io,
     });
     return ok(res, result);

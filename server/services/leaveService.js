@@ -1,6 +1,7 @@
 const { query, withTransaction } = require('../db/postgres');
 const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { logActivity } = require('../utils/activityLog');
 const attendanceService = require('./attendanceService');
 const notificationService = require('./notificationService');
@@ -337,7 +338,7 @@ async function submitLeave({
   });
 }
 
-async function approveLeave({ leaveId, managerId, io = null }) {
+async function approveLeave({ leaveId, managerId, approver = null, io = null }) {
   return withTransaction(async (client) => {
     const { rows } = await client.query(
       `SELECT l.*, e.name AS employee_name
@@ -356,6 +357,13 @@ async function approveLeave({ leaveId, managerId, io = null }) {
     if (leave.status !== 'pending') {
       throw new AppError(ERROR_CODES.BIZ_LEAVE_NOT_PENDING, undefined, { status: 409 });
     }
+    const leaveActor = approver || { id: managerId };
+    assertNotOwnRequest({ actor: leaveActor, requestedBy: leave.requested_by });
+    // Filed by someone else, but for the approver's own employee record.
+    assertNotOwnRequest({
+      actor: { ...leaveActor, id: leaveActor.employee_id },
+      requestedBy: leave.employee_id,
+    });
 
     await client.query(
       `UPDATE leaves

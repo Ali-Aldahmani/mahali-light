@@ -2,6 +2,7 @@ const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { redact } = require('../services/auditService');
 const { nonNegativeQuantitySchema } = require('../utils/quantity');
 const { logActivity } = require('../utils/activityLog');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
@@ -413,6 +414,12 @@ async function update(req, res, next) {
     if (!existing.length) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
+    // Same authority as DELETE, which this would otherwise sidestep.
+    if (body.isActive === false && existing[0].is_active && !(req.user?.permissions || []).includes('product.delete')) {
+      throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, undefined, {
+        status: 403, details: { missing: ['product.delete'] },
+      });
+    }
 
     const map = {
       name: 'name',
@@ -582,6 +589,7 @@ async function deleteImage(req, res, next) {
 
 async function history(req, res, next) {
   try {
+    const includeCost = canSeeCost(req);
     const { id } = req.params;
     const { rows: prod } = await query(`SELECT id FROM products WHERE id = $1`, [id]);
     if (!prod.length) {
@@ -615,8 +623,8 @@ async function history(req, res, next) {
         performedBy: r.performed_by,
         performedByUsername: r.performed_by_username,
         timestamp: r.timestamp,
-        oldValue: r.old_value,
-        newValue: r.new_value,
+        oldValue: redact(r.old_value, includeCost),
+        newValue: redact(r.new_value, includeCost),
         notes: r.notes,
       })),
     );

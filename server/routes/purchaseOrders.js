@@ -3,7 +3,7 @@ const pos = require('../controllers/purchaseOrdersController');
 const payments = require('../controllers/supplierPaymentsController');
 const pdf = require('../controllers/pdfController');
 const { requireAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, hideFieldsWithoutPermission } = require('../middleware/permissions');
 const { uploadDocSingle } = require('../utils/upload');
 
 const router = express.Router();
@@ -47,7 +47,12 @@ router.delete(
 );
 
 // Payments nested under PO --------------------------------------------------
-router.get('/:id/payments', requirePermission('supplier.view'), payments.listForPo);
+router.get(
+  '/:id/payments',
+  requirePermission('supplier.view'),
+  hideFieldsWithoutPermission('product.view_cost', ['amount']),
+  payments.listForPo,
+);
 router.post(
   '/:id/payments',
   requirePermission('supplier.purchase_order.pay'),
@@ -55,7 +60,8 @@ router.post(
 );
 
 // PDF endpoints — reuse supplier.view + supplier.purchase_order.create for regen.
-router.get('/:id/pdf', requirePermission('supplier.view'), pdf.getPurchaseOrderPdf);
+// The PDF prints line costs and totals, which getOne hides from Warehouse.
+router.get('/:id/pdf', requirePermission('supplier.view', 'product.view_cost'), pdf.getPurchaseOrderPdf);
 router.post(
   '/:id/pdf/regenerate',
   requirePermission('supplier.purchase_order.create'),

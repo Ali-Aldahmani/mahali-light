@@ -316,6 +316,7 @@ async function create(req, res, next) {
       for (const it of body.items) {
         const unitCost = await resolvePoLineCost(client, {
           variantId: it.variantId,
+          productId: it.productId,
           clientCost: it.costPricePerUnit,
           canOverrideCost: includeCost,
         });
@@ -355,7 +356,6 @@ async function create(req, res, next) {
         poNumber: rows[0].po_number,
         supplierId: rows[0].supplier_id,
         supplierName: rows[0].supplier_name,
-        totalCost: Number(rows[0].total_cost),
         createdBy: req.user.id,
         createdByUsername: req.user.username,
       };
@@ -438,6 +438,7 @@ async function update(req, res, next) {
         for (const it of body.items) {
           const unitCost = await resolvePoLineCost(client, {
             variantId: it.variantId,
+            productId: it.productId,
             clientCost: it.costPricePerUnit,
             canOverrideCost: includeCost,
           });

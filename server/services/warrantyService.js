@@ -225,6 +225,39 @@ async function createWarrantiesFromInvoice(invoiceId, { actorId = null, io = nul
 
 // Create a manual warranty (typically for supplier-issued items or post-sale
 // captures where the auto-creation didn't happen).
+// A claim can hand out a free unit, so a warranty that names a sale must agree
+// with it: the sale went through, the line is that product for that customer,
+// and the line has no cover yet (one replacement per unit, audit F16).
+async function assertManualWarrantyMatchesSale(client, { productId, variantId, customerId, invoiceId, invoiceItemId }) {
+  if (!invoiceId && !invoiceItemId) return;
+  const refuse = (message) => new AppError(ERROR_CODES.VALIDATION_FAILED, message, { status: 400 });
+  if (invoiceId) {
+    const { rows: [inv] } = await client.query(`SELECT status, customer_id FROM invoices WHERE id = $1`, [invoiceId]);
+    if (!inv) throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Invoice not found.', { status: 404 });
+    if (inv.status !== 'confirmed') throw refuse('A warranty can only be added to a confirmed invoice.');
+    if (customerId && inv.customer_id && inv.customer_id !== customerId) {
+      throw refuse('That invoice belongs to a different customer.');
+    }
+  }
+  if (!invoiceItemId) return;
+  const { rows: [line] } = await client.query(
+    `SELECT invoice_id, product_id, variant_id FROM invoice_items WHERE id = $1`,
+    [invoiceItemId],
+  );
+  if (!line) throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Invoice line not found.', { status: 404 });
+  if (invoiceId && line.invoice_id !== invoiceId) throw refuse('That line belongs to a different invoice.');
+  if (line.product_id !== productId || (variantId && line.variant_id !== variantId)) {
+    throw refuse('That invoice line is for a different product.');
+  }
+  const { rows: existing } = await client.query(
+    `SELECT 1 FROM warranties WHERE invoice_item_id = $1 AND status <> 'void' LIMIT 1`,
+    [invoiceItemId],
+  );
+  if (existing.length) {
+    throw new AppError(ERROR_CODES.BIZ_INVALID_STATE, 'That invoice line already has a warranty.', { status: 409 });
+  }
+}
+
 async function createManualWarranty({
   productId,
   variantId = null,
@@ -259,6 +292,7 @@ async function createManualWarranty({
   // Live events wait for the commit, so nobody sees a warranty that rolled back.
   const afterCommit = [];
   const created = await withTransaction(async (client) => {
+    await assertManualWarrantyMatchesSale(client, { productId, variantId, customerId, invoiceId, invoiceItemId });
     await assertSerialUnique(client, { productId, serialNumber });
     const warrantyNumber = await generateWarrantyNumber(client);
     const { rows } = await client.query(

@@ -2,6 +2,7 @@ const { z } = require('zod');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { quantitySchema } = require('../utils/quantity');
 const { logActivity } = require('../utils/activityLog');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
@@ -205,19 +206,23 @@ async function create(req, res, next) {
     } else {
       requestedQty = currentQty - body.quantity;
     }
-    if (requestedQty < 0) {
-      throw new AppError(
-        ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
-        'Resulting stock cannot be negative.',
-        { status: 409 },
-      );
-    }
     const difference = requestedQty - currentQty;
 
     // Direct apply (manager with adjust_direct can bypass approval).
     const directlyAllowed =
       body.applyDirectly &&
       (req.user.permissions || []).includes('stock.adjust_direct');
+
+    // A direct adjustment re-checks this under the row lock, after the replay
+    // guard: refusing here made a retry of a "remove the last 5" that had
+    // already succeeded fail instead of returning the first result.
+    if (requestedQty < 0 && !directlyAllowed) {
+      throw new AppError(
+        ERROR_CODES.BIZ_INSUFFICIENT_STOCK,
+        'Resulting stock cannot be negative.',
+        { status: 409 },
+      );
+    }
 
     if (directlyAllowed) {
       // Stock move, approval record and audit entry commit together: if any
@@ -409,6 +414,7 @@ async function approve(req, res, next) {
           { status: 409 },
         );
       }
+      assertNotOwnRequest({ actor: req.user, requestedBy: reqRow.requested_by });
 
       // Make sure we don't apply during an active count.
       await lockStockCounts(client);

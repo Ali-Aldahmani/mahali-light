@@ -62,7 +62,8 @@ const RECORD_TYPES = {
 };
 
 const SENSITIVE = /(password|passcode|secret|token|credential|private.?key|card.?number|cvv|cvc|pin)/i;
-const COST = /(^|_)(cost|cost_price|cost_price_at_time|unit_cost)(_|$)/i;
+// Any key naming a cost, in either spelling: the old pattern missed costPrice.
+const COST = /cost/i;
 
 function redact(value, canViewCost = false) {
   if (Array.isArray(value)) return value.map((item) => redact(item, canViewCost));
