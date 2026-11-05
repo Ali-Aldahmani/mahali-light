@@ -18,13 +18,13 @@ const createSchema = z.object({
         .array(
           z.object({
             variant_id: z.string().uuid(),
-            quantity: z.number().nonnegative(),
-            unit_price: z.number().nonnegative().optional(),
-            discount_amount: z.number().nonnegative().optional(),
+            quantity: z.number().finite().nonnegative(),
+            unit_price: z.number().finite().nonnegative().optional(),
+            discount_amount: z.number().finite().nonnegative().optional(),
           }),
         )
         .optional(),
-      invoiceDiscount: z.number().nonnegative().optional(),
+      invoiceDiscount: z.number().finite().nonnegative().optional(),
       notes: z.string().max(2000).optional(),
     })
     .refine((v) => Object.keys(v).length > 0, {
@@ -197,7 +197,9 @@ async function approve(req, res, next) {
     const io = req.app.get('io');
     await applyEditRequest({
       requestId: reqId,
+      invoiceId: req.params.id,
       managerId: req.user.id,
+      approver: req.user,
       approverPermissions: req.user?.permissions || [],
       io,
     });

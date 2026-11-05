@@ -45,6 +45,8 @@ const PERMISSIONS = {
     edit: 'customer.edit',
     delete: 'customer.delete',
     collectPayment: 'customer.collect_payment',
+    voidPayment: 'customer.void_payment',
+    editCreditLimit: 'customer.edit_credit_limit',
     viewBalance: 'customer.view_balance',
   },
   employee: {
@@ -166,6 +168,7 @@ const ROLE_DEFAULTS = {
     'supplier.view', 'supplier.create', 'supplier.edit', 'supplier.purchase_order.create', 'supplier.purchase_order.pay',
     'po.comments.view', 'po.comments.create', 'po.comments.react',
     'customer.view', 'customer.create', 'customer.edit', 'customer.collect_payment', 'customer.view_balance',
+    'customer.void_payment', 'customer.edit_credit_limit',
     'employee.view', 'employee.create', 'employee.edit',
     'stock.view', 'stock.adjust_approve', 'stock.adjust_direct', 'stock.count_initiate', 'stock.count_approve',
     'cash.view', 'cash.adjust', 'cash.override_closed_drawer', 'cash.approve_close',

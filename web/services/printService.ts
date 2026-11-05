@@ -1,7 +1,23 @@
 import { apiGet, apiPost } from './http';
-import { getApiBase } from '@/lib/config';
 import { useAuthStore } from '@/store/authStore';
 import { tryHardwarePrint } from './hardwareAgentClient';
+import { getInvoicePdfBlob, getReceiptPdfBlob } from './pdfService';
+
+// The API needs the Authorization header, which a plain new-tab URL can't send
+// (it showed a 401 error page). Open the tab first, while the click still
+// counts as a user action, then fill it with the file fetched with the header.
+async function openPdfInNewTab(loadBlob: () => Promise<Blob>) {
+  const tab = window.open('', '_blank');
+  try {
+    const url = URL.createObjectURL(await loadBlob());
+    if (tab) tab.location.href = url;
+    else window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
+}
 
 // Print integration. Actual printing happens client-side (Electron's
 // webContents.print). The server endpoints are used to (re-)generate the
@@ -76,7 +92,7 @@ export async function printInvoice(invoiceId: string | number, options: PrintOpt
       copies: options.copies,
     });
   }
-  window.open(`${getApiBase()}/invoices/${invoiceId}/pdf`, '_blank');
+  await openPdfInNewTab(() => getInvoicePdfBlob(invoiceId));
   return { success: true, fallback: true };
 }
 
@@ -101,7 +117,7 @@ export async function printReceipt(invoiceId: string | number, options: PrintOpt
       copies: options.copies,
     });
   }
-  window.open(`${getApiBase()}/invoices/${invoiceId}/receipt`, '_blank');
+  await openPdfInNewTab(() => getReceiptPdfBlob(invoiceId));
   return { success: true, fallback: true };
 }
 

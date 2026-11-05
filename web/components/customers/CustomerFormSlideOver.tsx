@@ -5,6 +5,7 @@ import SlideOver from '@/components/ui/SlideOver';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 import { toast } from '@/store/toastStore';
+import { useAuthStore } from '@/store/authStore';
 import {
   createCustomer,
   updateCustomer,
@@ -78,6 +79,7 @@ export default function CustomerFormSlideOver({
   onSaved,
 }: CustomerFormSlideOverProps) {
   const isEdit = !!customer?.id;
+  const canEditCreditLimit = useAuthStore((s) => s.permissions).includes('customer.edit_credit_limit');
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
@@ -286,6 +288,7 @@ export default function CustomerFormSlideOver({
           min={0}
           step="0.01"
           value={form.creditLimit}
+          disabled={!canEditCreditLimit}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setField('creditLimit', e.target.value)}
           hint={
             Number(form.creditLimit) === 0

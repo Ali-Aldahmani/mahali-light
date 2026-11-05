@@ -470,7 +470,7 @@ export default function CashierTerminal() {
       // Sales audit SI-06: no cash sale with the drawer closed. A manager
       // may take the cash anyway, with a reason that is logged.
       if (err?.code === 'BIZ_DRAWER_CLOSED') {
-        setPayError('The cash drawer is closed. Open it before taking cash, or take the payment by card or transfer.');
+        setPayError('The cash drawer is closed. Ask a manager to open it, or take the payment by card or transfer.');
         if (useAuthStore.getState().hasPermission('cash.override_closed_drawer')) setDrawerOverrideOpen(true);
         return;
       }
@@ -549,7 +549,10 @@ export default function CashierTerminal() {
         // Another cashier's sale: resuming it takes it over, which the
         // server logs (sales audit SI-02).
         if (inv.ownerId && inv.ownerId !== user?.id) {
-          await takeOverInvoice(invoiceId);
+          // The take-over moves the draft's version; keep the new one so the
+          // next save isn't refused as "changed on another screen".
+          const takenOver: any = await takeOverInvoice(invoiceId);
+          if (takenOver?.updatedAt) inv.updatedAt = takenOver.updatedAt;
           toast.info(`You took over this sale from ${inv.ownerName || 'another cashier'}.`);
         }
         const items: any[] = detail.items || [];

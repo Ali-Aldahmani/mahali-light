@@ -149,6 +149,9 @@ function shapePayment(row) {
     id: row.id,
     invoiceId: row.invoice_id,
     method: row.method,
+    // The till needs these to resume a card or transfer payment unchanged.
+    tender: row.tender || null,
+    reference: row.reference || null,
     amount: Number(row.amount),
     bankAccountId: row.bank_account_id,
     employeeId: row.employee_id,
@@ -376,9 +379,9 @@ async function getOne(req, res, next) {
 const itemSchema = z
   .object({
     variantId: z.string().uuid().optional().nullable(),
-    quantity: z.number().positive(),
-    unitPrice: z.number().nonnegative().optional(),
-    discountAmount: z.number().nonnegative().optional(),
+    quantity: z.number().finite().positive(),
+    unitPrice: z.number().finite().nonnegative().optional(),
+    discountAmount: z.number().finite().nonnegative().optional(),
     discountPercent: z.number().min(0).max(100).optional(),
     serialNumber: z.string().max(100).optional().nullable(),
     isCustom: z.boolean().optional().default(false),
@@ -416,7 +419,7 @@ const createSchema = z.object({
   pcIdentifier: z.string().min(1).max(50).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   items: z.array(itemSchema).default([]),
-  invoiceDiscount: z.number().nonnegative().optional().default(0),
+  invoiceDiscount: z.number().finite().nonnegative().optional().default(0),
   // The POS's ID for this sale attempt; see migration 041.
   checkoutId: z.string().trim().min(1).max(128).optional().nullable(),
 });
@@ -520,7 +523,7 @@ async function create(req, res, next) {
 
 const updateItemsSchema = z.object({
   customerId: z.string().uuid().optional().nullable(),
-  invoiceDiscount: z.number().nonnegative().optional(),
+  invoiceDiscount: z.number().finite().nonnegative().optional(),
   notes: z.string().max(2000).optional().nullable(),
   items: z.array(itemSchema),
   // The draft's updatedAt as this screen last saw it. When sent, a draft

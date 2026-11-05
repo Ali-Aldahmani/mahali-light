@@ -165,7 +165,7 @@ http.interceptors.response.use(
     if (status === 403 && code === 'AUTH_NO_PERMISSION') {
       useUiErrorStore.getState().showPermissionDenied({
         action: message,
-        permission: details?.permission || null,
+        permission: details?.permission || details?.missing?.[0] || details?.anyOf?.join(', ') || null,
       });
       return Promise.reject({ code, message, details, status, field });
     }

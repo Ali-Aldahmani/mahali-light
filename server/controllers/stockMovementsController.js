@@ -190,13 +190,18 @@ async function listForVariant(req, res, next) {
     const includeCost = canSeeCost(req);
     const { variantId } = req.params;
     const limit = Math.min(200, Number(req.query.limit) || 100);
+    const types = String(req.query.movementType || '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => ALLOWED_TYPES.has(t));
 
     const { rows } = await query(
       `${LIST_SQL}
         WHERE m.variant_id = $1
+          AND ($3::text[] IS NULL OR m.movement_type = ANY($3))
         ORDER BY m.timestamp DESC
         LIMIT $2`,
-      [variantId, limit],
+      [variantId, limit, types.length ? types : null],
     );
     return ok(
       res,

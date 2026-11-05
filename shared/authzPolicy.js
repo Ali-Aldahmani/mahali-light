@@ -61,6 +61,17 @@ function deny(message, details) {
   });
 }
 
+// A request needs a second person. Admin is the exception, because a small shop
+// may have nobody else; approvals are logged with who did them either way.
+function assertNotOwnRequest({ actor, requestedBy }) {
+  if (!requestedBy || isAdminActor(actor)) return;
+  if (String(requestedBy) === String(actor?.id)) {
+    throw deny('You cannot approve your own request. Ask someone else to review it.', {
+      reason: 'self_approval',
+    });
+  }
+}
+
 function assertCanManageTarget({ actor, targetRoleName, targetUserId }) {
   if (targetUserId && actor?.id && String(targetUserId) === String(actor.id)) {
     throw deny('You cannot change your own role or permission overrides.', {
@@ -200,6 +211,7 @@ function assertCanSetEffectivePermissions({
 }
 
 module.exports = {
+  assertNotOwnRequest,
   SYSTEM_ADMIN_ROLE_NAME,
   ROLE_RANK,
   ADMIN_EXCLUSIVE_PERMISSIONS,

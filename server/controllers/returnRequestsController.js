@@ -303,6 +303,15 @@ const replacementPlanSchema = z
         quantity: z.number().positive(),
       }),
     ),
+    // How the customer pays a difference on an exchange. Zod drops keys it
+    // doesn't list, so without this every card or bank choice became cash.
+    differencePayment: z
+      .object({
+        method: z.enum(['cash', 'bank']),
+        bankAccountId: z.string().uuid().nullable().optional(),
+      })
+      .nullable()
+      .optional(),
   })
   .optional()
   .nullable();

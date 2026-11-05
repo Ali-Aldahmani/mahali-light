@@ -1,6 +1,7 @@
 const { query, withTransaction } = require('../db/postgres');
 const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
+const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { applyStockMovement, lockVariants } = require('./stockService');
 const { assertQuantity } = require('../utils/quantity');
@@ -189,6 +190,7 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
   const [{ rows: variantRows }, { rows: attrRows }] = await Promise.all([
     client.query(
       `SELECT v.id, v.product_id, v.sku, v.cost_price, v.selling_price,
+              v.is_active AND p.is_active AS sellable,
               p.name AS product_name, p.unit_label, p.sold_by
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
@@ -269,6 +271,14 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
         ERROR_CODES.RESOURCE_NOT_FOUND,
         `Variant ${raw.variant_id} not found.`,
         { status: 404 },
+      );
+    }
+    // The till hides deactivated products, but the API took any variant id.
+    if (v.sellable === false) {
+      throw new AppError(
+        ERROR_CODES.BIZ_INVALID_STATE,
+        `${v.product_name} has been deactivated and can't be sold.`,
+        { status: 409, details: { variantId: raw.variant_id } },
       );
     }
     const variantAttrs = attrMap.get(raw.variant_id) || {};
@@ -949,6 +959,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
         'Give a reason for cancelling this invoice (5 to 500 characters).', { status: 400 });
     }
     await assertNoCommittedReturns(client, invoiceId);
+    await assertNotTiedToReplacement(client, invoiceId);
 
     const stockEmits = [];
     const treasuryPostings = [];
@@ -1159,7 +1170,29 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
 // extra sale movement (with stock check), decrease qty → return_in movement.
 // Settled totals cannot change without an explicit collection/refund workflow.
 // Equal-total corrections repost the sale and COGS; treasury stays unchanged.
-async function applyEditRequest({ requestId, managerId, approverPermissions = [], io = null }) {
+// Cancelling refunds the sale and puts its stock back. If a warranty on it was
+// claimed, the customer already has a replacement unit, so a refund would pay
+// them twice. A replacement invoice itself can only be undone through the
+// claim or return that created it, which cancelling here would leave completed.
+async function assertNotTiedToReplacement(client, invoiceId) {
+  const { rows } = await client.query(
+    `SELECT
+       EXISTS (SELECT 1 FROM warranty_claims WHERE replacement_invoice_id = $1)
+         OR EXISTS (SELECT 1 FROM return_orders WHERE replacement_invoice_id = $1) AS is_replacement,
+       EXISTS (SELECT 1 FROM warranties WHERE invoice_id = $1 AND status = 'claimed') AS has_claim`,
+    [invoiceId],
+  );
+  if (rows[0].is_replacement) {
+    throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED,
+      'This invoice is a replacement from a return or warranty claim and cannot be cancelled.', { status: 409 });
+  }
+  if (rows[0].has_claim) {
+    throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED,
+      'A warranty on this invoice has been claimed, so it cannot be cancelled.', { status: 409 });
+  }
+}
+
+async function applyEditRequest({ requestId, managerId, invoiceId = null, approver = null, approverPermissions = [], io = null }) {
   const canOverridePrice =
     approverPermissions.includes('invoice.override_price') || approverPermissions.includes('*');
   const result = await withTransaction(async (client) => {
@@ -1173,6 +1206,9 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
       });
     }
     const req = reqRows[0];
+    if (invoiceId && req.invoice_id !== invoiceId) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
     if (req.status !== 'pending') {
       throw new AppError(
         ERROR_CODES.BIZ_EDIT_REQUEST_ALREADY_REVIEWED,
@@ -1180,6 +1216,7 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
         { status: 409 },
       );
     }
+    assertNotOwnRequest({ actor: approver || { id: managerId }, requestedBy: req.requested_by });
 
     const { rows: invRows } = await client.query(
       `SELECT * FROM invoices WHERE id = $1 FOR UPDATE`,
@@ -1292,7 +1329,7 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
         }
         if (!cur) {
           if (newQty > 0) {
-            await replaceItems(client, req.invoice_id, [requested], {
+            await replaceItems(client, req.invoice_id, [priceChangeAllowed ? requested : { ...requested, discount_amount: 0 }], {
               append: true, startPosition: currentItems.length + requestedVariants.size,
               // See priceChangeAllowed above: only trusted outright on a
               // confirmed invoice (total-preservation guard covers it);
@@ -1310,7 +1347,7 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
             ? money(requested.unit_price)
             : Number(cur?.unit_price);
         const newDisc =
-          requested.discount_amount != null
+          requested.discount_amount != null && priceChangeAllowed
             ? money(requested.discount_amount)
             : Number(cur?.discount_amount || 0);
 
@@ -1367,7 +1404,7 @@ async function applyEditRequest({ requestId, managerId, approverPermissions = []
     }
 
     // ---- Invoice-level adjustments ---------------------------------------
-    if (changes.invoiceDiscount != null) {
+    if (changes.invoiceDiscount != null && priceChangeAllowed) {
       await client.query(
         `UPDATE invoices SET invoice_discount = $1 WHERE id = $2`,
         [money(changes.invoiceDiscount), req.invoice_id],

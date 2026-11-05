@@ -124,6 +124,7 @@ async function upsertRestriction(client, { productId, minPrice, maxDiscountPerce
   const after = rows[0];
 
   await logActivity({
+    client,
     entityType: 'pricing_restriction',
     entityId: after.id,
     action: before ? 'pricing_restriction.updated' : 'pricing_restriction.created',
@@ -145,6 +146,7 @@ async function removeRestriction(client, { productId, actorId }) {
   await q(`DELETE FROM pricing_restrictions WHERE product_id = $1`, [productId]);
 
   await logActivity({
+    client,
     entityType: 'pricing_restriction',
     entityId: before.id,
     action: 'pricing_restriction.removed',

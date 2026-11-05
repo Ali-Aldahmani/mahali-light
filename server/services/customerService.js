@@ -281,7 +281,7 @@ async function voidPayment({ paymentId, voidedBy = null }) {
           amount,
           referenceType: 'customer_payment',
           referenceId: paymentId,
-          employeeId: pm.employee_id,
+          employeeId: voidedBy || pm.employee_id,
           notes: 'Reversal of customer payment',
         });
       } else if (pm.payment_method === 'bank_transfer') {
@@ -292,7 +292,7 @@ async function voidPayment({ paymentId, voidedBy = null }) {
           amount,
           referenceType: 'customer_payment',
           referenceId: paymentId,
-          employeeId: pm.employee_id,
+          employeeId: voidedBy || pm.employee_id,
           description: 'Reversal of customer payment',
           allowOverdraft: true,
           allowInactiveAccount: true,
@@ -302,7 +302,7 @@ async function voidPayment({ paymentId, voidedBy = null }) {
       // Reverse the journal entries from the original collection.
       await journalService.reverseCustomerPaymentEntries(client, paymentId, {
         date: todayStoreDate(),
-        userId: pm.employee_id,
+        userId: voidedBy || pm.employee_id,
       });
     }
 

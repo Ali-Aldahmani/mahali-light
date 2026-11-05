@@ -8,7 +8,9 @@ router.use(requireAuth());
 
 router.delete(
   '/:id',
-  requirePermission('customer.collect_payment'),
+  // Voiding hands the cash back out of the drawer, so it is not the same
+  // authority as taking a payment.
+  requirePermission('customer.void_payment'),
   payments.remove,
 );
 

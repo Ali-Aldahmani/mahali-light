@@ -67,11 +67,13 @@ export function CashierHeldSalesDialog({
 }) {
   const { rows, loading, error } = useRemoteList<any>(
     open,
-    async () => (await listInvoices({ status: 'draft', createdBy: userId, limit: 30 })).data,
+    // Every held sale, not only this cashier's: a sale parked by someone who
+    // went off shift must be resumable here, and resuming takes it over.
+    async () => (await listInvoices({ status: 'draft', limit: 30 })).data,
     [userId],
   );
   return (
-    <Modal open={open} onClose={onClose} title="Held sales" subtitle="Drafts you put on hold. Resume one to continue selling." size="md">
+    <Modal open={open} onClose={onClose} title="Held sales" subtitle="Sales on hold. Resume one to continue selling." size="md">
       <ListState loading={loading} error={error} empty={!rows.length} emptyText="No held sales." />
       {!loading && !error && rows.length > 0 && (
         <ul className="space-y-2" aria-label="Held sales">

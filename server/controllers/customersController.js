@@ -33,7 +33,7 @@ const fieldSchemas = {
     .optional()
     .nullable()
     .transform((v) => (v === '' ? null : v)),
-  creditLimit: z.number().nonnegative().optional(),
+  creditLimit: z.number().finite().nonnegative().optional(),
   notes: z.string().max(4000).optional().nullable(),
 };
 
@@ -437,9 +437,19 @@ async function summary(req, res, next) {
 // Mutations run in one transaction with their audit entry: if the audit
 // write fails, the change is rolled back rather than saved unrecorded.
 
+function assertCanEditCreditLimit(req) {
+  if (!(req.user?.permissions || []).includes('customer.edit_credit_limit')) {
+    throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, 'Changing a credit limit needs a manager.', {
+      status: 403, details: { missing: ['customer.edit_credit_limit'] },
+    });
+  }
+}
+
 async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
+
+    if (Number(body.creditLimit || 0) > 0) assertCanEditCreditLimit(req);
 
     if (!trnIsValid(body.trnNumber)) {
       throw new AppError(
@@ -537,6 +547,28 @@ async function update(req, res, next) {
         });
       }
       const current = existing[0];
+
+      // A Cashier could otherwise lift a limit and then sell on credit past it.
+      if (body.creditLimit !== undefined && Number(body.creditLimit) !== Number(current.credit_limit || 0)) {
+        assertCanEditCreditLimit(req);
+      }
+      // Same rule as DELETE: otherwise an edit hides a debt from the
+      // outstanding list and blocks collecting it.
+      if (body.isActive === false && current.is_active !== false) {
+        if (!(req.user?.permissions || []).includes('customer.delete')) {
+          throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, undefined, {
+            status: 403, details: { missing: ['customer.delete'] },
+          });
+        }
+        const owed = Number(current.credit_balance || 0);
+        if (owed > 0.001) {
+          throw new AppError(
+            ERROR_CODES.BIZ_OUTSTANDING_BALANCE,
+            `Customer has outstanding balance of ${owed.toFixed(2)} AED. Collect payment before deactivating.`,
+            { status: 409, details: { balance: owed } },
+          );
+        }
+      }
 
       if (
         body.expectedUpdatedAt &&

@@ -104,7 +104,7 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
   async function edit(inv, changes) {
     const req = (await db.query(`INSERT INTO invoice_edit_requests (invoice_id,requested_by,request_note,changes)
       VALUES ($1,$2,'Regression correction',$3) RETURNING id`, [inv.id, userId, JSON.stringify(changes)])).rows[0];
-    return invoices.applyEditRequest({ requestId: req.id, managerId: userId });
+    return invoices.applyEditRequest({ requestId: req.id, managerId: userId, approver: { id: userId, role: 'Admin', role_is_system: true } });
   }
   async function returnRequest(inv, { quantity = 1, plan = [{ method: 'cash', amount: Number(inv.total) }], replacement = null } = {}) {
     const line = (await db.query('SELECT * FROM invoice_items WHERE invoice_id=$1', [inv.id])).rows[0];
@@ -428,13 +428,13 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
     ).then((r) => r.rows[0]);
 
     const fabricated = await submit(0.01);
-    await invoices.applyEditRequest({ requestId: fabricated.id, managerId: userId, approverPermissions: [] });
+    await invoices.applyEditRequest({ requestId: fabricated.id, managerId: userId, approver: { id: userId, role: 'Admin', role_is_system: true }, approverPermissions: [] });
     let item = (await db.query('SELECT unit_price FROM invoice_items WHERE invoice_id=$1', [inv.id])).rows[0];
     expect(Number(item.unit_price)).toBe(100);
 
     const authorized = await submit(60);
     await invoices.applyEditRequest({
-      requestId: authorized.id, managerId: userId, approverPermissions: ['invoice.override_price'],
+      requestId: authorized.id, managerId: userId, approver: { id: userId, role: 'Admin', role_is_system: true }, approverPermissions: ['invoice.override_price'],
     });
     item = (await db.query('SELECT unit_price FROM invoice_items WHERE invoice_id=$1', [inv.id])).rows[0];
     expect(Number(item.unit_price)).toBe(60);

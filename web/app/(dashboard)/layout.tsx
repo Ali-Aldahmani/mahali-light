@@ -138,7 +138,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     const hasStock = permissions.includes('stock.view') || permissions.includes('*');
     if (hasStock) {
       initStockCache({ force: true }).catch(() => {});
-      syncAllCaches().catch(() => {});
+      // Includes the customer list, and a 403 opens the "Access denied" box.
+      if (permissions.includes('customer.view')) syncAllCaches().catch(() => {});
       refreshInventory();
     }
     fetchAppSettings?.().catch(() => {});

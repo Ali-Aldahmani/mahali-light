@@ -198,7 +198,9 @@ function InvoiceDetailPageContent() {
       <PaymentsSection
         payments={data.payments}
         invoice={inv}
-        canAddPayment={canAddPayment && inv.status === 'confirmed' && inv.balanceDue > 0}
+        // The server takes invoice payments on drafts only. A confirmed credit
+        // sale is settled from the customer's page (see the link in the section).
+        canAddPayment={canAddPayment && inv.status === 'draft' && inv.balanceDue > 0}
         onAddPayment={() => setPayOpen(true)}
       />
 
@@ -363,6 +365,7 @@ function ItemsSection({ items, canSeeCost }: { items: any[]; canSeeCost: boolean
 
 function PaymentsSection({
   payments,
+  invoice,
   canAddPayment,
   onAddPayment,
 }: {
@@ -382,6 +385,11 @@ function PaymentsSection({
           <Button size="sm" onClick={onAddPayment}>
             Add payment
           </Button>
+        )}
+        {invoice.status === 'confirmed' && invoice.balanceDue > 0 && invoice.customerId && (
+          <Link href={`/customers/${invoice.customerId}`} className="text-xs text-accent hover:underline">
+            Collect from the customer&apos;s page
+          </Link>
         )}
       </div>
       <Table

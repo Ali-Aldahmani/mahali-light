@@ -631,6 +631,7 @@ function PaymentsTab({
   openPay: () => void;
   refreshKey: number;
 }) {
+  const canVoid = useAuthStore((s) => s.permissions).includes('customer.void_payment');
   const [data, setData] = useState<{ rows: PaymentRow[]; total: number; checkout: number }>({
     rows: [],
     total: 0,
@@ -785,7 +786,7 @@ function PaymentsTab({
                     // Same-day balance payments only; checkout payments are
                     // reversed by cancelling the invoice.
                     hidden:
-                      !canCollect ||
+                      !canVoid ||
                       r.source === 'invoice' ||
                       !!r.voidedAt ||
                       storeDate(r.createdAt) !== today,
