@@ -57,7 +57,11 @@ function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = 
            JOIN users u ON u.id = s.user_id
            LEFT JOIN roles r ON r.id = u.role_id
            LEFT JOIN employees e ON e.id = u.employee_id
-          WHERE s.token_hash = $1 AND s.logout_at IS NULL AND u.is_active
+          WHERE (s.token_hash = $1
+                 -- A tab reconnecting during the minute after another tab
+                 -- refreshed the shared session (same rule as requireAuth).
+                 OR (s.previous_token_hash = $1 AND s.token_rotated_at > NOW() - INTERVAL '1 minute'))
+            AND s.logout_at IS NULL AND u.is_active
             AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW())
           ORDER BY s.login_at DESC LIMIT 1`,
         [hashToken(token)],

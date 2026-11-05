@@ -40,7 +40,10 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      setToken: (token) => set({ token }),
+      setToken: (token) => {
+        set({ token });
+        shareToken(get().sessionKey, token);
+      },
 
       setUser: (user) => set({ user, permissions: user?.permissions || [] }),
 
@@ -70,3 +73,33 @@ export const useAuthStore = create<AuthState>()(
     },
   ),
 );
+
+// A duplicated tab shares the session but keeps its own copy of the token.
+// Each refresh replaces the token, so the other tab's copy stopped working a
+// minute later and it got signed out (review 5 Nov). Tabs on the same session
+// now pass the new token to each other.
+let tokenChannel: BroadcastChannel | null = null;
+function getTokenChannel(): BroadcastChannel | null {
+  if (tokenChannel || typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return tokenChannel;
+  tokenChannel = new BroadcastChannel('mahali-auth-token');
+  tokenChannel.onmessage = (event) => {
+    const { sessionKey, token } = event.data || {};
+    const state = useAuthStore.getState();
+    if (token && sessionKey && sessionKey === state.sessionKey && token !== state.token) {
+      useAuthStore.setState({ token });
+    }
+  };
+  return tokenChannel;
+}
+
+function shareToken(sessionKey: string | null | undefined, token: string | null) {
+  if (!sessionKey || !token) return;
+  try {
+    getTokenChannel()?.postMessage({ sessionKey, token });
+  } catch (_e) {
+    // Sharing is a convenience; each tab still refreshes on its own.
+  }
+}
+
+// Start listening as soon as the store loads, not only after a refresh here.
+getTokenChannel();
