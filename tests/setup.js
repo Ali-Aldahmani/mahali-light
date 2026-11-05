@@ -10,3 +10,6 @@ process.env.BCRYPT_ROUNDS = '1'; // 1 round so bcrypt tests run fast
 process.env.CORS_ORIGINS = '';
 // Keep the first-run setup code file (setupTokenService) out of the repo.
 process.env.SETUP_CODE_FILE = path.join(os.tmpdir(), `mahali-test-setup-code-${process.pid}.txt`);
+// Same for uploads: completing setup now writes the store details file the PDFs
+// read, which must not land in the real uploads folder.
+process.env.UPLOADS_DIR = path.join(os.tmpdir(), `mahali-test-uploads-${process.pid}`);
