@@ -92,9 +92,17 @@ describe.skipIf(!enabled)('reconciliation report on real PostgreSQL', () => {
     const { rows: [v] } = await db.query(
       `INSERT INTO product_variants (product_id, sku, selling_price, cost_price, stock_qty)
        VALUES ($1, 'LAMP-1', 10, 5, 7) RETURNING id`, [p.id]);
-    await db.query(
+    const bad = (client) => client.query(
       `INSERT INTO stock_movements (product_id, variant_id, movement_type, quantity, qty_before, qty_after)
        VALUES ($1, $2, 'adjustment', 2, 3, 7)`, [p.id, v.id]);
+    // Migration 057 now refuses such a row outright...
+    await expect(bad(db)).rejects.toThrow(/chk_movement_arithmetic/);
+    // ...so stand in for one written before it, which the report must still find.
+    await db.query(`ALTER TABLE stock_movements DROP CONSTRAINT chk_movement_arithmetic`);
+    await bad(db);
+    await db.query(
+      `ALTER TABLE stock_movements ADD CONSTRAINT chk_movement_arithmetic
+         CHECK (ABS(qty_after - (qty_before + quantity)) <= 0.005) NOT VALID`);
     expect(await differences('movement_arithmetic')).toEqual([
       expect.objectContaining({ recorded: 7, expected: 5 }),
     ]);

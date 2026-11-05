@@ -103,6 +103,20 @@ describe.skipIf(!enabled)('review decisions on real PostgreSQL', () => {
     expect(asCredit.status, JSON.stringify(asCredit.body)).toBe(201);
   });
 
+  it('a credit sale already paid off is refunded in cash, not below zero', async () => {
+    const { rows: [c] } = await db.query(`INSERT INTO customers (name, credit_limit) VALUES ('Paid up', NULL) RETURNING id`);
+    const inv = await creditSale(c.id);
+    await db.query(`UPDATE customers SET credit_balance = 0 WHERE id = $1`, [c.id]);
+    const { rows: [line] } = await db.query(`SELECT id, variant_id FROM invoice_items WHERE invoice_id = $1`, [inv.id]);
+    const res = await manager.as('post', '/return-requests').send({
+      returnType: 'customer_refund', referenceType: 'invoice', referenceId: inv.id,
+      reason: 'customer_request', requestNote: 'Paid off, then returned',
+      items: [{ invoiceItemId: line.id, variantId: line.variant_id, productId, quantity: 1, condition: 'good' }],
+      refundPlan: [{ method: 'cash', amount: Number(inv.total) }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+  });
+
   it('credit limit: new customers get no credit, blank means no limit', async () => {
     const created = await manager.as('post', '/customers').send({ name: 'New shop' });
     expect(created.status, JSON.stringify(created.body)).toBe(201);

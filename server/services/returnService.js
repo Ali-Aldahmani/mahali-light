@@ -190,7 +190,17 @@ async function assertRefundMatchesTender(client, { invoiceId, plan, excludeReque
            AND p->>'method' IN ('cash', 'bank'))::float8 AS refunded`,
     [invoiceId, excludeRequestId],
   );
-  const allowed = money(Math.max(0, row.paid - row.refunded));
+  // A credit refund lowers the customer's debt and can't take it below zero,
+  // so whatever is more than they still owe goes back as money.
+  const planTotal = money(plan.reduce((sum, p) => sum + Number(p.amount || 0), 0));
+  const { rows: [owner] } = await client.query(
+    `SELECT COALESCE(c.credit_balance, 0)::float8 AS balance
+       FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
+      WHERE i.id = $1`,
+    [invoiceId],
+  );
+  const owed = money(owner?.balance || 0);
+  const allowed = money(Math.max(0, row.paid - row.refunded, planTotal - owed));
   if (moneyOut - allowed > 0.001) {
     throw new AppError(
       ERROR_CODES.BIZ_REFUND_PLAN_MISMATCH,
