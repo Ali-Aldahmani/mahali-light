@@ -404,6 +404,17 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
     const el = scrollRef.current;
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [total]);
+  // A new comment grows from zero height, so measuring once falls short and
+  // leaves it below the fold. Follow the list's size while pinned.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      if (pinnedRef.current) el.scrollTop = el.scrollHeight;
+    });
+    Array.from(el.children).forEach((child) => observer.observe(child));
+    return () => observer.disconnect();
+  }, [total]);
 
   const commit = useCallback((next: ThreadComment[], event: CommentThreadEvent) => {
     if (comments === undefined) setInternal(next);

@@ -175,11 +175,11 @@ async function checkVatDue() {
   // UAE FTA quarterly VAT — emit when within 7 days of the typical deadline
   // (28th of the month following the quarter end).
   const now = new Date();
-  const q = Math.floor(now.getMonth() / 3); // 0..3
-  const quarterEnd = new Date(now.getFullYear(), q * 3 + 3, 0); // last day of quarter
-  const vatDueDate = new Date(quarterEnd);
-  vatDueDate.setMonth(vatDueDate.getMonth() + 1);
-  vatDueDate.setDate(28);
+  // The deadline falls in the first month of each quarter, for the one before.
+  // This used to look at the current quarter's deadline, at least 28 days off,
+  // so the reminder could never fire.
+  if (now.getMonth() % 3 !== 0) return false;
+  const vatDueDate = new Date(now.getFullYear(), now.getMonth(), 28);
   const days = Math.round((vatDueDate - now) / (24 * 60 * 60 * 1000));
   if (days < 0 || days > 7) return false;
   await notificationService.notifyRoles(['Admin'], {

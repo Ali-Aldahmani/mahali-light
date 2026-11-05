@@ -59,6 +59,10 @@ async function getBrowser() {
     launchOpts.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
   }
   browserPromise = puppeteer.launch(launchOpts);
+  // A failed launch must not stay cached, or every PDF fails until a restart.
+  browserPromise.catch(() => {
+    browserPromise = null;
+  });
   return browserPromise;
 }
 
@@ -108,13 +112,14 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// One pass with a replacer function, so a name containing $& or {{TOTAL}} prints
+// as written instead of being expanded.
 function fillTemplate(template, vars) {
-  let out = template;
-  for (const [key, value] of Object.entries(vars)) {
-    const re = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
-    out = out.replace(re, value == null ? '' : String(value));
-  }
-  return out;
+  return template.replace(/{{\s*(\w+)\s*}}/g, (match, key) => {
+    if (!Object.prototype.hasOwnProperty.call(vars, key)) return match;
+    const value = vars[key];
+    return value == null ? '' : String(value);
+  });
 }
 
 function fmtMoney(value, currency = 'AED') {
@@ -300,7 +305,8 @@ function renderInvoiceHtml({ invoice, items, payments }, settings) {
     SUBTOTAL: fmtMoney(invoice.subtotal, currency),
     DISCOUNT_ROW: discountRow,
     TAXABLE: fmtMoney(invoice.taxable_amount, currency),
-    VAT_RATE: Number(invoice.tax_rate || settings.vatRate || 5).toFixed(0),
+    // ?? not ||: a rate of 0 (VAT off) printed as 5% beside AED 0.00.
+    VAT_RATE: String(Number(invoice.tax_rate ?? settings.vatRate ?? 5)),
     VAT_AMOUNT: fmtMoney(invoice.tax_amount, currency),
     TOTAL: fmtMoney(invoice.total, currency),
     PAYMENT_ROWS: paymentRows,
@@ -525,7 +531,8 @@ async function renderReceiptHtml({ invoice, items, payments }, settings) {
     ITEM_ROWS: itemRows,
     SUBTOTAL: fmtMoney(invoice.subtotal, currency),
     DISCOUNT_ROW: discountRow,
-    VAT_RATE: Number(invoice.tax_rate || settings.vatRate || 5).toFixed(0),
+    // ?? not ||: a rate of 0 (VAT off) printed as 5% beside AED 0.00.
+    VAT_RATE: String(Number(invoice.tax_rate ?? settings.vatRate ?? 5)),
     VAT_AMOUNT: fmtMoney(invoice.tax_amount, currency),
     TOTAL: fmtMoney(invoice.total, currency),
     PAYMENTS_BLOCK: paymentsBlock,
@@ -835,6 +842,7 @@ async function cleanupOldPdfs({ maxAgeDays = 30 } = {}) {
 }
 
 module.exports = {
+  fillTemplate,
   generateInvoicePDF,
   generateInvoicePDFSafe,
   generateReceiptPDF,

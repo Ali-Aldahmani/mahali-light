@@ -82,6 +82,10 @@ async function createExpense({
   if (!PAYMENT_METHODS.has(paymentMethod)) {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid payment method.');
   }
+  // Sales audit SI-03: no silent fallback to whichever account is the default.
+  if (paymentMethod === 'bank' && !bankAccountId) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose the bank account for this expense.', { status: 400 });
+  }
 
   const record = async (client) => {
     const { rows } = await client.query(
@@ -109,6 +113,7 @@ async function createExpense({
     if (paymentMethod === 'cash') {
       treasury = await cashService.recordCashOut({
         client,
+        allowAutoOpen: false,
         transactionType: 'expense',
         amount: amt,
         referenceType: 'expense',

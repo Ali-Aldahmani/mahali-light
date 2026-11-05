@@ -70,7 +70,8 @@ async function resolve(req, res, next) {
 
 async function cleanup(req, res, next) {
   try {
-    const days = Number(req.query.days) || 90;
+    // At least a day: ?days=-1 used to delete every resolved row.
+    const days = Math.max(1, Number(req.query.days) || 90);
     const result = await errorLogService.cleanupResolvedOlderThan(days);
     ok(res, result);
   } catch (err) {

@@ -499,6 +499,13 @@ async function payBillPayment({
     if (payment.bill_status === 'cancelled') {
       throw new AppError(ERROR_CODES.BIZ_BILL_CANCELLED, undefined, { status: 409 });
     }
+    // Sales audit SI-03: pay from the bill's own account, never a silent default.
+    if (paymentMethod === 'bank' && !bankAccountId) {
+      bankAccountId = payment.bank_account_id;
+      if (!bankAccountId) {
+        throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose the bank account for this payment.', { status: 400 });
+      }
+    }
 
     const paidDateStr = dateOnly(paidDate) || todayIso();
     if (!payment.is_variable_amount) {
@@ -551,6 +558,7 @@ async function payBillPayment({
         referenceId: billPaymentId,
         employeeId: userId,
         notes: `Bill: ${payment.bill_name}`,
+        allowAutoOpen: false,
       });
     } else {
       treasury = await bankService.recordBankOut({

@@ -9,6 +9,7 @@ const { logActivity } = require('../utils/activityLog');
 const attendanceService = require('../services/attendanceService');
 const presenceService = require('../services/presenceService');
 const { reserveAttempt, clearAttempts } = require('../services/loginLockout');
+const { MAX_LENGTH, assertPasswordAllowed, hashPassword } = require('../utils/password');
 
 
 const loginSchema = z.object({
@@ -321,4 +322,54 @@ async function me(req, res, next) {
   }
 }
 
-module.exports = { login, logout, logoutAll, refresh, me };
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: z.string().min(1).max(MAX_LENGTH),
+});
+
+// Nobody could change their own password: PUT /users/:id refuses self-edits, so
+// a leaked Admin password needed a second Admin or SQL to rotate. Asks for the
+// current password, under the same lockout as sign-in, in case of an unlocked till.
+async function changePassword(req, res, next) {
+  try {
+    const body = changePasswordSchema.parse(req.body || {});
+    const ipAddress = clientIp(req);
+    const lockoutKey = `password:${req.user.username}`.slice(0, 50);
+    if (await reserveAttempt(lockoutKey, ipAddress)) {
+      throw new AppError(ERROR_CODES.AUTH_ACCOUNT_LOCKED, undefined, { status: 423 });
+    }
+    const { rows: [row] } = await query(`SELECT password_hash FROM users WHERE id = $1`, [req.user.id]);
+    if (!row || !(await bcrypt.compare(body.currentPassword, row.password_hash))) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Your current password is wrong.', {
+        status: 400, details: { field: 'currentPassword' },
+      });
+    }
+    await clearAttempts(lockoutKey, ipAddress);
+    assertPasswordAllowed(body.newPassword, {
+      roleName: req.user.role || req.user.role_name, username: req.user.username,
+    });
+    await query(`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, [
+      await hashPassword(body.newPassword), req.user.id,
+    ]);
+    await presenceService.revokeUserSessions(req.app.get('io'), {
+      userId: req.user.id,
+      logoutType: 'password_changed',
+      exceptSessionId: req.sessionId,
+      reason: 'Password changed',
+    });
+    await logActivity({
+      entityType: 'user',
+      entityId: req.user.id,
+      action: 'user.password_changed',
+      performedBy: req.user.id,
+    });
+    return ok(res, { changed: true });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return next(new AppError(ERROR_CODES.VALIDATION_FAILED, undefined, { status: 400, details: err.errors }));
+    }
+    next(err);
+  }
+}
+
+module.exports = { login, logout, logoutAll, refresh, me, changePassword };

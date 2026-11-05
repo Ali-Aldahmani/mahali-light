@@ -102,7 +102,21 @@ async function checkIn({ employeeId, method = 'app_login', userId = null, io = n
       [employeeId, date],
     );
     if (existingRows.length) {
-      return shapeAttendance({ ...existingRows[0], employee_name: employee.name });
+      const existing = existingRows[0];
+      // Back after a sign-out the same day (lunch, or the 15-minute idle
+      // sign-out): reopen the day. It used to stay closed at the first
+      // sign-out, recording an hour's work and a seven-hour shortage.
+      if (existing.check_in && existing.check_out) {
+        const { rows: reopened } = await client.query(
+          `UPDATE attendance
+              SET check_out = NULL, updated_at = NOW()
+            WHERE id = $1
+            RETURNING *`,
+          [existing.id],
+        );
+        return shapeAttendance({ ...reopened[0], employee_name: employee.name });
+      }
+      return shapeAttendance({ ...existing, employee_name: employee.name });
     }
 
     const now = new Date();
@@ -565,19 +579,19 @@ async function reviewCorrection({
     );
 
     if (decision === 'approved') {
+      const { rows: [current] } = await client.query(
+        `SELECT check_in, check_out FROM attendance WHERE id = $1`,
+        [corr.attendance_id],
+      );
       await upsertManualAttendance({
         employeeId: corr.employee_id,
         date: dateOnly(corr.attendance_date),
-        checkIn: corr.new_check_in,
-        checkOut: corr.new_check_out,
-        // Preserve the existing status — corrections only adjust the times.
-        status:
-          (
-            await client.query(
-              `SELECT status FROM attendance WHERE id = $1`,
-              [corr.attendance_id],
-            )
-          ).rows[0]?.status || 'present',
+        // A time left out keeps its stored value instead of being wiped.
+        checkIn: corr.new_check_in || current.check_in,
+        checkOut: corr.new_check_out || current.check_out,
+        // The status follows from the corrected times. Passing the old one
+        // made approval fail whenever the correction changed it, such as a
+        // late arrival corrected to on time.
         notes: `Corrected via request: ${corr.request_note}`,
         userId: reviewerId,
       }, client);

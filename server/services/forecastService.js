@@ -641,9 +641,18 @@ function msUntilNextRun() {
   return next - now;
 }
 
+// setTimeout can't wait longer than about 24.8 days: a longer delay fires
+// straight away, so from the 6th of a month the job ran in a loop for days,
+// bringing dismissed recommendations back each time. Wait in shorter steps.
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
 function scheduleNextRun() {
   const delay = msUntilNextRun();
   if (timer) clearTimeout(timer);
+  if (delay > MAX_TIMER_MS) {
+    timer = setTimeout(scheduleNextRun, MAX_TIMER_MS);
+    return;
+  }
   timer = setTimeout(async () => {
     try {
       const result = await runAllForecasts({ aggregate: true });

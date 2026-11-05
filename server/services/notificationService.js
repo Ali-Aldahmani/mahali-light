@@ -112,12 +112,15 @@ async function resolveTargets({ targetUserIds, targetRoles, isBroadcast }) {
 // =======================================================================
 async function findRecentByDedupe(dedupeKey) {
   if (!dedupeKey) return null;
+  // A ".daily" key means once a day. A five-minute window let the sweep, which
+  // runs after every restart, add a new copy each time.
+  const windowMinutes = String(dedupeKey).endsWith('.daily') ? 23 * 60 : 5;
   const { rows } = await query(
     `SELECT * FROM notifications
       WHERE dedupe_key = $1
-        AND created_at > NOW() - INTERVAL '5 minutes'
+        AND created_at > NOW() - make_interval(mins => $2)
       ORDER BY created_at DESC LIMIT 1`,
-    [dedupeKey],
+    [dedupeKey, windowMinutes],
   );
   return rows[0] || null;
 }

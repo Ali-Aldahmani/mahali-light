@@ -10,12 +10,25 @@ const {
   assertCanChangeRole,
   assertCanSetEffectivePermissions,
   assertCanManageTarget,
+  assertCanAssignPermissionKeys,
 } = require('../../shared/authzPolicy');
 
 async function loadRoleMeta(roleId) {
   if (!roleId) return null;
   const { rows } = await query('SELECT name, is_system FROM roles WHERE id = $1', [roleId]);
   return rows[0] || null;
+}
+
+// Custom roles all rank the same, whatever they can do, so the rank check can't
+// protect them: assigning one, or resetting the password of someone who holds
+// one, must not hand the actor permissions they don't have themselves.
+async function assertRoleWithinAuthority(actor, roleId, role) {
+  if (!role || role.is_system) return;
+  const { rows } = await query(
+    `SELECT p.key FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = $1`,
+    [roleId],
+  );
+  assertCanAssignPermissionKeys({ actor, permissionKeys: rows.map((r) => r.key) });
 }
 
 const createSchema = z.object({
@@ -31,7 +44,12 @@ const createSchema = z.object({
 });
 
 const updateSchema = z.object({
-  username: z.string().min(3).max(50).optional(),
+  username: z
+    .string()
+    .min(3)
+    .max(50)
+    .regex(/^[a-zA-Z0-9_.-]+$/, 'Only letters, numbers, dot, underscore, hyphen')
+    .optional(),
   password: z.string().min(1).max(MAX_LENGTH).optional(),
   roleId: z.string().uuid().optional(),
   employeeId: z.string().uuid().nullable().optional(),
@@ -134,6 +152,7 @@ async function create(req, res, next) {
     }
 
     const newRole = await loadRoleMeta(body.roleId);
+    await assertRoleWithinAuthority(req.user, body.roleId, newRole);
     if (!newRole) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Role not found.', { status: 404 });
     }
@@ -215,6 +234,9 @@ async function update(req, res, next) {
       targetRoleName: existing[0].role_name,
       targetUserId: id,
     });
+    if (body.password) {
+      await assertRoleWithinAuthority(req.user, existing[0].role_id, await loadRoleMeta(existing[0].role_id));
+    }
 
     if (body.username && body.username !== existing[0].username) {
       const dup = await query(
@@ -235,6 +257,7 @@ async function update(req, res, next) {
     if (body.username !== undefined) add('username', body.username);
     if (body.roleId !== undefined && body.roleId !== existing[0].role_id) {
       const newRole = await loadRoleMeta(body.roleId);
+    await assertRoleWithinAuthority(req.user, body.roleId, newRole);
       if (!newRole) {
         throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Role not found.', { status: 404 });
       }
@@ -266,6 +289,10 @@ async function update(req, res, next) {
     sets.push('updated_at = NOW()');
     params.push(id);
     await query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+    // Individual grants belong to the old job: a demoted Manager must not keep them.
+    if (body.roleId && body.roleId !== existing[0].role_id) {
+      await query('DELETE FROM user_permissions WHERE user_id = $1', [id]);
+    }
 
     // Security changes take effect on live connections too. Deactivation or
     // a new password ends the user's sessions (keeping the one making the

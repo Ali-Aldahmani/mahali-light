@@ -3,6 +3,10 @@ import { PC_IDENTIFIER } from '@/lib/config';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
 
+export function changePassword(currentPassword: string, newPassword: string) {
+  return apiPost('/auth/change-password', { currentPassword, newPassword });
+}
+
 let hostname = null;
 async function getHostname() {
   if (hostname) return hostname;

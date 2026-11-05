@@ -147,19 +147,20 @@ async function update(req, res, next) {
     // omitted them, look up the existing row.
     const { query } = require('../db/postgres');
     const { rows } = await query(
-      `SELECT employee_id, date FROM attendance WHERE id = $1`,
+      `SELECT employee_id, date, check_in, check_out, notes FROM attendance WHERE id = $1`,
       [req.params.id],
     );
     if (!rows.length) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
     const record = await attendanceService.upsertManualAttendance({
-      employeeId: body.employeeId || rows[0].employee_id,
-      date: body.date || rows[0].date,
-      checkIn: body.checkIn ?? undefined,
-      checkOut: body.checkOut ?? undefined,
+      // This edits the record in the URL, and what the body leaves out stays.
+      employeeId: rows[0].employee_id,
+      date: rows[0].date,
+      checkIn: body.checkIn !== undefined ? body.checkIn : rows[0].check_in,
+      checkOut: body.checkOut !== undefined ? body.checkOut : rows[0].check_out,
       status: body.status,
-      notes: body.notes ?? null,
+      notes: body.notes !== undefined ? body.notes : rows[0].notes,
       userId: req.user.id,
     });
     return ok(res, record);

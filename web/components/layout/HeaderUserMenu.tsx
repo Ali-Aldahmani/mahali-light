@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Bug, Keyboard, LogOut, Settings } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bug, KeyRound, Keyboard, LogOut, Settings } from 'lucide-react';
+import ChangePasswordModal from '@/components/layout/ChangePasswordModal';
 import { UserMenu } from '@/components/ui/user-menu';
 import { RoleBadge } from '@/components/ui/Badge';
 import { useAuthStore } from '@/store/authStore';
@@ -23,6 +24,7 @@ export default function HeaderUserMenu() {
   const openSettings = useQuickActionStore((s) => s.openSettings);
   const handleSignOut = useSignOut();
   const handleSignOutEverywhere = useSignOutEverywhere();
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   // Sessions saved before the server sent full_name don't have it yet; fetch once.
   const missingName = !!user && user.full_name === undefined;
@@ -35,6 +37,8 @@ export default function HeaderUserMenu() {
   const fullName = user.full_name?.trim();
 
   return (
+    <>
+    <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     <UserMenu
       user={{
         name: user.username,
@@ -51,6 +55,11 @@ export default function HeaderUserMenu() {
           label: 'Settings',
           icon: <Settings size={16} strokeWidth={1.75} />,
           onSelect: openSettings,
+        },
+        {
+          label: 'Change password',
+          icon: <KeyRound size={16} strokeWidth={1.75} />,
+          onSelect: () => setPasswordOpen(true),
         },
         {
           label: 'Keyboard shortcuts',
@@ -71,5 +80,6 @@ export default function HeaderUserMenu() {
       ]}
       onSignOut={handleSignOut}
     />
+    </>
   );
 }

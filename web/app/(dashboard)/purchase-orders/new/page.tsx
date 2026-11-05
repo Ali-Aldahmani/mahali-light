@@ -70,7 +70,6 @@ function NewPurchaseOrderPageContent() {
   const [orderDate, setOrderDate] = useState(todayISO());
   const [expectedDate, setExpectedDate] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [taxAmount, setTaxAmount] = useState<number | string>(0);
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<DraftItem[]>([]);
   // One key per visit: a retried save returns the PO already created.
@@ -106,7 +105,9 @@ function NewPurchaseOrderPageContent() {
       ),
     [items],
   );
-  const total = subtotal + Number(taxAmount || 0);
+  // The server adds VAT from the store's rate when it saves the order, so this
+  // is before VAT. The form used to ask for a tax figure the server ignored.
+  const total = subtotal;
 
   // Step-1 → step-2 guard.
   const canGoToStep2 = !!supplier;
@@ -215,7 +216,6 @@ function NewPurchaseOrderPageContent() {
         orderDate,
         expectedDate: expectedDate || null,
         dueDate: dueDate || null,
-        taxAmount: Number(taxAmount || 0),
         notes: notes || null,
         items: items.map((it) => ({
           productId: it.productId,
@@ -402,18 +402,6 @@ function NewPurchaseOrderPageContent() {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3 pt-2">
-            <div className="col-span-2" />
-            <Input
-              label="Tax / shipping amount"
-              type="number"
-              step="0.01"
-              min={0}
-              value={taxAmount}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTaxAmount(e.target.value)}
-            />
-          </div>
-
           <div className="flex justify-between pt-2">
             <Button variant="secondary" onClick={() => setStep(1)}>
               Back
@@ -449,14 +437,8 @@ function NewPurchaseOrderPageContent() {
                     {formatCurrency(subtotal)}
                   </span>
                 </div>
-                <div className="text-ink-muted">
-                  Tax / shipping:{' '}
-                  <span className="text-ink font-medium ml-2">
-                    {formatCurrency(taxAmount)}
-                  </span>
-                </div>
                 <div className="text-base text-ink font-semibold">
-                  Total: {formatCurrency(total)}
+                  Total before VAT: {formatCurrency(total)}
                 </div>
               </div>
             </div>

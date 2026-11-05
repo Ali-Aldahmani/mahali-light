@@ -4,7 +4,7 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
 import {
-  listAttendance,
+  getEmployeeHistory,
   submitCorrection,
 } from '@/services/attendanceService';
 import { toast } from '@/store/toastStore';
@@ -64,13 +64,10 @@ export default function RequestCorrectionSlideOver({ open, onClose, employeeId, 
     let cancelled = false;
     (async () => {
       try {
-        const res = await listAttendance({
-          employeeId,
-          from: date,
-          to: date,
-          limit: 1,
-        });
-        const rec = (res?.data || [])[0] || null;
+        // The history route allows view_own; the list needs view_all, so
+        // Cashiers got a 403 here and could never request a correction.
+        const res: any = await getEmployeeHistory(employeeId, { from: date, to: date, limit: 1 });
+        const rec = (Array.isArray(res) ? res : res?.data || res?.rows || [])[0] || null;
         if (!cancelled) {
           setCurrentRecord(rec);
           if (rec?.checkIn) {

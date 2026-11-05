@@ -5,6 +5,8 @@ const { z } = require('zod');
 const { ok, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { isAdminActor } = require('../../shared/authzPolicy');
+
+let restoreInProgress = false;
 const { query } = require('../db/postgres');
 const { logActivity } = require('../utils/activityLog');
 
@@ -201,6 +203,12 @@ async function restore(req, res, next) {
       );
     }
 
+    // Two restores at once would delete each other's files, and one failing
+    // would reopen the API while the other is still writing.
+    if (restoreInProgress) {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE, 'A restore is already running.', { status: 409 });
+    }
+    restoreInProgress = true;
     backupService
       .restoreFromBackup({
         jobId: req.params.jobId,
@@ -209,6 +217,9 @@ async function restore(req, res, next) {
       })
       .catch((err) => {
         console.warn('[backupController] restore failed', err.message);
+      })
+      .finally(() => {
+        restoreInProgress = false;
       });
     ok(res, { queued: true });
   } catch (err) {
@@ -353,6 +364,7 @@ async function updateSettings(req, res, next) {
                   WHERE id = (SELECT id FROM backup_settings ORDER BY updated_at DESC LIMIT 1)
                 RETURNING *`;
     const { rows } = await query(sql, params);
+    delete rows[0].nas_password_encrypted;
     await logActivity({
       entityType: 'backup',
       action: 'backup.settings_updated',

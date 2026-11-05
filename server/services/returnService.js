@@ -1161,6 +1161,7 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
           if (p.method === 'cash') {
             const posted = await cashService.recordCashOut({
               client,
+              allowAutoOpen: false,
               transactionType: 'refund',
               amount,
               referenceType: 'return_order',
@@ -1513,7 +1514,7 @@ async function buildReplacementInvoice(
       });
     } else {
       posted = await cashService.recordCashIn({
-        client, transactionType: 'sale', amount: total,
+        client, transactionType: 'sale', amount: total, allowAutoOpen: false,
         referenceType: 'invoice', referenceId: invoiceId, employeeId: managerId,
         notes: `Price-difference payment for ${returnOrderNumber}`,
       });

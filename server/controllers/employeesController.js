@@ -3,6 +3,8 @@ const { query } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { assertCanManageTarget } = require('../../shared/authzPolicy');
+const presenceService = require('../services/presenceService');
 
 const timeRegex = /^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 
@@ -185,12 +187,29 @@ async function update(req, res, next) {
 async function softDelete(req, res, next) {
   try {
     const { id } = req.params;
+    // Deactivating an employee also ends their sign-in. The hierarchy check
+    // stops this being a way round the rules for managing users.
+    const { rows: logins } = await query(
+      `SELECT u.id, r.name AS role_name FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.employee_id = $1 AND u.is_active = true`,
+      [id],
+    );
+    for (const login of logins) {
+      assertCanManageTarget({ actor: req.user, targetRoleName: login.role_name, targetUserId: login.id });
+    }
     const { rowCount } = await query(
       `UPDATE employees SET is_active = false, updated_at = NOW() WHERE id = $1`,
       [id],
     );
     if (!rowCount) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
+    for (const login of logins) {
+      await query(`UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1`, [login.id]);
+      await presenceService.revokeUserSessions(req.app.get('io'), {
+        userId: login.id, logoutType: 'deactivated', reason: 'Employee deactivated',
+      });
     }
 
     await logActivity({

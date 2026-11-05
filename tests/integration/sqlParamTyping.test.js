@@ -191,7 +191,10 @@ describe.skipIf(!enabled)('SQL statements Postgres used to reject, on real Postg
     const { rows: [payment] } = await db.query(
       `SELECT id FROM bill_payments WHERE bill_id = $1 ORDER BY due_date LIMIT 1`, [bill.body.data.id]);
     expect(payment).toBeTruthy();
-    expectOk(await call('post', `/bill-payments/${payment.id}/pay`, { amountPaid: 300, paymentMethod: 'bank' }));
+    const { rows: [account] } = await db.query(`SELECT id FROM bank_accounts WHERE is_active = true LIMIT 1`);
+    // A bank payment names its account (SI-03), as the pay form always does.
+    expect((await call('post', `/bill-payments/${payment.id}/pay`, { amountPaid: 300, paymentMethod: 'bank' })).status).toBe(400);
+    expectOk(await call('post', `/bill-payments/${payment.id}/pay`, { amountPaid: 300, paymentMethod: 'bank', bankAccountId: account.id }));
     const { rows: [paid] } = await db.query(`SELECT status FROM bill_payments WHERE id = $1`, [payment.id]);
     expect(paid.status).toBe('paid');
   });

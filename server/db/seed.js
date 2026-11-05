@@ -132,14 +132,19 @@ const ALL_PERMISSIONS = [
   ['report.employee_performance_all', 'View All Performance', 'report'],
 ];
 
+// Returns the keys this run created, so only those get default grants.
 async function ensurePermissions() {
+  const created = new Set();
   for (const [key, label, mod] of ALL_PERMISSIONS) {
-    await query(
+    const { rows } = await query(
       `INSERT INTO permissions (key, label, module) VALUES ($1,$2,$3)
-       ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, module = EXCLUDED.module`,
+       ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, module = EXCLUDED.module
+       RETURNING (xmax = 0) AS inserted`,
       [key, label, mod],
     );
+    if (rows[0]?.inserted) created.add(key);
   }
+  return created;
 }
 
 async function ensureRoles() {
@@ -152,7 +157,12 @@ async function ensureRoles() {
   }
 }
 
-async function assignRolePermissions() {
+// This runs at every server start. It used to delete and rewrite each system
+// role's permissions, so any change an Admin made on the Roles screen was undone
+// by the next restart. Now a role only gets its defaults when it has none yet,
+// plus any permission this run created. Grants for existing permissions come
+// from migrations, as they already do.
+async function assignRolePermissions(createdKeys = new Set()) {
   const { rows: perms } = await query('SELECT id, key FROM permissions');
   const permByKey = new Map(perms.map((p) => [p.key, p.id]));
   const allKeys = perms.map((p) => p.key);
@@ -161,10 +171,13 @@ async function assignRolePermissions() {
     const { rows } = await query('SELECT id FROM roles WHERE name = $1', [roleName]);
     if (!rows.length) continue;
     const roleId = rows[0].id;
-    const target = keys === '*' ? allKeys : keys;
+    const defaults = keys === '*' ? allKeys : keys;
+    const { rows: [{ count }] } = await query(
+      'SELECT COUNT(*)::int AS count FROM role_permissions WHERE role_id = $1', [roleId],
+    );
+    const target = count === 0 ? defaults : defaults.filter((key) => createdKeys.has(key));
 
     await withTransaction(async (client) => {
-      await client.query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
       for (const key of target) {
         const permId = permByKey.get(key);
         if (!permId) continue;
@@ -205,9 +218,9 @@ async function ensureAdminUser() {
 
 async function run() {
   console.log('[seed] starting...');
-  await ensurePermissions();
+  const createdKeys = await ensurePermissions();
   await ensureRoles();
-  await assignRolePermissions();
+  await assignRolePermissions(createdKeys);
   await ensureAdminUser();
   console.log('[seed] done.');
 }

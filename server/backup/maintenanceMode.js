@@ -32,6 +32,7 @@ const ALLOWED_PREFIXES = [
   '/api/backup/status',
   '/api/backup/jobs',
   '/health',
+  '/api/health',
 ];
 
 function middleware() {

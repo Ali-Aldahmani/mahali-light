@@ -86,6 +86,8 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    // These go through String.replace, where $& and $` are special.
+    .replace(/\$/g, '&#36;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }

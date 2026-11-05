@@ -122,6 +122,16 @@ describe.skipIf(!enabled)('sales review fixes on real PostgreSQL', () => {
     expect((await manager.as('delete', `/customer-payments/${randomUUID()}`)).status).toBe(404);
   });
 
+  it('a cash collection needs an open drawer, like a cash sale', async () => {
+    const id = await customer(100);
+    const res = await cashier.as('post', `/customers/${id}/payments`).set('Idempotency-Key', randomUUID()).send({
+      amount: 50, paymentMethod: 'cash',
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(409);
+    const { rows: [{ n }] } = await db.query(`SELECT COUNT(*)::int AS n FROM cash_drawer_sessions`);
+    expect(n).toBe(0);
+  });
+
   it('a deactivated product cannot be sold through the API', async () => {
     const { rows: [p] } = await db.query(`INSERT INTO products (name, is_active) VALUES ('Retired', false) RETURNING id`);
     const { rows: [v] } = await db.query(

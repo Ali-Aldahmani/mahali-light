@@ -23,6 +23,7 @@ const OPEN_TO_ANY_USER = {
   'auth.js POST /logout-all': 'own sessions',
   'auth.js POST /refresh': 'own session',
   'auth.js GET /me': 'own profile',
+  'auth.js POST /change-password': 'own password, needs the current one',
   // The signed-in user's own notifications (queries filter by req.user.id).
   'notifications.js GET /preferences': 'own preferences',
   'notifications.js PUT /preferences': 'own preferences',

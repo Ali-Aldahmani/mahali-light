@@ -4,7 +4,9 @@ const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
 const presenceService = require('../services/presenceService');
-const { ROLE_RANK, assertCanAssignPermissionKeys } = require('../../shared/authzPolicy');
+const {
+  ROLE_RANK, SYSTEM_ADMIN_ROLE_NAME, isAdminActor, assertCanAssignPermissionKeys,
+} = require('../../shared/authzPolicy');
 
 // System role names ("Admin" chief among them) are trusted by name in
 // several security-sensitive checks (isAdminActor, ADMIN_EXCLUSIVE_PERMISSIONS
@@ -236,19 +238,34 @@ async function setPermissions(req, res, next) {
     const body = setPermsSchema.parse(req.body || {});
     const { id } = req.params;
 
-    assertCanAssignPermissionKeys({
-      actor: req.user,
-      permissionKeys: body.permissionKeys,
-    });
-
-    const { rows } = await query('SELECT id, is_system FROM roles WHERE id = $1', [id]);
+    const { rows } = await query('SELECT id, name, is_system FROM roles WHERE id = $1', [id]);
     if (!rows.length) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
     }
     // System roles keep their name/locked status, but their permissions may
     // be tuned by an admin in this build.
+    const isAdminRole = Boolean(rows[0].is_system) && rows[0].name === SYSTEM_ADMIN_ROLE_NAME;
+    if (isAdminRole && !isAdminActor(req.user)) {
+      throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, 'Only an Admin can change the Admin role.', { status: 403 });
+    }
+    // Emptying this role would lock every Admin out of the screen that fixes it.
+    if (isAdminRole && !body.permissionKeys.includes('user.change_role')) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'The Admin role must keep "user.change_role".', { status: 400 });
+    }
 
     const before = await loadRoleWithPermissions(id);
+    const { rows: currentKeys } = await query(
+      `SELECT p.key FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = $1`,
+      [id],
+    );
+    // Taking a permission away needs the same authority as granting it.
+    const wanted = new Set(body.permissionKeys);
+    const removed = currentKeys.map((r) => r.key).filter((key) => !wanted.has(key));
+    const previous = new Set(currentKeys.map((r) => r.key));
+    assertCanAssignPermissionKeys({
+      actor: req.user,
+      permissionKeys: [...body.permissionKeys.filter((key) => !previous.has(key)), ...removed],
+    });
 
     await withTransaction(async (client) => {
       await client.query('DELETE FROM role_permissions WHERE role_id = $1', [id]);

@@ -122,6 +122,9 @@ async function collectPayment({
         referenceId: payment.id,
         employeeId,
         notes: `Collection from ${customer.name}`,
+        // Sales audit SI-06, same as a cash sale: this opened a closed drawer
+        // with no count or log, which then let cash sales through.
+        allowAutoOpen: false,
       });
     } else if (method === 'bank_transfer') {
       treasury = await bankService.recordBankIn({

@@ -27,7 +27,7 @@ const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '30m';
 // Seconds a new token lasts, capped so it never outlives its session's
 // maximum length.
 function tokenSecondsUntil(sessionExpiresAt) {
-  const m = /^(d+)s*([smh]?)$/.exec(String(ACCESS_TOKEN_TTL).trim());
+  const m = /^(\d+)\s*([smh]?)$/.exec(String(ACCESS_TOKEN_TTL).trim());
   const ttl = m ? Number(m[1]) * ({ s: 1, m: 60, h: 3600 }[m[2]] || 1) : 1800;
   if (!sessionExpiresAt) return ttl;
   const left = Math.floor((new Date(sessionExpiresAt).getTime() - Date.now()) / 1000);
