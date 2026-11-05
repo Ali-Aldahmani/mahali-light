@@ -14,6 +14,28 @@ const PORT = Number(process.env.HARDWARE_AGENT_PORT || 17473);
 const EXPRESS_URL = (process.env.EXPRESS_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
 const DIR = process.env.HARDWARE_AGENT_DIR || path.join(os.homedir(), '.bytecra-hardware-agent');
 const TOKEN_FILE = path.join(DIR, 'pairing-token');
+// Browsers check before calling a local service from a web page (CORS and
+// Private Network Access). The agent never answered that check, so every print
+// from the POS fell back silently (review 5 Nov). Set HARDWARE_AGENT_ORIGINS to
+// the POS address(es), comma-separated, to allow only those; when it is not
+// set, any page may ask, and the pairing token is still required for printing.
+const ALLOWED_ORIGINS = (process.env.HARDWARE_AGENT_ORIGINS || '')
+  .split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean);
+
+function corsHeaders(req) {
+  const origin = req.headers.origin;
+  if (!origin) return {};
+  if (ALLOWED_ORIGINS.length && !ALLOWED_ORIGINS.includes(origin)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Hardware-Token',
+    'Access-Control-Allow-Private-Network': 'true',
+    'Access-Control-Max-Age': '600',
+    Vary: 'Origin',
+  };
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -31,6 +53,7 @@ function ensureToken() {
 function json(res, status, body) {
   const buf = Buffer.from(JSON.stringify(body));
   res.writeHead(status, {
+    ...(res.corsHeaders || {}),
     'Content-Type': 'application/json',
     'Content-Length': buf.length,
   });
@@ -38,13 +61,19 @@ function json(res, status, body) {
 }
 
 function authorized(req, token) {
-  return (req.headers['x-hardware-token'] || '') === token;
+  const given = Buffer.from(String(req.headers['x-hardware-token'] || ''));
+  const expected = Buffer.from(token);
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
 function listPrinters() {
   return new Promise((resolve) => {
-    const cmd = process.platform === 'win32' ? 'wmic' : 'lpstat';
-    const args = process.platform === 'win32' ? ['printer', 'get', 'name'] : ['-p'];
+    // wmic is gone from recent Windows 11; PowerShell's Get-Printer lists one
+    // full name per line. lpstat lines read "printer NAME is ...".
+    const cmd = process.platform === 'win32' ? 'powershell.exe' : 'lpstat';
+    const args = process.platform === 'win32'
+      ? ['-NoProfile', '-NonInteractive', '-Command', 'Get-Printer | ForEach-Object { $_.Name }']
+      : ['-p'];
     const child = spawn(cmd, args, { windowsHide: true });
     let out = '';
     child.stdout.on('data', (d) => {
@@ -52,9 +81,12 @@ function listPrinters() {
     });
     child.on('error', () => resolve([]));
     child.on('close', () => {
+      // Whole names: "HP LaserJet 400" used to come back as "HP".
       const names = out
         .split(/\r?\n/)
-        .map((l) => l.replace(/^printer\s+/i, '').split(/\s+/)[0])
+        .map((l) => (process.platform === 'win32'
+          ? l.trim()
+          : (l.match(/^printer\s+(.+?)\s+(is|disabled|now)\b/i) || [])[1] || ''))
         .filter((n) => n && n.toLowerCase() !== 'name');
       resolve(names.map((name) => ({ name })));
     });
@@ -76,7 +108,8 @@ async function fetchPdf({ kind, invoiceId, apiToken }) {
 const PRINT_SCRIPT = path.join(__dirname, 'print.ps1');
 
 function printBuffer(buf, printer, copies) {
-  const tmp = path.join(os.tmpdir(), `bytecra-print-${Date.now()}.pdf`);
+  // Random, so two prints in the same millisecond can't overwrite each other.
+  const tmp = path.join(os.tmpdir(), `bytecra-print-${crypto.randomUUID()}.pdf`);
   fs.writeFileSync(tmp, buf);
   return new Promise((resolve, reject) => {
     const n = Math.min(Math.max(Number(copies) || 1, 1), 5);
@@ -168,6 +201,12 @@ const server = http.createServer((req, res) => {
   const ip = req.socket.remoteAddress || '';
   if (ip !== '127.0.0.1' && ip !== '::1' && ip !== '::ffff:127.0.0.1') {
     json(res, 403, { success: false, error: { code: 'HW_LOCALHOST_ONLY' } });
+    return;
+  }
+  res.corsHeaders = corsHeaders(req);
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, res.corsHeaders);
+    res.end();
     return;
   }
   handle(req, res, token).catch(() => {
