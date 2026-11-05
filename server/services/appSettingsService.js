@@ -113,8 +113,12 @@ async function updateSettings(patch, { section = null, userId = null } = {}) {
               RETURNING *`;
   const { rows } = await query(sql, params);
   const shaped = shape(rows[0]);
+  syncStoreSettingsForPdf(shaped);
+  return { settings: shaped, section, userId };
+}
 
-  // Keep legacy store settings JSON in sync for PDF layer.
+// Keep legacy store settings JSON in sync for PDF layer.
+function syncStoreSettingsForPdf(shaped) {
   try {
     updateStoreSettings({
       storeName: shaped.store_name,
@@ -122,7 +126,9 @@ async function updateSettings(patch, { section = null, userId = null } = {}) {
       storePhone: shaped.store_phone,
       storeEmail: shaped.store_email,
       storeTRN: shaped.store_trn || shaped.vat_number,
-      logoPath: shaped.store_logo_path,
+      // POST /settings/logo writes the JSON only, so an empty column here must
+      // not wipe a logo that is in use.
+      ...(shaped.store_logo_path ? { logoPath: shaped.store_logo_path } : {}),
       invoiceFooterNote: shaped.invoice_footer_note,
       invoiceTerms: shaped.invoice_terms,
       currency: shaped.store_currency,
@@ -135,8 +141,6 @@ async function updateSettings(patch, { section = null, userId = null } = {}) {
   } catch (_e) {
     /* best-effort */
   }
-
-  return { settings: shaped, section, userId };
 }
 
 async function setLogoPath(relPath) {
@@ -181,6 +185,7 @@ async function getPublicSettings() {
 }
 
 module.exports = {
+  syncStoreSettingsForPdf,
   getSettings,
   getPublicSettings,
   isSetupComplete,

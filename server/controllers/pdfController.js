@@ -77,13 +77,17 @@ async function getReceiptPdf(req, res, next) {
   try {
     const { id } = req.params;
     const { rows } = await query(
-      `SELECT id, invoice_number FROM invoices WHERE id = $1`,
+      `SELECT id, invoice_number, status FROM invoices WHERE id = $1`,
       [id],
     );
     if (!rows.length) {
       throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, {
         status: 404,
       });
+    }
+    // A draft isn't a sale, and its receipt looked exactly like a paid one.
+    if (rows[0].status === 'draft') {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE, 'A receipt can only be printed once the sale is confirmed.', { status: 409 });
     }
     const result = await generateReceiptPDF(id);
     streamPdfFile(res, result.absPath, `${rows[0].invoice_number}-receipt`);

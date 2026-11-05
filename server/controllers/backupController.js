@@ -306,6 +306,13 @@ async function getSettings(req, res, next) {
 async function updateSettings(req, res, next) {
   try {
     const body = settingsSchema.parse(req.body || {});
+    // These choose the program the server runs and where every full database
+    // dump lands, which is more than configuring a schedule.
+    const pathChange = ['pg_dump_path', 'pg_restore_path', 'local_path', 'nas_path', 'nas_ip']
+      .some((key) => body[key] !== undefined);
+    if (pathChange && !isAdminActor(req.user)) {
+      throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, 'Only an Admin can change backup locations.', { status: 403 });
+    }
     if (body.encryption_enabled === true && !process.env.MAHALI_BACKUP_SECRET) {
       // Refuse rather than save a setting every backup would then fail on.
       throw new AppError(

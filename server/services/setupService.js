@@ -160,7 +160,11 @@ async function completeSetup(payload) {
         console.warn('[setup] cash drawer open failed', err.message);
       }
     }
-    return appSettingsService.getSettings();
+    const settings = await appSettingsService.getSettings();
+    // Tax invoices read this copy. Without it they printed the built-in sample
+    // store name and TRN until someone saved Settings.
+    appSettingsService.syncStoreSettingsForPdf(settings);
+    return settings;
   });
 }
 
