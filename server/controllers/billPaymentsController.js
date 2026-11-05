@@ -24,7 +24,9 @@ const listSchema = z.object({
 async function list(req, res, next) {
   try {
     const filters = listSchema.parse(req.query || {});
-    const { limit, offset, page } = parsePagination(req);
+    // The yearly bills calendar asks for every payment at once; at the general
+    // cap of 100 some due dates were missing.
+    const { limit, offset, page } = parsePagination(req, { maxLimit: 500 });
     const rows = await billService.listPayments({ ...filters, limit, offset });
     return ok(res, rows, { page, limit });
   } catch (err) {

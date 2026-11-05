@@ -50,7 +50,8 @@ function shape(row) {
 
 async function list(req, res, next) {
   try {
-    const { page, limit, offset } = parsePagination(req);
+    // Employee pickers load everyone at once.
+    const { page, limit, offset } = parsePagination(req, { maxLimit: 500 });
     const search = (req.query.search || '').toString().trim();
 
     const where = [];

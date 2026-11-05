@@ -28,6 +28,9 @@ interface InventoryState {
 // Inventory store keeps the small counters used by the sidebar and the
 // dashboard up-to-date in real time. The cache of variant quantities itself
 // lives in stockCacheService.
+// The refresh already running, so screens that ask at the same time share it.
+let refreshInFlight: Promise<void> | null = null;
+
 export const useInventoryStore = create<InventoryState>()((set, get) => ({
   lowStockCount: 0,
   outOfStockCount: 0,
@@ -39,6 +42,8 @@ export const useInventoryStore = create<InventoryState>()((set, get) => ({
   loading: false,
 
   async refreshAll() {
+    if (refreshInFlight) return refreshInFlight;
+    refreshInFlight = (async () => {
     set({ loading: true });
     try {
       const [summary, adj, alerts] = await Promise.all([
@@ -65,7 +70,10 @@ export const useInventoryStore = create<InventoryState>()((set, get) => ({
       }
     } finally {
       set({ loading: false });
+      refreshInFlight = null;
     }
+    })();
+    return refreshInFlight;
   },
 
   async refreshAlerts() {

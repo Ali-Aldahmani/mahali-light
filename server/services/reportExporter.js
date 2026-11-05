@@ -185,7 +185,10 @@ async function exportToExcel(report) {
         // ExcelJS handles JS Date objects nicely with numFmt.
         if (v) {
           const d = new Date(v);
-          v = Number.isNaN(d.getTime()) ? v : d;
+          // ExcelJS writes a Date as UTC, so Excel showed times 4 hours behind
+          // Dubai and early-morning sales on the day before. Shift to the
+          // store's wall-clock time (the process runs in the store time zone).
+          v = Number.isNaN(d.getTime()) ? v : new Date(d.getTime() - d.getTimezoneOffset() * 60000);
         }
       }
       values[c.key] = v ?? '';

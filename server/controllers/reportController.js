@@ -150,7 +150,11 @@ async function exportReport(req, res, next) {
         : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     res.setHeader('Content-Type', mime);
     res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
-    return fs.createReadStream(file.absPath).pipe(res);
+    // Exports hold financial data and nothing serves them again, so they are
+    // deleted once sent instead of piling up in uploads/reports.
+    const stream = fs.createReadStream(file.absPath);
+    stream.on('close', () => fs.unlink(file.absPath, () => {}));
+    return stream.pipe(res);
   } catch (err) {
     if (err instanceof z.ZodError) return next(zodFail(err));
     next(err);

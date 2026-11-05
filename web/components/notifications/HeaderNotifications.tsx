@@ -32,6 +32,7 @@ export default function HeaderNotifications() {
   const markUnread = useNotificationStore((s) => s.markUnread);
   const dismiss = useNotificationStore((s) => s.dismiss);
   const setPinned = useNotificationStore((s) => s.setPinned);
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
 
   // The bell's badge counts the loaded list, so load it on mount rather than
   // waiting for the first open; then refresh each time the panel opens.
@@ -74,6 +75,7 @@ export default function HeaderNotifications() {
       onPinChange={(item, pinned) => setPinned(byId(item.id), pinned)}
       onSettings={() => router.push('/settings/notifications')}
       hasMore={hasMore}
+      unreadCount={unreadCount}
       loading={loading}
       onLoadMore={() => fetchNotifications({ append: true })}
     />

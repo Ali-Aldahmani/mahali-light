@@ -4,15 +4,16 @@ import { useAuthStore } from './authStore';
 import { toast } from './toastStore';
 
 // ---- Sound ----------------------------------------------------------------
-// Lazy-loaded HTMLAudioElement per severity, cached so we don't re-decode
-// each play. Falls back silently if the asset is missing or audio blocked.
-const SOUND_FILES = {
-  info: '/sounds/notify-info.mp3',
-  warning: '/sounds/notify-warning.mp3',
-  error: '/sounds/notify-error.mp3',
-  critical: '/sounds/notify-critical.mp3',
+// A short tone made in the browser, higher and repeated for worse news. The
+// mp3 files this used to load were never shipped, so no alert ever sounded
+// (review 5 Nov). Silent where audio is blocked until the page is clicked.
+const TONES: Record<string, { hz: number; beeps: number }> = {
+  info: { hz: 660, beeps: 1 },
+  warning: { hz: 880, beeps: 2 },
+  error: { hz: 988, beeps: 2 },
+  critical: { hz: 1175, beeps: 3 },
 };
-const audioCache = new Map();
+let audioContext: AudioContext | null = null;
 let lastSoundAt = 0;
 function playSound(severity = 'info') {
   // Coalesce bursts — only one sound per 1500ms even if several arrive.
@@ -20,15 +21,23 @@ function playSound(severity = 'info') {
   if (now - lastSoundAt < 1500) return;
   lastSoundAt = now;
   try {
-    const src = SOUND_FILES[severity] || SOUND_FILES.info;
-    let a = audioCache.get(src);
-    if (!a) {
-      a = new Audio(src);
-      a.volume = 0.3;
-      audioCache.set(src, a);
+    const Ctx = typeof window !== 'undefined' && (window.AudioContext || (window as any).webkitAudioContext);
+    if (!Ctx) return;
+    audioContext = audioContext || new Ctx();
+    const ctx = audioContext!;
+    const { hz, beeps } = TONES[severity] || TONES.info;
+    for (let i = 0; i < beeps; i += 1) {
+      const start = ctx.currentTime + i * 0.18;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.15, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.14);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.15);
     }
-    a.currentTime = 0;
-    a.play().catch(() => {});
   } catch (_e) {
     /* ignore */
   }
@@ -146,6 +155,14 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
     }
     if (get().preferences?.sound_enabled !== false) {
       playSound(notification.severity);
+    }
+    // Something must show without opening the bell, and Cashier Mode has no
+    // bell at all (review 5 Nov, notes.txt).
+    if (!get().panelOpen && notification.title) {
+      const show = notification.severity === 'critical' || notification.severity === 'error'
+        ? toast.error
+        : notification.severity === 'warning' ? toast.warning : toast.info;
+      show(notification.title);
     }
     maybeDesktopNotify(notification);
   },

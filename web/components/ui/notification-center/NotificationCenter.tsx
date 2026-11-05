@@ -46,6 +46,9 @@ export interface NotificationCenterProps {
   loading?: boolean;
   /** Extra classes for the bell button. */
   triggerClassName?: string;
+  /** The server's unread count. The loaded list is only the latest page, so
+   * counting it under-reports (review 5 Nov). */
+  unreadCount?: number;
 }
 
 type View = "all" | "unread";
@@ -125,7 +128,7 @@ function NotificationVisual({ item }: { item: NotificationItem }) {
   </span>;
 }
 
-export function NotificationCenter({ notifications: initial, label = "Notifications", onReadChange, onDismiss, onPinChange, open, onOpenChange, avoidCollisions = true, onSettings, hasMore = false, onLoadMore, loading = false, triggerClassName }: NotificationCenterProps) {
+export function NotificationCenter({ notifications: initial, label = "Notifications", onReadChange, onDismiss, onPinChange, open, onOpenChange, avoidCollisions = true, onSettings, hasMore = false, onLoadMore, loading = false, triggerClassName, unreadCount: unreadTotal }: NotificationCenterProps) {
   const reduce = useReducedMotion();
   const layoutId = useId();
   const [internalOpen, setInternalOpen] = useState(false);
@@ -141,7 +144,8 @@ export function NotificationCenter({ notifications: initial, label = "Notificati
   const allTabRef = useRef<HTMLButtonElement>(null);
   const unreadTabRef = useRef<HTMLButtonElement>(null);
   const isOpen = open ?? internalOpen;
-  const unreadCount = useMemo(() => items.filter((item) => !item.read).length, [items]);
+  const loadedUnread = useMemo(() => items.filter((item) => !item.read).length, [items]);
+  const unreadCount = typeof unreadTotal === 'number' ? Math.max(unreadTotal, loadedUnread) : loadedUnread;
   const readCount = items.length - unreadCount;
   // Pinned first (oldest pin on top), then everything else in the order given.
   const ordered = useMemo(() => {
