@@ -21,6 +21,7 @@ const createSchema = z.object({
             quantity: z.number().finite().nonnegative(),
             unit_price: z.number().finite().nonnegative().optional(),
             discount_amount: z.number().finite().nonnegative().optional(),
+            serial_number: z.string().trim().max(100).optional(),
           }),
         )
         .optional(),

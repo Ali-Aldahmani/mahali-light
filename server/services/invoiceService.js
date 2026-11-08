@@ -385,12 +385,18 @@ async function assertDraftStillSellable(client, invoiceId) {
       `${retired.product_name} has been deactivated since this sale was started. Remove it to continue.`,
       { status: 409 });
   }
+  const { rows: [inv] } = await client.query(`SELECT invoice_discount FROM invoices WHERE id = $1`, [invoiceId]);
+  await assertLinesWithinRestrictions(client, items, money(inv?.invoice_discount || 0));
+}
+
+// Spreads the invoice discount across lines by their totals and checks each
+// restricted product's net price (custom lines have no product and are skipped).
+async function assertLinesWithinRestrictions(client, items, invDisc) {
+  const catalog = items.filter((it) => it.product_id);
   const restrictions = await pricingRestrictionService.getRestrictionsMap(
     client, catalog.map((it) => it.product_id),
   );
   if (!restrictions.size) return;
-  const { rows: [inv] } = await client.query(`SELECT invoice_discount FROM invoices WHERE id = $1`, [invoiceId]);
-  const invDisc = money(inv?.invoice_discount || 0);
   const base = money(items.reduce((s, it) => s + Number(it.line_total || 0), 0));
   for (const it of catalog) {
     const restriction = restrictions.get(it.product_id);
@@ -431,25 +437,7 @@ async function assertInvoiceDiscountAllowed(client, invoiceId) {
       { status: 400, details: { maxInvoiceDiscount: base } });
   }
 
-  const restrictions = await pricingRestrictionService.getRestrictionsMap(
-    client,
-    items.map((it) => it.product_id),
-  );
-  if (!restrictions.size) return;
-
-  for (const it of items) {
-    const restriction = restrictions.get(it.product_id);
-    const qty = Number(it.quantity);
-    if (!restriction || !(qty > 0)) continue;
-    const lineTotal = Number(it.line_total || 0);
-    const share = (invDisc * lineTotal) / base;
-    pricingRestrictionService.assertPriceAllowed({
-      restriction,
-      catalogPrice: it.selling_price,
-      netUnitPrice: (lineTotal - share) / qty,
-      productName: it.product_name,
-    });
-  }
+  await assertLinesWithinRestrictions(client, items, invDisc);
 }
 
 // Recompute and persist invoice totals on the row itself. Used after items
@@ -535,7 +523,7 @@ async function posAllowsNegativeStock(_client) {
 
 async function findMissingSerialNumbers(client, invoiceId) {
   const { rows } = await client.query(
-    `SELECT ii.id, ii.product_name, ii.serial_number,
+    `SELECT ii.id, ii.product_name, ii.serial_number, ii.variant_id,
             COALESCE(c.requires_serial, false) AS requires_serial
        FROM invoice_items ii
        JOIN products p ON p.id = ii.product_id
@@ -1289,6 +1277,7 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
     const priceChangeAllowed = invoice.status !== 'draft' || canOverridePrice;
 
     const changes = req.changes || {};
+    const addedVariants = new Set();
     const stockEmits = [];
     const financialChange = Array.isArray(changes.items) || changes.invoiceDiscount != null;
     if (financialChange) await assertNoCommittedReturns(client, req.invoice_id);
@@ -1373,6 +1362,7 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
         }
         if (!cur) {
           if (newQty > 0) {
+            addedVariants.add(requested.variant_id);
             await replaceItems(client, req.invoice_id, [priceChangeAllowed ? requested : { ...requested, discount_amount: 0 }], {
               append: true, startPosition: currentItems.length + requestedVariants.size,
               // See priceChangeAllowed above: only trusted outright on a
@@ -1472,6 +1462,16 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
     }
 
     if (financialChange) await assertInvoiceDiscountAllowed(client, req.invoice_id);
+    // A line added to a confirmed invoice goes through no confirm step, which is
+    // where serial numbers are normally enforced.
+    if (invoice.status === 'confirmed' && addedVariants.size) {
+      const missing = (await findMissingSerialNumbers(client, req.invoice_id))
+        .filter((line) => addedVariants.has(line.variant_id));
+      if (missing.length) {
+        throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+          `${missing[0].product_name} needs a serial number before it can be added.`, { status: 400 });
+      }
+    }
     const totals = await recalculateAndPersistTotals(client, req.invoice_id);
     if (invoice.status === 'confirmed' && financialChange) {
       if (totals.total !== money(invoice.total) || totals.amountPaid !== totals.total) {

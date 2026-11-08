@@ -17,15 +17,28 @@ const TOKEN_FILE = path.join(DIR, 'pairing-token');
 // Browsers check before calling a local service from a web page (CORS and
 // Private Network Access). The agent never answered that check, so every print
 // from the POS fell back silently (review 5 Nov). Set HARDWARE_AGENT_ORIGINS to
-// the POS address(es), comma-separated, to allow only those; when it is not
-// set, any page may ask, and the pairing token is still required for printing.
+// the POS address(es), comma-separated, to allow only those. When it is not
+// set, pages on this PC or the local network may ask, and no public website
+// can. The pairing token is required for printing either way.
 const ALLOWED_ORIGINS = (process.env.HARDWARE_AGENT_ORIGINS || '')
   .split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean);
+
+function isLocalOrigin(origin) {
+  try {
+    const host = new URL(origin).hostname;
+    return host === 'localhost'
+      || /\.(local|lan|localhost|test)$/i.test(host)
+      || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)
+      || !host.includes('.'); // a bare PC name on the network
+  } catch (_e) {
+    return false;
+  }
+}
 
 function corsHeaders(req) {
   const origin = req.headers.origin;
   if (!origin) return {};
-  if (ALLOWED_ORIGINS.length && !ALLOWED_ORIGINS.includes(origin)) return {};
+  if (ALLOWED_ORIGINS.length ? !ALLOWED_ORIGINS.includes(origin) : !isLocalOrigin(origin)) return {};
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',

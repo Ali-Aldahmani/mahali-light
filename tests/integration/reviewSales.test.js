@@ -194,6 +194,32 @@ describe.skipIf(!enabled)('sales review fixes on real PostgreSQL', () => {
     expect((await adminUser.as('put', `/invoices/${inv.id}/edit-request/${mine.id}/approve`)).status).toBe(200);
   });
 
+  it('an approved edit adding a line that needs a serial must supply it', async () => {
+    const { rows: [cat] } = await db.query(`INSERT INTO product_categories (name, requires_serial) VALUES ('Serialled', true) RETURNING id`);
+    const { rows: [p] } = await db.query(`INSERT INTO products (name, category_id) VALUES ('Needs serial', $1) RETURNING id`, [cat.id]);
+    const { rows: [v] } = await db.query(
+      `INSERT INTO product_variants (product_id, sku, selling_price, cost_price, stock_qty) VALUES ($1, $2, 0, 0, 5) RETURNING id`,
+      [p.id, randomUUID()]);
+    const inv = await confirmedSale();
+    const file = async (extra) => (await db.query(
+      `INSERT INTO invoice_edit_requests (invoice_id, requested_by, request_note, changes, status)
+       VALUES ($1, $2, 'Add the serial item', $3, 'pending') RETURNING id`,
+      [inv.id, cashier.id, JSON.stringify({ items: [{ variant_id: v.id, quantity: 1, ...extra }] })])).rows[0].id;
+    const refused = await manager.as('put', `/invoices/${inv.id}/edit-request/${await file({})}/approve`);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    expect(JSON.stringify(refused.body)).toContain('serial');
+    const ok = await manager.as('put', `/invoices/${inv.id}/edit-request/${await file({ serial_number: 'SN-1' })}/approve`);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+  });
+
+  it('a Cashier cannot file a supplier return', async () => {
+    const res = await cashier.as('post', '/return-requests').send({
+      returnType: 'supplier_return', referenceType: 'manual', supplierId: randomUUID(), reason: 'defective',
+      requestNote: 'Back to the supplier', items: [{ variantId, productId, quantity: 1, condition: 'damaged', unitPrice: 20 }],
+    });
+    expect(res.status).toBe(403);
+  });
+
   it('an approved draft edit cannot apply a discount without override_price', async () => {
     const res = await cashier.as('post', '/invoices').send({ items: [{ variantId, quantity: 1 }] });
     const inv = res.body.data;

@@ -340,6 +340,11 @@ const createSchema = z.object({
 async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
+    // Sending goods back to a supplier is purchasing work: a Cashier could file
+    // one for any stock, debiting what the shop owes.
+    if (body.returnType === 'supplier_return' && !(req.user?.permissions || []).includes('supplier.view')) {
+      throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, undefined, { status: 403, details: { missing: ['supplier.view'] } });
+    }
     if (body.noInvoiceReturn || body.referenceType === 'manual') {
       const perms = req.user?.permissions || [];
       if (!perms.includes('return.approve') && !perms.includes('*')) {

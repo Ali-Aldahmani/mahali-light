@@ -94,6 +94,9 @@ describe.skipIf(!enabled)('create retries on real PostgreSQL', () => {
 
   it('return request', async () => {
     const { rows: [po] } = await db.query(`SELECT id FROM purchase_orders LIMIT 1`);
+    // A return is capped by what the order received.
+    await db.query(`UPDATE purchase_orders SET status = 'received' WHERE id = $1`, [po.id]);
+    await db.query(`UPDATE purchase_order_items SET quantity_received = quantity WHERE purchase_order_id = $1`, [po.id]);
     await twice('/return-requests', {
       returnType: 'supplier_return', referenceType: 'purchase_order', referenceId: po.id, supplierId,
       reason: 'defective', requestNote: 'Two units arrived cracked.',

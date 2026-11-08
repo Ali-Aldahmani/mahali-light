@@ -693,6 +693,11 @@ async function createReturnRequest({
     if (returnType === 'supplier_return' && !supplierId) {
       throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose the supplier the goods go back to.', { status: 400 });
     }
+    if (returnType === 'supplier_return' && referenceType === 'purchase_order' && referenceId) {
+      await require('./purchaseOrderService').assertReturnFitsPurchaseOrder(client, {
+        supplierId, purchaseOrderId: referenceId, items,
+      });
+    }
     const validatedRefundPlan = returnType === 'supplier_return' ? null : validateRefundPlan(
       refundPlan, returnType === 'customer_replace' ? Math.max(0, money(totalValue - replacementTotal)) : totalValue,
       { requireBankAccount: true },
@@ -1159,6 +1164,12 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
         returnOrderId: orderId, returnOrderNumber: orderNumber, amount: money(supplierReturnCost),
         vatAmount: supplierReturnVat, date: todayStoreDate(), userId: managerId,
       });
+      // The order records what the goods are worth to the supplier (cost; the
+      // request's total is at selling price), and the PO balance follows.
+      await client.query(`UPDATE return_orders SET total_value = $1 WHERE id = $2`, [money(supplierReturnCost), orderId]);
+      if (request.reference_type === 'purchase_order' && request.reference_id) {
+        await require('./purchaseOrderService').recalculatePOTotals(client, request.reference_id);
+      }
     }
 
     // --- Refund payments (customer flows only) -------------------------

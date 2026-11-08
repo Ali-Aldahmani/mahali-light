@@ -61,17 +61,75 @@ async function resolvePoLineCost(client, { variantId, productId = null, clientCo
   return requested;
 }
 
-// Value of goods sent back on a PO and not taken back by the supplier
-// (rejected or replaced returns came back, so they don't count).
+// Accounts Payable is debited for what goes back, so a return that names a PO
+// can only send back what that supplier delivered on it, less earlier returns.
+async function assertReturnFitsPurchaseOrder(client, body) {
+  const refuse = (message) => new AppError(ERROR_CODES.VALIDATION_FAILED, message, { status: 400 });
+  for (const it of body.items) {
+    const { rows } = await client.query(`SELECT product_id FROM product_variants WHERE id = $1`, [it.variantId]);
+    if (rows.length && it.productId && rows[0].product_id !== it.productId) {
+      throw refuse('That variant belongs to a different product.');
+    }
+  }
+  if (!body.purchaseOrderId) return;
+  const { rows: poRows } = await client.query(
+    `SELECT supplier_id, status FROM purchase_orders WHERE id = $1 FOR UPDATE`,
+    [body.purchaseOrderId],
+  );
+  if (!poRows.length) {
+    throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Purchase order not found.', { status: 404 });
+  }
+  if (poRows[0].supplier_id !== body.supplierId) throw refuse('That purchase order is from a different supplier.');
+  if (!['received', 'partially_received'].includes(poRows[0].status)) {
+    throw refuse('Goods can only be returned against a purchase order that has been received.');
+  }
+  const wanted = new Map();
+  for (const it of body.items) wanted.set(it.variantId, (wanted.get(it.variantId) || 0) + Number(it.quantity));
+  for (const [variantId, quantity] of wanted) {
+    const { rows: [line] } = await client.query(
+      `SELECT
+         (SELECT COALESCE(SUM(quantity_received), 0) FROM purchase_order_items
+           WHERE purchase_order_id = $1 AND variant_id = $2)::float8 AS received,
+         (SELECT COALESCE(SUM(sri.quantity), 0)
+            FROM supplier_return_items sri
+            JOIN supplier_returns sr ON sr.id = sri.supplier_return_id
+           WHERE sr.purchase_order_id = $1 AND sri.variant_id = $2
+             AND COALESCE(sr.resolution, '') NOT IN ('rejected', 'replaced'))::float8 AS returned,
+         (SELECT COALESCE(SUM(rri.quantity), 0)
+            FROM return_request_items rri
+            JOIN return_requests rr ON rr.id = rri.return_request_id
+           WHERE rr.return_type = 'supplier_return' AND rr.reference_type = 'purchase_order'
+             AND rr.reference_id = $1 AND rri.variant_id = $2
+             AND rr.status NOT IN ('rejected', 'cancelled'))::float8 AS requested`,
+      [body.purchaseOrderId, variantId],
+    );
+    const left = line.received - line.returned - line.requested;
+    if (quantity > left + 0.001) {
+      throw refuse(`Only ${Math.max(left, 0)} of this item can still be returned on that purchase order.`);
+    }
+  }
+}
+
+// What goods sent back on a PO take off what is owed, through either return
+// flow. Rejected or replaced returns came back, so they don't count. VAT
+// included: the return reverses it too, and the PO total includes it.
 async function returnedValueOf(client, poId) {
-  const { rows } = await client.query(
-    `SELECT COALESCE(SUM(total_value), 0)::numeric AS value
-       FROM supplier_returns
-      WHERE purchase_order_id = $1
-        AND COALESCE(resolution, '') NOT IN ('rejected', 'replaced')`,
+  const { rows: [row] } = await client.query(
+    `SELECT
+       (SELECT COALESCE(SUM(total_value), 0) FROM supplier_returns
+         WHERE purchase_order_id = $1
+           AND COALESCE(resolution, '') NOT IN ('rejected', 'replaced'))::float8
+       + (SELECT COALESCE(SUM(total_value), 0) FROM return_orders
+           WHERE original_po_id = $1 AND return_type = 'supplier_return')::float8 AS value,
+       po.subtotal, po.tax_amount
+       FROM purchase_orders po WHERE po.id = $1`,
     [poId],
   );
-  return money(rows[0].value);
+  if (!row) return 0;
+  const value = Number(row.value) || 0;
+  const subtotal = Number(row.subtotal) || 0;
+  const vat = subtotal > 0 ? value * (Number(row.tax_amount) || 0) / subtotal : 0;
+  return money(value + vat);
 }
 
 // Compute and persist totals on the purchase_orders row from its items.
@@ -360,6 +418,7 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
 
 module.exports = {
   returnedValueOf,
+  assertReturnFitsPurchaseOrder,
   generatePoNumber,
   recalculatePOTotals,
   resolvePoTaxAmount,

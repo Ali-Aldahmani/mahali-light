@@ -29,6 +29,7 @@ import type { DifferencePayment, Invoice, InvoiceItem, RefundPlanEntry, Replacem
 import { defaultBankAccountId, usePaymentBankAccounts } from '@/components/payments/BankTenderFields';
 import { useRequestKey } from '@/hooks/useRequestKey';
 import SupplierSelect from '@/components/ui/SupplierSelect';
+import { getSupplierPurchaseOrders } from '@/services/supplierService';
 
 const REASON_OPTIONS: SelectOption[] = [
   { value: 'defective', label: 'Defective' },
@@ -96,6 +97,7 @@ function NewReturnRequestPageContent() {
   // A supplier return records who the goods go back to; without one it never
   // appeared on any supplier's page.
   const [returnSupplier, setReturnSupplier] = useState<any>(null);
+  const [returnPoId, setReturnPoId] = useState<string | null>(null);
   const [replacementItems, setReplacementItems] = useState<ReplacementPlanItem[]>([]);
   const [differencePayment, setDifferencePayment] = useState<DifferencePayment>({
     method: 'cash',
@@ -352,8 +354,13 @@ function NewReturnRequestPageContent() {
 
       const body = {
         returnType,
-        referenceType: noInvoice ? 'manual' : 'invoice',
-        referenceId: noInvoice ? null : invoice?.id || null,
+        // Naming the PO reverses its input VAT and caps the return at what it received.
+        referenceType: noInvoice
+          ? (returnType === 'supplier_return' && returnPoId ? 'purchase_order' : 'manual')
+          : 'invoice',
+        referenceId: noInvoice
+          ? (returnType === 'supplier_return' ? returnPoId : null)
+          : invoice?.id || null,
         customerId: invoice?.customerId || null,
         supplierId: returnType === 'supplier_return' ? returnSupplier?.id || null : null,
         noInvoiceReturn: !!noInvoice,
@@ -425,7 +432,14 @@ function NewReturnRequestPageContent() {
           />
         )}
         {step === 2 && returnType === 'supplier_return' && (
-          <SupplierReturnPlanStep total={totalValue} supplier={returnSupplier} onSupplier={setReturnSupplier} />
+          <SupplierReturnPlanStep
+            total={totalValue}
+            supplier={returnSupplier}
+            onSupplier={(s: any) => { setReturnSupplier(s); setReturnPoId(null); }}
+            poId={returnPoId}
+            onPo={setReturnPoId}
+            canPickPo={!!noInvoice}
+          />
         )}
         {step === 3 && (
           <ReviewStep
@@ -624,7 +638,10 @@ function ItemsStep({
             {[
               { value: 'customer_refund', label: 'Refund' },
               { value: 'customer_replace', label: 'Replacement' },
-              { value: 'supplier_return', label: 'Supplier return' },
+              // Needs supplier.view on the server too.
+              ...(useAuthStore.getState().permissions.includes('supplier.view')
+                ? [{ value: 'supplier_return', label: 'Supplier return' }]
+                : []),
             ].map((opt) => (
               <button
                 key={opt.value}
@@ -1249,13 +1266,45 @@ function ReplaceStep({
 }
 
 function SupplierReturnPlanStep({
-  total, supplier, onSupplier,
-}: { total: number; supplier: any; onSupplier: (s: any) => void }) {
+  total, supplier, onSupplier, poId, onPo, canPickPo,
+}: {
+  total: number;
+  supplier: any;
+  onSupplier: (s: any) => void;
+  poId: string | null;
+  onPo: (id: string | null) => void;
+  canPickPo: boolean;
+}) {
+  const [orders, setOrders] = useState<any[]>([]);
+  useEffect(() => {
+    if (!supplier?.id || !canPickPo) {
+      setOrders([]);
+      return undefined;
+    }
+    let live = true;
+    getSupplierPurchaseOrders(supplier.id)
+      .then((rows: any) => {
+        if (live) setOrders((rows || []).filter((o: any) => ['received', 'partially_received'].includes(o.status)));
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [supplier?.id, canPickPo]);
   return (
     <div className="card p-5">
       <h3 className="text-sm font-semibold text-ink mb-2">Supplier return</h3>
-      <div className="mb-3">
+      <div className="mb-3 space-y-3">
         <SupplierSelect label="Supplier" required value={supplier} onChange={onSupplier} />
+        {orders.length > 0 && (
+          <Select
+            label="Purchase order (recommended)"
+            value={poId || ''}
+            onChange={(v: string) => onPo(v || null)}
+            options={[
+              { value: '', label: 'Not linked to an order' },
+              ...orders.map((o: any) => ({ value: o.id, label: o.poNumber })),
+            ]}
+          />
+        )}
       </div>
       <p className="text-sm text-ink-muted mb-3">
         Stock will be removed from inventory when the manager approves this

@@ -51,6 +51,7 @@ import Modal from '@/components/ui/Modal';
 import Select from '@/components/ui/Select';
 import Input from '@/components/ui/Input';
 import { resolveSupplierReturn } from '@/services/supplierReturnService';
+import { BankAccountSelect } from '@/components/payments/BankTenderFields';
 import { fileUrl } from '@/lib/config';
 import SupplierFormSlideOver from '@/components/suppliers/SupplierFormSlideOver';
 import { onPurchaseOrderEvent } from '@/store/socketStore';
@@ -614,18 +615,27 @@ function ResolveReturnModal({
 }: { row: LegacyReturnRow | null; onClose: () => void; onResolved: () => void }) {
   const [resolution, setResolution] = useState('credit_note');
   const [notes, setNotes] = useState('');
+  const [refundMethod, setRefundMethod] = useState('cash');
+  const [bankAccountId, setBankAccountId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (row) {
       setResolution('credit_note');
       setNotes('');
+      setRefundMethod('cash');
     }
   }, [row]);
   if (!row) return null;
   async function submit() {
     setSaving(true);
     try {
-      await resolveSupplierReturn(row!.id, { resolution, resolutionNotes: notes.trim() || null });
+      await resolveSupplierReturn(row!.id, {
+        resolution,
+        resolutionNotes: notes.trim() || null,
+        ...(resolution === 'refunded'
+          ? { refundMethod, bankAccountId: refundMethod === 'bank' ? bankAccountId : null }
+          : {}),
+      });
       toast.success(`Return ${row!.returnNumber} resolved.`);
       onResolved();
       onClose();
@@ -650,6 +660,19 @@ function ResolveReturnModal({
     >
       <div className="space-y-4">
         <Select label="What happened" value={resolution} onChange={(v: string) => setResolution(v)} options={RESOLUTION_OPTIONS} />
+        {resolution === 'refunded' && (
+          <>
+            <Select
+              label="How the supplier paid it back"
+              value={refundMethod}
+              onChange={(v: string) => setRefundMethod(v)}
+              options={[{ value: 'cash', label: 'Cash' }, { value: 'bank', label: 'Bank transfer' }]}
+            />
+            {refundMethod === 'bank' && (
+              <BankAccountSelect value={bankAccountId} onChange={setBankAccountId} label="Paid into" />
+            )}
+          </>
+        )}
         <Input label="Notes (optional)" value={notes} onChange={(e: any) => setNotes(e.target.value)} />
       </div>
     </Modal>

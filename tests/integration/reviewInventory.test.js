@@ -173,6 +173,63 @@ describe.skipIf(!enabled)('inventory review fixes on real PostgreSQL', () => {
     expect(Number(row.balance_due)).toBe(0);
   });
 
+  it('the amount owed after a return includes the VAT on the goods sent back', async () => {
+    await db.query(`UPDATE app_settings SET vat_enabled = true, vat_rate = 5`);
+    const po = await receivedPo(4);
+    const { rows: [start] } = await db.query(`SELECT total_cost FROM purchase_orders WHERE id = $1`, [po]);
+    const before = Number(start.total_cost);
+    const ret = await supplierReturn(po, 1);
+    expect(ret.status, JSON.stringify(ret.body)).toBe(201);
+    const { rows: [row] } = await db.query(`SELECT balance_due FROM purchase_orders WHERE id = $1`, [po]);
+    expect(Number(row.balance_due)).toBeCloseTo(before - before / 4, 1);
+  });
+
+  it('a supplier refund books the money only when something was overpaid', async () => {
+    const po = await receivedPo(2);
+    const { rows: [account] } = await db.query(
+      `INSERT INTO bank_accounts (bank_name, account_name, current_balance) VALUES ('Refund bank', 'R', 100000) RETURNING id`);
+    const made = await supplierReturn(po, 1);
+    expect(made.status).toBe(201);
+    const resolve = (id, body) => manager.as('put', `/supplier-returns/${id}/resolve`).send(body);
+    const id = made.body.data.id;
+
+    expect((await resolve(id, { resolution: 'refunded' })).status).toBe(400);
+    // Nothing paid on this PO yet, so there is nothing to refund.
+    const none = await resolve(id, { resolution: 'refunded', refundMethod: 'bank', bankAccountId: account.id });
+    expect(none.status, JSON.stringify(none.body)).toBe(409);
+
+    // Paid in full first, returned after: the supplier owes money back.
+    const po2 = await receivedPo(2);
+    const { rows: [p2] } = await db.query(`SELECT total_cost FROM purchase_orders WHERE id = $1`, [po2]);
+    const paid = await manager.as('post', `/purchase-orders/${po2}/payments`).set('Idempotency-Key', randomUUID())
+      .send({ amount: Number(p2.total_cost), paymentMethod: 'bank_transfer', bankAccountId: account.id });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(201);
+    const made2 = await supplierReturn(po2, 1);
+    const balance = async () => Number((await db.query(
+      `SELECT current_balance FROM bank_accounts WHERE id = $1`, [account.id])).rows[0].current_balance);
+    const start = await balance();
+    const done = await resolve(made2.body.data.id, { resolution: 'refunded', refundMethod: 'bank', bankAccountId: account.id });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(await balance()).toBeCloseTo(start + Number(p2.total_cost) / 2, 1);
+    const { rows: [row] } = await db.query(`SELECT balance_due, payment_status FROM purchase_orders WHERE id = $1`, [po2]);
+    expect(Number(row.balance_due)).toBeCloseTo(0, 1);
+    expect(row.payment_status).toBe('paid');
+  });
+
+  it('a supplier return can take units from quarantine', async () => {
+    const po = await receivedPo(3);
+    await db.query(`UPDATE product_variants SET quarantine_qty = 2 WHERE id = $1`, [variantId]);
+    const { rows: [before] } = await db.query(`SELECT stock_qty FROM product_variants WHERE id = $1`, [variantId]);
+    const res = await manager.as('post', '/supplier-returns').set('Idempotency-Key', randomUUID()).send({
+      supplierId, purchaseOrderId: po, reason: 'defective',
+      items: [{ variantId, productId, quantity: 2, condition: 'damaged', fromQuarantine: true }],
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const { rows: [after] } = await db.query(`SELECT stock_qty, quarantine_qty FROM product_variants WHERE id = $1`, [variantId]);
+    expect(Number(after.quarantine_qty)).toBe(0);
+    expect(Number(after.stock_qty)).toBe(Number(before.stock_qty));
+  });
+
   it('a PO line cannot pair a variant with another product', async () => {
     const res = await manager.as('post', '/purchase-orders').set('Idempotency-Key', randomUUID()).send({
       supplierId, items: [{ variantId, productId: otherProductId, quantity: 1, costPricePerUnit: 20 }],

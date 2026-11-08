@@ -52,6 +52,7 @@ export default function SupplierReturnSlideOver({
   onCreated,
 }: SupplierReturnSlideOverProps) {
   const [reason, setReason] = useState('defective');
+  const [fromQuarantine, setFromQuarantine] = useState(false);
   const [items, setItems] = useState<ReturnRow[]>([]);
   const createKey = useRequestKey(open);
   const [saving, setSaving] = useState(false);
@@ -107,6 +108,7 @@ export default function SupplierReturnSlideOver({
           unitCost: Number(it.unitCost),
           condition: it.condition || null,
           serialNumber: it.serialNumber || null,
+          fromQuarantine,
         })),
       }, createKey.current());
       toast.success(`Return ${created.returnNumber} created.`);
@@ -147,6 +149,15 @@ export default function SupplierReturnSlideOver({
             searchable={false}
           />
         </div>
+        <label className="flex items-center gap-2 text-sm text-ink cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="rounded border-border text-accent focus:ring-accent"
+            checked={fromQuarantine}
+            onChange={(e) => setFromQuarantine(e.target.checked)}
+          />
+          Take these units from quarantine (not from stock on sale)
+        </label>
 
         {items.length === 0 ? (
           <div className="rounded-card border border-dashed border-border bg-surface-2 p-8 text-center text-sm text-ink-muted">

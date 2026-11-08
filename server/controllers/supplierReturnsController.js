@@ -9,7 +9,9 @@ const { applyStockMovement } = require('../services/stockService');
 const { runOnce, requestKeyFrom } = require('../utils/operations');
 const journalService = require('../services/journalService');
 const { emitEvent } = require('../socket/events');
-const { recalculatePOTotals } = require('../services/purchaseOrderService');
+const { recalculatePOTotals, assertReturnFitsPurchaseOrder, returnedValueOf } = require('../services/purchaseOrderService');
+const cashService = require('../services/cashService');
+const bankService = require('../services/bankService');
 
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -36,6 +38,8 @@ const itemSchema = z.object({
   unitCost: z.number().nonnegative().optional(),
   condition: z.enum(['defective', 'damaged', 'good']).optional().nullable(),
   serialNumber: z.string().max(100).optional().nullable(),
+  // The units are in quarantine (a customer returned them faulty), not on sale.
+  fromQuarantine: z.boolean().optional().default(false),
 });
 
 async function resolveSupplierReturnUnitCost(client, { variantId, purchaseOrderId }) {
@@ -74,7 +78,69 @@ const createSchema = z.object({
 const resolveSchema = z.object({
   resolution: z.string().refine((r) => RESOLUTIONS.has(r), 'Invalid resolution.'),
   resolutionNotes: z.string().max(2000).optional().nullable(),
+  // A refund says where the supplier's money arrived.
+  refundMethod: z.enum(['cash', 'bank']).optional().nullable(),
+  bankAccountId: z.string().uuid().optional().nullable(),
+}).refine((b) => b.resolution !== 'refunded' || b.refundMethod, {
+  message: 'Say how the supplier refunded you.', path: ['refundMethod'],
+}).refine((b) => b.refundMethod !== 'bank' || b.bankAccountId, {
+  message: 'Choose the bank account the refund went into.', path: ['bankAccountId'],
 });
+
+// The supplier paid back money for returned goods. It used to be recorded as a
+// label only: no cash or bank movement, no ledger entry. It comes in, Accounts
+// Payable (debited when the goods left) is cleared, and what the PO shows as
+// paid drops by the same amount. Only for money actually overpaid: goods on an
+// unpaid PO are settled by the lower balance, which is a credit note.
+async function bookSupplierRefund(client, { returnRow, body, userId }) {
+  const value = money(returnRow.total_value);
+  const poId = returnRow.purchase_order_id || null;
+  const gross = money(value + await supplierReturnVat(client, poId, value));
+  if (gross <= 0) return;
+  if (poId) {
+    const { rows: [po] } = await client.query(
+      `SELECT total_cost, amount_paid FROM purchase_orders WHERE id = $1 FOR UPDATE`, [poId],
+    );
+    const owed = money(Number(po.total_cost) - await returnedValueOf(client, poId));
+    const overpaid = money(Number(po.amount_paid) - owed);
+    if (gross - overpaid > 0.01) {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+        `Only ${Math.max(overpaid, 0).toFixed(2)} AED was overpaid on this order, so there is nothing more to refund. Use a credit note.`,
+        { status: 409 });
+    }
+    await client.query(
+      `UPDATE purchase_orders SET amount_paid = GREATEST(0, amount_paid - $1), updated_at = NOW() WHERE id = $2`,
+      [gross, poId],
+    );
+  }
+  const common = {
+    client,
+    transactionType: 'refund',
+    amount: gross,
+    referenceType: 'supplier_return',
+    referenceId: returnRow.id,
+    employeeId: userId,
+  };
+  if (body.refundMethod === 'cash') {
+    await cashService.recordCashIn({
+      ...common, allowAutoOpen: false, notes: `Supplier refund for ${returnRow.return_number}`,
+    });
+  } else {
+    await bankService.recordBankIn({
+      ...common, bankAccountId: body.bankAccountId, description: `Supplier refund for ${returnRow.return_number}`,
+    });
+  }
+  await journalService.postTreasuryEntry(client, {
+    referenceType: 'supplier_return_refund',
+    referenceId: returnRow.id,
+    date: todayStoreDate(),
+    description: `Supplier refund for ${returnRow.return_number}`,
+    debitCode: body.refundMethod === 'cash' ? journalService.TREASURY_CODES.cash : journalService.TREASURY_CODES.bank,
+    creditCode: '2001',
+    amount: gross,
+    userId,
+  });
+}
 
 function shapeReturn(row) {
   return {
@@ -96,55 +162,6 @@ function shapeReturn(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-// Accounts Payable is debited for what goes back, so a return that names a PO
-// can only send back what that supplier delivered on it, less earlier returns.
-async function assertReturnFitsPurchaseOrder(client, body) {
-  const refuse = (message) => new AppError(ERROR_CODES.VALIDATION_FAILED, message, { status: 400 });
-  for (const it of body.items) {
-    const { rows } = await client.query(`SELECT product_id FROM product_variants WHERE id = $1`, [it.variantId]);
-    if (rows.length && it.productId && rows[0].product_id !== it.productId) {
-      throw refuse('That variant belongs to a different product.');
-    }
-  }
-  if (!body.purchaseOrderId) return;
-  const { rows: poRows } = await client.query(
-    `SELECT supplier_id, status FROM purchase_orders WHERE id = $1 FOR UPDATE`,
-    [body.purchaseOrderId],
-  );
-  if (!poRows.length) {
-    throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, 'Purchase order not found.', { status: 404 });
-  }
-  if (poRows[0].supplier_id !== body.supplierId) throw refuse('That purchase order is from a different supplier.');
-  if (!['received', 'partially_received'].includes(poRows[0].status)) {
-    throw refuse('Goods can only be returned against a purchase order that has been received.');
-  }
-  const wanted = new Map();
-  for (const it of body.items) wanted.set(it.variantId, (wanted.get(it.variantId) || 0) + Number(it.quantity));
-  for (const [variantId, quantity] of wanted) {
-    const { rows: [line] } = await client.query(
-      `SELECT
-         (SELECT COALESCE(SUM(quantity_received), 0) FROM purchase_order_items
-           WHERE purchase_order_id = $1 AND variant_id = $2)::float8 AS received,
-         (SELECT COALESCE(SUM(sri.quantity), 0)
-            FROM supplier_return_items sri
-            JOIN supplier_returns sr ON sr.id = sri.supplier_return_id
-           WHERE sr.purchase_order_id = $1 AND sri.variant_id = $2
-             AND COALESCE(sr.resolution, '') NOT IN ('rejected', 'replaced'))::float8 AS returned,
-         (SELECT COALESCE(SUM(rri.quantity), 0)
-            FROM return_request_items rri
-            JOIN return_requests rr ON rr.id = rri.return_request_id
-           WHERE rr.return_type = 'supplier_return' AND rr.reference_type = 'purchase_order'
-             AND rr.reference_id = $1 AND rri.variant_id = $2
-             AND rr.status NOT IN ('rejected', 'cancelled'))::float8 AS requested`,
-      [body.purchaseOrderId, variantId],
-    );
-    const left = line.received - line.returned - line.requested;
-    if (quantity > left + 0.001) {
-      throw refuse(`Only ${Math.max(left, 0)} of this item can still be returned on that purchase order.`);
-    }
-  }
 }
 
 function shapeReturnItem(row) {
@@ -313,6 +330,21 @@ async function create(req, res, next) {
           ],
         );
 
+        if (it.fromQuarantine) {
+          await applyStockMovement({
+            client,
+            variantId: it.variantId,
+            productId: it.productId,
+            type: 'quarantine_release',
+            quantity: it.quantity,
+            referenceType: 'supplier_return',
+            referenceId: returnId,
+            employeeId: req.user.id,
+            notes: `Going back to the supplier on ${returnNumber}`,
+            skipReorderCheck: true,
+          });
+        }
+
         // Returning to supplier = stock out of our warehouse.
         await applyStockMovement({
           client,
@@ -395,7 +427,7 @@ async function resolve(req, res, next) {
 
     await withTransaction(async (client) => {
       const { rows } = await client.query(
-        `SELECT id, status, return_number FROM supplier_returns WHERE id = $1 FOR UPDATE`,
+        `SELECT id, status, return_number, total_value, purchase_order_id FROM supplier_returns WHERE id = $1 FOR UPDATE`,
         [id],
       );
       if (!rows.length) {
@@ -443,6 +475,10 @@ async function resolve(req, res, next) {
             userId: req.user.id,
           });
         }
+      }
+
+      if (body.resolution === 'refunded') {
+        await bookSupplierRefund(client, { returnRow: rows[0], body, userId: req.user.id });
       }
 
       await client.query(
