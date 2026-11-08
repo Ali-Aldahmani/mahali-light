@@ -4,7 +4,7 @@ Point of sale for an electrical shop (UAE). One **server PC** runs everything
 in Docker; every **till/cashier PC** is just a browser pointed at the server
 over the shop's LAN. Several tills share one PostgreSQL database.
 
-> **Version**: 1.10.1 | **License**: UNLICENSED | **Author**: Ali Aldahmani (hello@bytecra.com)
+> **Version**: 1.10.2 | **License**: UNLICENSED | **Author**: Ali Aldahmani (hello@bytecra.com)
 
 ## 1. Project overview
 
@@ -902,7 +902,7 @@ The repository uses GitHub Actions for continuous integration and automated rele
 
 ### G.2 Version Management
 
-- Current version: `1.10.1`
+- Current version: `1.10.2`
 - Version numbers are synchronized across:
   - Root `package.json`
   - `web/package.json`
