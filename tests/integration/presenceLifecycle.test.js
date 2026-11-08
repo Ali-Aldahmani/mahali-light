@@ -248,6 +248,14 @@ describe.skipIf(!enabled)('presence and logout on real PostgreSQL', () => {
     const tab = await connect(token);
     const { id } = await sessionRow(token);
     const read = async () => (await db.query(`SELECT last_activity_at, last_seen_at FROM user_sessions WHERE id = $1`, [id])).rows[0];
+    // The server's connect write can land just after the client sees "connected".
+    // Read the baseline once it has, or the write itself looks like a heartbeat's.
+    await until(async () => {
+      const first = await read();
+      await wait(50);
+      const second = await read();
+      return new Date(first.last_activity_at).getTime() === new Date(second.last_activity_at).getTime();
+    });
     const before = await read();
     await wait(50);
     // The connect just wrote the session, so a beat inside 20s writes nothing.
