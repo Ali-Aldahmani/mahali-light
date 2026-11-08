@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { AuthState } from '@/types';
+import { markSessionStart } from '@/lib/auth/activity';
 
 const STORAGE_KEY = 'mahali-light.auth';
 
@@ -31,6 +32,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setSession: ({ token, user, idleSignOutMinutes }) => {
+        markSessionStart();
         set({
           token,
           user,

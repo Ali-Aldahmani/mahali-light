@@ -15,6 +15,13 @@ function mark() {
   for (const cb of listeners) cb();
 }
 
+// Signing in is input. Tracking only starts once signed in, so the clock would
+// otherwise still read when the page loaded: a till left on the login page for
+// longer than the idle limit signed the next person straight back out.
+export function markSessionStart() {
+  lastInputAt = Date.now();
+}
+
 export function startActivityTracking() {
   if (listening || typeof window === 'undefined') return;
   listening = true;

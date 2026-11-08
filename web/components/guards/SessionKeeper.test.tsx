@@ -51,6 +51,16 @@ describe('SessionKeeper (AUTH-02, AUTH-03)', () => {
     expect(logout).not.toHaveBeenCalled();
   });
 
+  it('does not sign out someone who just signed in after the login page sat idle', async () => {
+    resetActivity(Date.now() - 40 * 60 * 1000);
+    useAuthStore.getState().setSession({
+      token: jwtExpiringIn(60 * 60 * 1000), user: { id: 'u1', permissions: [] } as any, idleSignOutMinutes: 15,
+    });
+    render(<SessionKeeper />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(logout).not.toHaveBeenCalled();
+  });
+
   it('signs the screen out at the idle limit', async () => {
     useAuthStore.setState({ token: jwtExpiringIn(60 * 60 * 1000), sessionKey: 'k', idleSignOutMinutes: 15 });
     render(<SessionKeeper />);
