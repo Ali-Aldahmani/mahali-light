@@ -4,7 +4,7 @@ Point of sale for an electrical shop (UAE). One **server PC** runs everything
 in Docker; every **till/cashier PC** is just a browser pointed at the server
 over the shop's LAN. Several tills share one PostgreSQL database.
 
-> **Version**: 1.10.0 | **License**: UNLICENSED | **Author**: Ali Aldahmani (hello@bytecra.com)
+> **Version**: 1.10.1 | **License**: UNLICENSED | **Author**: Ali Aldahmani (hello@bytecra.com)
 
 ## 1. Project overview
 
@@ -240,16 +240,9 @@ Full API documentation: See `API-doc.md` in the repository root.
 
 ### 2.4 Audit & Quality Assurance
 
-The repository includes several audit reports documenting system integrity and compliance:
+Nine audit reports reviewed the system (invoices, payments, purchase orders, cash drawer, warranties, retries, transactions, sessions, AI readiness). Their fixes, test results and every open item are summarised in **`PROJECT_REPORT.md`** in the repository root. The original audit files were removed to keep one source of truth; they remain in git history (`git show f7b874a:POS_WARRANTY_AUDIT.md`).
 
-- **POS Invoice Financial Integrity Audit** (`POS_INVOICE_FINANCIAL_INTEGRITY_AUDIT.md`) - Detailed analysis of invoice data integrity, payment idempotency, and financial consistency
-- **POS Transaction Atomicity Audit** (`POS_TRANSACTION_ATOMICITY_AUDIT.md`) - Transaction atomicity and data consistency analysis
-- **POS Warranty Audit** (`POS_WARRANTY_AUDIT.md`) - Warranty system review and validation
-- **Cash Drawer Payment Audit** (`PO_CASH_DRAWER_PAYMENT_AUDIT.md`) - Cash drawer payment flow analysis
-- **AI/ML Feasibility Audit** (`AI_ML_FEASIBILITY_AUDIT.md`) - Assessment of ML/AI integration possibilities
-- **Audit Fix Progress** (`AUDIT_FIX_PROGRESS.md`) - Status of audit findings and remediation
-
-These audits ensure the system maintains data integrity, financial accuracy, and operational reliability in production environments.
+Later work is in [AUDIT_FIX_PROGRESS.md](AUDIT_FIX_PROGRESS.md) (audit fixes) and [REVIEW_2026-11-05.md](REVIEW_2026-11-05.md) (whole-repo review).
 
 ---
 
@@ -836,9 +829,8 @@ Never run local dev processes as the live shop — the live shop is always
 
 More ops notes: `docker/README.md`. Architecture and migration record:
 `docs/web-migration/` (start with `FRONTEND_MIGRATION_INVENTORY.md` and
-`NEXTJS_NATIVE_PARITY.md`). Root-level `*_AUDIT.md` files are internal
-audit reports for specific areas (POS invoices, purchase orders, warranty,
-idempotency, etc.).
+`NEXTJS_NATIVE_PARITY.md`). Audit fixes and open
+items: `PROJECT_REPORT.md`.
 
 Invoice integrity changes, payment idempotency migration, private-file access,
 and PostgreSQL regression-test instructions: [docs/INVOICE_INTEGRITY_FIXES.md](docs/INVOICE_INTEGRITY_FIXES.md).
@@ -910,7 +902,7 @@ The repository uses GitHub Actions for continuous integration and automated rele
 
 ### G.2 Version Management
 
-- Current version: `1.10.0`
+- Current version: `1.10.1`
 - Version numbers are synchronized across:
   - Root `package.json`
   - `web/package.json`
