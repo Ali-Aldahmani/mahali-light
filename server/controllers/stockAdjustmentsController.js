@@ -326,7 +326,18 @@ async function create(req, res, next) {
       return (replayed ? ok : created)(res, shape(full[0]));
     }
 
-    const { rows: inserted } = await query(
+    // A double submit with the same key files one request, not two that could
+    // both be approved.
+    const { result: pending, replayed: pendingReplayed } = await withTransaction((client) => runOnce(client, {
+      scope: 'stock_adjustment_request',
+      key: requestKeyFrom(req),
+      userId: req.user.id,
+      payload: {
+        variantId: body.variantId, adjustmentType: body.adjustmentType,
+        quantity: body.quantity, reason: body.reason, note: body.note,
+      },
+    }, async () => {
+    const { rows: inserted } = await client.query(
       `INSERT INTO stock_adjustment_requests
          (product_id, variant_id, adjustment_type, current_qty, requested_qty,
           difference, reason, request_note, requested_by)
@@ -346,12 +357,20 @@ async function create(req, res, next) {
     );
 
     await logActivity({
+      client,
       entityType: 'stock_adjustment',
       entityId: inserted[0].id,
       action: 'stock.adjustment_requested',
       performedBy: req.user.id,
       notes: `${variant.product_name}: ${difference}`,
     });
+    return { requestId: inserted[0].id };
+    }));
+    if (pendingReplayed) {
+      const { rows: again } = await query(`${LIST_SQL} WHERE a.id = $1`, [pending.requestId]);
+      return ok(res, shape(again[0]));
+    }
+    const inserted = [{ id: pending.requestId }];
 
     const io = req.app.get('io');
     if (io) {

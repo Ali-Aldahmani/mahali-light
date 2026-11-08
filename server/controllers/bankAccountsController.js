@@ -50,7 +50,9 @@ async function getOne(req, res, next) {
 async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
-    const account = await bankService.createAccount(body, req.user.id);
+    // A retried create returns the first account instead of a second one with
+    // a second opening balance in the ledger.
+    const account = await bankService.createAccount(body, req.user.id, { requestKey: requestKeyFrom(req) });
     return created(res, account);
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -183,6 +185,19 @@ async function deposit(req, res, next) {
   }
 }
 
+// The client's flag used to be enough to take an account below zero. It now
+// needs the permission (review, 8 Nov).
+function canOverdraft(req) {
+  return (req.user?.permissions || []).includes('bank.overdraft');
+}
+function assertOverdraftAllowed(req, wanted) {
+  if (wanted && !canOverdraft(req)) {
+    throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, 'Taking an account below zero needs a manager.', {
+      status: 403, details: { missing: ['bank.overdraft'] },
+    });
+  }
+}
+
 const withdrawalSchema = depositSchema.extend({
   allowOverdraft: z.boolean().optional().default(false),
 });
@@ -190,6 +205,7 @@ const withdrawalSchema = depositSchema.extend({
 async function withdrawal(req, res, next) {
   try {
     const body = withdrawalSchema.parse(req.body || {});
+    assertOverdraftAllowed(req, body.allowOverdraft);
     const io = req.app.get('io');
     // The withdrawal and its audit entry commit together.
     const { result, replayed } = await withTransaction((client) =>
@@ -261,6 +277,7 @@ const transferSchema = z.object({
 async function transfer(req, res, next) {
   try {
     const body = transferSchema.parse(req.body || {});
+    assertOverdraftAllowed(req, body.allowOverdraft);
     const io = req.app.get('io');
     const fromId = req.params.id;
     if (body.toType === 'bank_account' && body.toId === fromId) {

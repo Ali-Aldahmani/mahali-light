@@ -60,6 +60,7 @@ async function create(req, res, next) {
     const io = req.app.get('io');
     const { replayed, ...expense } = await expenseService.createExpense({
       ...body,
+      allowOverdraft: (req.user?.permissions || []).includes('bank.overdraft'),
       userId: req.user.id,
       io,
       requestKey: requestKeyFrom(req, { required: true }),

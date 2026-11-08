@@ -317,6 +317,21 @@ function classifyError(err) {
     };
   }
 
+  // A malformed id or value in the request (22P02 bad text for a type, 22007/
+  // 22008 bad date) is the caller's mistake, not a server fault. It came back
+  // as a 500 logged at error severity, which fed the escalation alerts.
+  if (['22P02', '22007', '22008'].includes(err?.code)) {
+    return {
+      code: ERROR_CODES.VALIDATION_FAILED,
+      message: 'That value is not valid.',
+      status: 400,
+      details: null,
+      field: null,
+      severity: 'warning',
+      stack: null,
+    };
+  }
+
   const e = new AppError(ERROR_CODES.DB_QUERY_FAILED);
   return {
     code: ERROR_CODES.DB_QUERY_FAILED,

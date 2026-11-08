@@ -6,6 +6,7 @@ import Select from '../ui/Select';
 import Textarea from '../ui/Textarea';
 import { formatCurrency, storeDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
+import { useAuthStore } from '@/store/authStore';
 
 // Reusable transfer form. Source/destination are chosen from the union of the
 // cash drawer + every active bank account. The caller wires `onSubmit` to the
@@ -55,6 +56,7 @@ export default function TransferForm({
   const amt = Number(amount) || 0;
   const overdraft = from && from.type === 'cash_drawer' && amt > from.balance;
   const bankOverdraft = from && from.type === 'bank_account' && amt > from.balance;
+  const canOverdraft = useAuthStore((s) => s.permissions).includes('bank.overdraft');
 
   async function submit(e) {
     e.preventDefault();
@@ -128,14 +130,15 @@ export default function TransferForm({
 
       {bankOverdraft && (
         <p className="text-xs text-warning bg-warning-light rounded-card border border-warning/30 px-3 py-2">
-          This will leave the source bank balance negative. Proceed only with
-          manager approval.
+          {canOverdraft
+            ? 'This will leave the source bank balance negative. Proceed only with manager approval.'
+            : 'This would leave the source bank balance negative, which needs a manager.'}
         </p>
       )}
       {error && <p className="text-sm text-error">{error}</p>}
 
       <div className="flex justify-end">
-        <Button type="submit" loading={loading}>
+        <Button type="submit" loading={loading} disabled={Boolean(bankOverdraft) && !canOverdraft}>
           Transfer
         </Button>
       </div>

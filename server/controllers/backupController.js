@@ -205,6 +205,11 @@ async function restore(req, res, next) {
 
     // Two restores at once would delete each other's files, and one failing
     // would reopen the API while the other is still writing.
+    // Refuse a job that can't be restored now, while the operator is watching.
+    // This check used to run only after the reply said {queued: true}.
+    if (rows[0].status !== 'completed' && rows[0].status !== 'partial') {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE, `This backup is ${rows[0].status} and can't be restored.`, { status: 409 });
+    }
     if (restoreInProgress) {
       throw new AppError(ERROR_CODES.BIZ_INVALID_STATE, 'A restore is already running.', { status: 409 });
     }

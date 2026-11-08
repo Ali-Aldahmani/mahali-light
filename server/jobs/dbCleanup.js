@@ -43,6 +43,16 @@ let timer = null;
 // ---------------------------------------------------------------------------
 
 async function sweep() {
+  // ---------- error_logs ----------
+  // Nothing pruned these unless someone used the screen. Resolved or not, a
+  // six-month-old error is no longer actionable.
+  try {
+    const { rowCount } = await query(`DELETE FROM error_logs WHERE created_at < NOW() - INTERVAL '180 days'`);
+    if (rowCount > 0) console.log(`[dbCleanup] pruned ${rowCount} error_logs older than 180d`);
+  } catch (err) {
+    console.error('[dbCleanup] error_logs sweep failed:', err.message);
+  }
+
   // ---------- login_attempts ----------
   // Keep only the most recent LOGIN_ATTEMPTS_DAYS days.  Older rows are
   // irrelevant to the lockout window (15 min) and serve no business purpose.

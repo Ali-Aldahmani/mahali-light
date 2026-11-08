@@ -37,6 +37,7 @@ async function addPayment({
   method,
   paymentDate,
   bankAccountId = null,
+  allowOverdraft = false,
   receiptAttachment = null,
   notes = null,
   employeeId,
@@ -163,7 +164,7 @@ async function addPayment({
         employeeId,
         transactionDate: businessDate,
         description: `Payment to supplier on ${po.po_number || po.id}`,
-        allowOverdraft: true,
+        allowOverdraft,
       });
       // Keep the account the money actually left from, so a reversal goes
       // back to it even if the default bank changes later.

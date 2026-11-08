@@ -45,6 +45,7 @@ const ALL_PERMISSIONS = [
   ['customer.delete', 'Delete Customer', 'customer'],
   ['customer.collect_payment', 'Collect Customer Payment', 'customer'],
   ['customer.void_payment', 'Void a Customer Payment', 'customer'],
+  ['bank.overdraft', 'Take a Bank Account Below Zero', 'bank'],
   ['customer.edit_credit_limit', 'Change a Customer Credit Limit', 'customer'],
   ['customer.view_balance', 'View Customer Balance', 'customer'],
   ['employee.view', 'View Employees', 'employee'],

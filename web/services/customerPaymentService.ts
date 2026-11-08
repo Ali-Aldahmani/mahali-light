@@ -13,8 +13,8 @@ export async function collectPayment(customerId, body, requestKey?: string) {
   return data;
 }
 
-export async function voidPayment(paymentId) {
-  const data = await apiDelete(`/customer-payments/${paymentId}`);
+export async function voidPayment(paymentId, reason: string) {
+  const data = await apiDelete(`/customer-payments/${paymentId}`, { data: { reason } });
   validateMoneyResponse(voidPaymentResponseSchema, data, `DELETE /customer-payments/${paymentId}`);
   return data;
 }

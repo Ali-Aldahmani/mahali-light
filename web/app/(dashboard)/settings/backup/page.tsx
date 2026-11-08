@@ -132,7 +132,7 @@ function BackupSettingsPageInner() {
     const compareKeys = [
       'schedule_6h_enabled', 'schedule_nightly_enabled', 'schedule_weekly_enabled', 'schedule_monthly_enabled',
       'local_enabled', 'local_path',
-      'nas_enabled', 'nas_ip', 'nas_path', 'nas_username',
+      'nas_enabled', 'nas_ip', 'nas_path',
       'usb_enabled', 'usb_auto_detect',
       'retention_6h_days', 'retention_nightly_days', 'retention_weekly_weeks',
       'notify_on_success', 'notify_on_failure',
@@ -399,21 +399,11 @@ function SettingsForm({
             placeholder="/volume1/pos-backups"
             disabled={!canConfigure}
           />
-          <Input
-            label="NAS username"
-            value={draft.nas_username || ''}
-            onChange={(e: any) => set({ nas_username: e.target.value })}
-            disabled={!canConfigure}
-          />
-          <Input
-            label="NAS password"
-            type="password"
-            value={draft.nas_password || ''}
-            onChange={(e: any) => set({ nas_password: e.target.value })}
-            placeholder={draft.nas_password_set ? '••••••••' : 'Set new password'}
-            disabled={!canConfigure}
-          />
         </div>
+        {/* Username and password fields were here, but nothing ever used them. */}
+        <p className="text-xs text-ink-muted">
+          The server must already have access to this folder: sign in to the share or mount it on the server itself.
+        </p>
         <Button
           variant="secondary"
           size="sm"

@@ -75,7 +75,7 @@ const PERMISSIONS = {
     overrideClosedDrawer: 'cash.override_closed_drawer',
     approveClose: 'cash.approve_close',
   },
-  bank: { view: 'bank.view', transact: 'bank.transact' },
+  bank: { view: 'bank.view', transact: 'bank.transact', overdraft: 'bank.overdraft' },
   ret: {
     request: 'return.request',
     approve: 'return.approve',
@@ -173,7 +173,7 @@ const ROLE_DEFAULTS = {
     'stock.view', 'stock.adjust_approve', 'stock.adjust_direct', 'stock.count_initiate', 'stock.count_approve',
     'cash.view', 'cash.adjust', 'cash.override_closed_drawer', 'cash.approve_close',
     'invoice.take_over',
-    'bank.view', 'bank.transact',
+    'bank.view', 'bank.transact', 'bank.overdraft',
     'return.request', 'return.approve', 'return.process',
     'attendance.view_own', 'attendance.view_all', 'attendance.mark_manual', 'attendance.correction_approve',
     'bills.view', 'bills.pay', 'bills.manage', 'bills.notifications',

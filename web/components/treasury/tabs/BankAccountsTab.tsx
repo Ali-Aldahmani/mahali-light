@@ -32,6 +32,7 @@ import { formatCurrency, formatDateTime, storeDate } from '@/lib/utils/format';
 import DateField from '@/components/ui/DateField';
 import Skeleton from '@/components/ui/skeleton';
 import { useRequestKey } from '@/hooks/useRequestKey';
+import { useAuthStore } from '@/store/authStore';
 
 export interface BankAccount {
   id: string;
@@ -293,6 +294,9 @@ function CreateBankSlideOver({
   });
   const [saving, setSaving] = useState(false);
 
+  // A retried create can't add a second account and opening balance.
+  const createKey = useRequestKey(open);
+
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -304,7 +308,7 @@ function CreateBankSlideOver({
       await createBankAccount({
         ...form,
         openingBalance: Number(form.openingBalance) || 0,
-      });
+      }, createKey.current());
       toast.success('Bank account added.');
       onDone?.();
       onClose?.();
@@ -446,6 +450,7 @@ function BankMovementSlideOver({
   const [description, setDescription] = useState('');
   const [notes, setNotes] = useState('');
   const [allowOverdraft, setAllowOverdraft] = useState(false);
+  const canOverdraft = useAuthStore((s) => s.permissions).includes('bank.overdraft');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -546,14 +551,18 @@ function BankMovementSlideOver({
               This withdrawal will leave the account negative. Tick the box
               below to confirm manager approval.
             </p>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={allowOverdraft}
-                onChange={(e) => setAllowOverdraft(e.target.checked)}
-              />
-              Yes, allow overdraft
-            </label>
+            {canOverdraft ? (
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={allowOverdraft}
+                  onChange={(e) => setAllowOverdraft(e.target.checked)}
+                />
+                Yes, allow overdraft
+              </label>
+            ) : (
+              <p className="font-medium">You don&apos;t have permission to take an account below zero. Ask a manager.</p>
+            )}
           </div>
         )}
         <div className="flex justify-end gap-2 pt-2">

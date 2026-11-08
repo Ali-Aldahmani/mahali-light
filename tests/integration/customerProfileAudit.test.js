@@ -266,7 +266,7 @@ describe.skipIf(!enabled)('customer profile audit on real PostgreSQL', () => {
     const paymentId = collected.body.data.payment.id;
     expect(await auditRows('customer.payment_collected')).toHaveLength(1);
 
-    const voided = await api().del(`/customer-payments/${paymentId}`);
+    const voided = await api().del(`/customer-payments/${paymentId}`).send({ reason: 'Entered in error' });
     expect(voided.status).toBe(200);
     const { rows } = await db.query(`SELECT * FROM customer_payment_voids WHERE id = $1`, [paymentId]);
     expect(rows[0]).toMatchObject({ voided_by: userId, payment_method: 'bank_transfer' });

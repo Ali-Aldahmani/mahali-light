@@ -33,8 +33,8 @@ export function getBankAccount(id) {
   return apiGet(`/bank-accounts/${id}`);
 }
 
-export function createBankAccount(body) {
-  return apiPost('/bank-accounts', body);
+export function createBankAccount(body, requestKey?: string) {
+  return apiPost('/bank-accounts', body, withRequestKey(requestKey));
 }
 
 export function updateBankAccount(id, body) {

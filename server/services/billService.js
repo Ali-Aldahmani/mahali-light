@@ -456,6 +456,7 @@ async function payBillPayment({
   amountPaid,
   paymentMethod,
   bankAccountId = null,
+  allowOverdraft = false,
   paidDate = null,
   notes = null,
   receiptAttachment = null,
@@ -570,7 +571,7 @@ async function payBillPayment({
         referenceId: billPaymentId,
         employeeId: userId,
         description: `Bill: ${payment.bill_name}`,
-        allowOverdraft: true,
+        allowOverdraft,
       });
     }
 

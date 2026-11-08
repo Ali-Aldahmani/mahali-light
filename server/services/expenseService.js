@@ -64,6 +64,7 @@ async function createExpense({
   paymentMethod,
   bankAccountId = null,
   fundingSource = 'showroom',
+  allowOverdraft = false,
   notes = null,
   userId,
   io = null,
@@ -83,7 +84,9 @@ async function createExpense({
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid payment method.');
   }
   // Sales audit SI-03: no silent fallback to whichever account is the default.
-  if (paymentMethod === 'bank' && !bankAccountId) {
+  // Paid from the owner's own pocket, no shop account is involved at all.
+  const ownerFunded = fundingSource === 'owner';
+  if (paymentMethod === 'bank' && !bankAccountId && !ownerFunded) {
     throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose the bank account for this expense.', { status: 400 });
   }
 
@@ -110,7 +113,10 @@ async function createExpense({
     const expense = rows[0];
 
     let treasury = null;
-    if (paymentMethod === 'cash') {
+    if (ownerFunded) {
+      // The owner paid personally: no shop money moves. It used to come out of
+      // the drawer or bank anyway. The ledger credits owner equity instead.
+    } else if (paymentMethod === 'cash') {
       treasury = await cashService.recordCashOut({
         client,
         allowAutoOpen: false,
@@ -131,7 +137,7 @@ async function createExpense({
         referenceId: expense.id,
         employeeId: userId,
         description: `Expense: ${description.trim().slice(0, 80)}`,
-        allowOverdraft: true,
+        allowOverdraft,
       });
     }
 
@@ -148,7 +154,7 @@ async function createExpense({
     await journalService.postExpenseEntry(client, {
       expenseId: expense.id,
       amount: amt,
-      method: paymentMethod,
+      method: ownerFunded ? 'owner' : paymentMethod,
       categoryName,
       description: description.trim(),
       date: expense.expense_date,
@@ -371,7 +377,7 @@ async function deleteExpense({ id, userId }) {
     // Reverse the original treasury posting using the inverse direction +
     // the same reference, so the audit trail stays self-explanatory.
     const amt = Number(expense.amount) || 0;
-    if (amt > 0) {
+    if (amt > 0 && expense.funding_source !== 'owner') {
       if (expense.payment_method === 'cash') {
         await cashService.recordCashIn({
           client,
@@ -385,7 +391,10 @@ async function deleteExpense({ id, userId }) {
       } else if (expense.payment_method === 'bank') {
         await bankService.recordBankIn({
           client,
-          bankAccountId: expense.bank_account_id,
+          // Back to the account it left, not whichever is the default today.
+          bankAccountId: await bankService.originalAccountId(client, {
+            referenceType: 'expense', referenceId: expense.id, direction: 'out', fallback: expense.bank_account_id,
+          }),
           transactionType: 'expense',
           amount: amt,
           referenceType: 'expense',

@@ -200,9 +200,16 @@ async function remove(req, res, next) {
       });
     }
 
+    // Voiding hands money back, so it says why, like cancelling an invoice.
+    const reason = String(req.body?.reason || '').trim();
+    if (reason.length < 5 || reason.length > 500) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Give a reason for voiding this payment (5 to 500 characters).', { status: 400 });
+    }
+
     const { payment, customer, treasury } = await voidPayment({
       paymentId: id,
       voidedBy: req.user.id,
+      reason,
     });
 
     const io = req.app.get('io');

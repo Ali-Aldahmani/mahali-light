@@ -79,6 +79,7 @@ async function createForPo(req, res, next) {
       method: body.paymentMethod,
       paymentDate: body.paymentDate || null,
       bankAccountId: body.bankAccountId || null,
+      allowOverdraft: (req.user?.permissions || []).includes('bank.overdraft'),
       notes: body.notes || null,
       employeeId: req.user.id,
       requestKey: requestKeyFrom(req, { required: true }),

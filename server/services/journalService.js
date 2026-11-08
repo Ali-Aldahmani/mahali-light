@@ -724,7 +724,8 @@ async function postExpenseEntry(client, {
   const amt = money(amount);
   if (amt <= 0) return null;
   const expenseAccountId = await getExpenseAccountIdForCategory(categoryName, client);
-  const creditCode = method === 'cash' ? '1001' : '1002';
+  // 'owner': paid from the owner's pocket, so owner equity, no shop account.
+  const creditCode = method === 'owner' ? '3001' : method === 'cash' ? '1001' : '1002';
   return postJournalEntryWith(client, {
     referenceType: 'expense',
     referenceId: expenseId,

@@ -354,6 +354,15 @@ async function updateItems(req, res, next) {
     // stamped under the same lock (stockService), so approve() can tell
     // exactly which movements happened after this line was counted.
     await withTransaction(async (client) => {
+      // Checked again under the lock: a save already on its way when the count
+      // was approved must not change the lines that approval used.
+      const { rows: [locked] } = await client.query(
+        `SELECT status FROM stock_counts WHERE id = $1 FOR UPDATE`, [id],
+      );
+      if (!locked || !['draft', 'in_progress'].includes(locked.status)) {
+        throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+          `Cannot update a count in status "${locked?.status}".`, { status: 409 });
+      }
       const byId = new Map(body.items.map((i) => [i.id, i]));
       const { rows: lines } = await client.query(
         `SELECT id, variant_id, counted_qty, counted_at, cost_price, notes

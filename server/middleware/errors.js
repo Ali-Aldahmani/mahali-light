@@ -29,19 +29,23 @@ async function errorHandler(err, req, res, _next) {
   const classified = errorLogService.classifyError(err);
   const { code, message, status, details, field, severity, stack } = classified;
 
-  // Persist every API error (append-only).
-  await errorLogService.logError({
-    code,
-    message,
-    details,
-    severity,
-    source: 'api',
-    userId: req.user?.id || null,
-    pcIdentifier: headerPc(req),
-    endpoint: req.originalUrl || req.path,
-    method: req.method,
-    stackTrace: stack,
-  });
+  // Persist API errors (append-only). A request with no valid sign-in isn't
+  // recorded: anyone on the network could otherwise grow this table by sending
+  // requests with no token, up to 500 rows a minute each.
+  if (!(status === 401 && !req.user)) {
+    await errorLogService.logError({
+      code,
+      message,
+      details,
+      severity,
+      source: 'api',
+      userId: req.user?.id || null,
+      pcIdentifier: headerPc(req),
+      endpoint: req.originalUrl || req.path,
+      method: req.method,
+      stackTrace: stack,
+    });
+  }
 
   if (status >= 500) {
     console.error(`[error] [${req.id || 'no-request-id'}]`, err);

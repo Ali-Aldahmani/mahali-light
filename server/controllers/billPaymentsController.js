@@ -74,6 +74,7 @@ async function pay(req, res, next) {
       amountPaid: body.amountPaid,
       paymentMethod: body.paymentMethod,
       bankAccountId: body.bankAccountId || null,
+      allowOverdraft: (req.user?.permissions || []).includes('bank.overdraft'),
       paidDate: body.paidDate || null,
       notes: body.notes || null,
       receiptAttachment: receiptRel,

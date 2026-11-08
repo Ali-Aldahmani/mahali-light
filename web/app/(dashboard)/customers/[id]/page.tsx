@@ -660,9 +660,10 @@ function PaymentsTab({
 
   // Returns whether the payment was voided (drives the row action's confirmation).
   async function handleVoid(p: PaymentRow): Promise<boolean> {
-    if (!confirm('Reverse this payment? Same-day payments only.')) return false;
+    const reason = window.prompt('Why is this payment being reversed? Same-day payments only.');
+    if (reason == null) return false;
     try {
-      await voidPayment(p.id);
+      await voidPayment(p.id, reason);
       toast.success('Payment voided.');
       await load();
       onChanged?.();

@@ -3,6 +3,7 @@ const { todayStoreDate } = require('../utils/dates');
 const journalService = require('./journalService');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { logActivity } = require('../utils/activityLog');
+const { runOnce } = require('../utils/operations');
 const { emitEvent } = require('../socket/events');
 
 const ALLOWED_TX_TYPES = new Set([
@@ -172,6 +173,17 @@ async function postTransactionWith(client, params) {
       },
     );
   }
+  // Every time an account goes below zero is on record, whatever caused it.
+  if (direction === 'out' && after < -0.0001) {
+    await logActivity({
+      client,
+      entityType: 'bank_account',
+      entityId: account.id,
+      action: 'bank_account.overdrawn',
+      performedBy: employeeId,
+      newValue: { balanceAfter: after, amount: amt, transactionType, referenceType, referenceId },
+    });
+  }
 
   const txDate =
     transactionDate || todayStoreDate();
@@ -282,8 +294,26 @@ async function getAccount(id) {
   return shapeAccount(rows[0]);
 }
 
-async function createAccount(body, employeeId) {
-  return withTransaction(async (client) => {
+// Original account of a posting, for reversing rows saved without one: they
+// went to the default account at the time, which may not be the default today.
+async function originalAccountId(client, { referenceType, referenceId, direction, fallback = null }) {
+  if (fallback) return fallback;
+  const { rows } = await client.query(
+    `SELECT bank_account_id FROM bank_transactions
+      WHERE reference_type = $1 AND reference_id = $2 AND direction = $3
+      ORDER BY timestamp ASC LIMIT 1`,
+    [referenceType, referenceId, direction],
+  );
+  return rows[0]?.bank_account_id || null;
+}
+
+async function createAccount(body, employeeId, { requestKey = null } = {}) {
+  return withTransaction(async (client) => runOnce(client, {
+    scope: 'bank_account_create',
+    key: requestKey,
+    userId: employeeId,
+    payload: body,
+  }, async () => {
     if (body.isDefault) {
       // Only one default allowed — flip the others off first.
       await client.query(
@@ -351,7 +381,7 @@ async function createAccount(body, employeeId) {
     });
 
     return account;
-  }).then((row) => shapeAccount(row));
+  })).then(({ result }) => shapeAccount(result));
 }
 
 async function updateAccount(id, body, employeeId) {
@@ -495,6 +525,7 @@ async function listTransactions({
 }
 
 module.exports = {
+  originalAccountId,
   // posting
   recordBankIn,
   recordBankOut,

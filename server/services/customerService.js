@@ -207,7 +207,7 @@ async function collectPayment({
 // today. The payment row is copied to customer_payment_voids before it is
 // removed, so the collection and its reversal both stay on record.
 // voidedBy is the user reversing it.
-async function voidPayment({ paymentId, voidedBy = null }) {
+async function voidPayment({ paymentId, voidedBy = null, reason = null }) {
   return withTransaction(async (client) => {
     const { rows: pmRows } = await client.query(
       `SELECT * FROM customer_payments WHERE id = $1 FOR UPDATE`,
@@ -246,11 +246,11 @@ async function voidPayment({ paymentId, voidedBy = null }) {
     await client.query(
       `INSERT INTO customer_payment_voids
          (id, customer_id, invoice_id, amount, payment_method, bank_account_id,
-          payment_date, employee_id, notes, created_at, voided_by)
+          payment_date, employee_id, notes, created_at, voided_by, void_reason)
        SELECT id, customer_id, invoice_id, amount, payment_method, bank_account_id,
-              payment_date, employee_id, notes, created_at, $2
+              payment_date, employee_id, notes, created_at, $2, $3
          FROM customer_payments WHERE id = $1`,
-      [paymentId, voidedBy],
+      [paymentId, voidedBy, reason],
     );
     await client.query(`DELETE FROM customer_payments WHERE id = $1`, [
       paymentId,
@@ -296,7 +296,10 @@ async function voidPayment({ paymentId, voidedBy = null }) {
       } else if (pm.payment_method === 'bank_transfer') {
         treasury = await bankService.recordBankOut({
           client,
-          bankAccountId: pm.bank_account_id || null,
+          // Out of the account it went into, not whichever is the default today.
+          bankAccountId: await bankService.originalAccountId(client, {
+            referenceType: 'customer_payment', referenceId: paymentId, direction: 'in', fallback: pm.bank_account_id,
+          }),
           transactionType: 'customer_payment',
           amount,
           referenceType: 'customer_payment',

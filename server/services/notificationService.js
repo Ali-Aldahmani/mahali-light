@@ -252,6 +252,20 @@ function shape(row) {
 }
 
 // Reusable WHERE fragment — restricts the notifications visible to one user.
+// Muted categories and severities, as SQL, so the list and the unread count
+// agree with what the live feed sends. Muted rows used to stay out of the feed
+// but appear when the bell was opened (notes.txt).
+async function mutedSql(userId, params) {
+  const prefs = await loadPreferences(userId);
+  const muted = (map) => Object.entries(map).filter(([, flag]) => prefs[flag] === false).map(([key]) => key);
+  params.push(muted(CATEGORY_PREF));
+  const categories = `$${params.length}::text[]`;
+  params.push(muted(SEVERITY_PREF));
+  const severities = `$${params.length}::text[]`;
+  return `(n.category IS NULL OR n.category <> ALL(${categories}))
+    AND COALESCE(n.severity, 'info') <> ALL(${severities})`;
+}
+
 function userScopeSql(userId, role) {
   // Postgres parameters for [user_id, role].
   return `(
@@ -275,6 +289,7 @@ async function listForUser({
   // Deleted (dismissed) notifications never come back for this user.
   const where = [userScopeSql(userId, role), 'COALESCE(nr.dismissed, false) = false'];
   const params = [userId, role || null];
+  where.push(await mutedSql(userId, params));
   if (category) {
     params.push(category);
     where.push(`n.category = $${params.length}`);
@@ -318,14 +333,17 @@ async function getUnreadCount(userId, role = null) {
     );
     actualRole = rows[0]?.name || null;
   }
+  const params = [userId, actualRole];
+  const muted = await mutedSql(userId, params);
   const { rows } = await query(
     `SELECT COUNT(*)::int AS count
        FROM notifications n
        LEFT JOIN notification_reads nr
               ON nr.notification_id = n.id AND nr.user_id = $1
       WHERE ${userScopeSql(userId, actualRole)}
+        AND ${muted}
         AND nr.id IS NULL`,
-    [userId, actualRole],
+    params,
   );
   return rows[0]?.count || 0;
 }

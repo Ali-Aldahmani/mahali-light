@@ -41,6 +41,17 @@ function parseDateRange(params = {}) {
   return { startDate, endDate };
 }
 
+// Reports with no natural limit load every row into memory (and then a PDF or
+// spreadsheet). Refuse rather than stall the server the tills depend on.
+const MAX_REPORT_ROWS = 50000;
+function assertRowCap(rows) {
+  if (rows.length > MAX_REPORT_ROWS) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+      `This report has more than ${MAX_REPORT_ROWS} rows. Choose a shorter date range.`, { status: 400 });
+  }
+  return rows;
+}
+
 // Pretty period label for headers/PDFs.
 function rangeLabel({ startDate, endDate }) {
   if (!startDate || !endDate) return '';
@@ -197,7 +208,9 @@ async function salesByProduct(params) {
             COALESCE(SUM(ii.quantity),0)::float8 AS qty,
             COALESCE(SUM(ii.line_total),0)::float8 AS revenue,
             COALESCE(SUM(ii.quantity * ii.cost_price_at_time),0)::float8 AS cost,
-            COALESCE(SUM(ii.line_total - ii.quantity * ii.cost_price_at_time),0)::float8 AS profit
+            COALESCE(SUM(ii.line_total - ii.quantity * ii.cost_price_at_time),0)::float8 AS profit,
+            COALESCE(SUM(ii.line_total - ii.quantity * ii.cost_price_at_time)
+              / NULLIF(SUM(ii.line_total), 0), 0)::float8 AS margin
        FROM invoice_items ii
        JOIN invoices i ON i.id = ii.invoice_id
       WHERE i.status = 'confirmed'
@@ -807,9 +820,11 @@ async function supplierPurchases(params) {
        LEFT JOIN suppliers s ON s.id = po.supplier_id
       WHERE po.created_at::date BETWEEN $1::date AND $2::date
         AND po.status <> 'cancelled'
-      ORDER BY po.created_at DESC`,
+      ORDER BY po.created_at DESC
+      LIMIT 50001`,
     [startDate, endDate],
   );
+  assertRowCap(rows);
   return {
     type: 'supplier_purchases',
     title: 'Purchase History',
@@ -1058,9 +1073,11 @@ async function customerPayments(params) {
        LEFT JOIN customers c ON c.id = cp.customer_id
        LEFT JOIN users u ON u.id = cp.employee_id
       WHERE cp.payment_date BETWEEN $1::date AND $2::date
-      ORDER BY cp.payment_date DESC`,
+      ORDER BY cp.payment_date DESC
+      LIMIT 50001`,
     [startDate, endDate],
   );
+  assertRowCap(rows);
   return {
     type: 'customer_payments',
     title: 'Customer Payments',
@@ -2144,9 +2161,11 @@ async function customCostingSales(params) {
        JOIN invoices i ON i.id = ii.invoice_id
       WHERE i.status = 'confirmed'
         AND i.confirmed_at::date BETWEEN $1::date AND $2::date
-      ORDER BY i.confirmed_at, i.invoice_number`,
+      ORDER BY i.confirmed_at, i.invoice_number
+      LIMIT 50001`,
     [startDate, endDate],
   );
+  assertRowCap(rows);
   const shaped = rows.map((r) => {
     const qty = Number(r.quantity);
     const unitPrice = Number(r.unit_price);
@@ -2344,9 +2363,11 @@ async function errorLogsExport(params) {
        LEFT JOIN users u ON u.id = e.user_id
        LEFT JOIN users r ON r.id = e.resolved_by
       WHERE ${conds.join(' AND ')}
-      ORDER BY e.created_at DESC`,
+      ORDER BY e.created_at DESC
+      LIMIT 50001`,
     vals,
   );
+  assertRowCap(rows);
   return {
     type: 'error_logs',
     title: 'Error Log',

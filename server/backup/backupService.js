@@ -564,6 +564,8 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
   });
   await sleep(confirmDelaySeconds * 1000);
 
+  // Held for the whole restore, so a scheduled backup can't run alongside it.
+  const outcome = await withBackupLock(async () => {
   // -------------------- Step 2: maintenance mode --------------------
   maintenanceMode.enable('System restore in progress — please wait.');
   emit('restore_progress', { step: 'extract', percent: 10, message: 'Extracting backup archive…' });
@@ -587,6 +589,7 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
     }
 
     // -------------------- Step 4: uploads (if present) --------------------
+    let uploadsError = null;
     const uploadsFile = files.find((f) => f.endsWith('-uploads.zip'));
     if (uploadsFile) {
       emit('restore_progress', { step: 'uploads', percent: 75, message: 'Restoring uploads…' });
@@ -594,6 +597,7 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
         await extractZip(path.join(restoreDir, uploadsFile), uploadsBackup.uploadsDir());
       } catch (err) {
         console.warn('[restore] uploads restore failed', err.message);
+        uploadsError = err.message;
       }
     }
 
@@ -604,10 +608,12 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
       entityId: jobId,
       action: 'backup.restore_completed',
       performedBy: userId,
-      newValue: { jobNumber: job.job_number },
+      newValue: { jobNumber: job.job_number, uploadsError },
     });
-    const restartMessage =
-      'Restore complete. Restart the server before using the POS again.';
+    // "Complete" used to be reported even when the uploaded files failed.
+    const restartMessage = uploadsError
+      ? `Database restored, but uploaded files could not be restored (${uploadsError}). Restart the server before using the POS again.`
+      : 'Restore complete. Restart the server before using the POS again.';
     maintenanceMode.enable(restartMessage);
     emit('restore_completed', { jobId, requiresRestart: true, message: restartMessage });
     emit('restore_progress', {
@@ -616,7 +622,7 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
       message: restartMessage,
       requiresRestart: true,
     });
-    return { ok: true, requiresRestart: true };
+    return { ok: !uploadsError, requiresRestart: true, uploadsError };
   } catch (err) {
     maintenanceMode.disable();
     await logActivity({
@@ -631,6 +637,13 @@ async function restoreFromBackup({ jobId, userId, confirmDelaySeconds = 120 }) {
   } finally {
     await safeRm(restoreDir);
   }
+  });
+  if (!outcome.locked) {
+    const message = 'A backup is running. Try the restore again when it has finished.';
+    emit('restore_progress', { step: 'error', percent: 0, message });
+    throw new Error(message);
+  }
+  return outcome.result;
 }
 
 function sleep(ms) {
