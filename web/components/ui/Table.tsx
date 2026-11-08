@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import Skeleton from '@/components/ui/skeleton';
@@ -30,6 +30,9 @@ export interface TableProps {
   initialSort?: { key: string; direction: 'asc' | 'desc' } | null;
   pagination?: TablePagination | null;
   className?: string;
+  renderSubRow?: (row: any, isExpanded: boolean) => ReactNode;
+  expandedRowKeys?: Set<string | number>;
+  rowClassName?: (row: any, idx: number) => string | undefined;
 }
 
 // columns: [{ key, header, render?, sortable?, width?, align?, accessor? }]
@@ -45,6 +48,9 @@ export default function Table({
   // pagination is optional, controlled by parent
   pagination = null, // { page, pageSize, total, onPageChange }
   className = '',
+  renderSubRow,
+  expandedRowKeys,
+  rowClassName,
 }: TableProps) {
   const [sort, setSort] = useState(initialSort);
 
@@ -133,32 +139,47 @@ export default function Table({
                 </td>
               </tr>
             ) : (
-              sortedRows.map((row, idx) => (
-                <tr
-                  key={rowKey(row)}
-                  className={cn(
-                    'border-t border-border transition',
-                    idx % 2 === 1 ? 'bg-bg/40' : 'bg-surface',
-                  )}
-                >
-                  {columns.map((col) => {
-                    const accessor = col.accessor || ((r) => r[col.key]);
-                    const content = col.render ? col.render(row) : accessor(row);
-                    return (
-                      <td
-                        key={col.key}
-                        className={cn(
-                          'px-4 py-3 text-ink align-middle',
-                          col.align === 'right' && 'text-right',
-                          col.align === 'center' && 'text-center',
-                        )}
-                      >
-                        {content ?? <span className="text-ink-muted">—</span>}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
+              sortedRows.map((row, idx) => {
+                const key = rowKey(row);
+                const isExpanded = Boolean(expandedRowKeys?.has(key));
+                const subRowContent = isExpanded && renderSubRow ? renderSubRow(row, isExpanded) : null;
+                return (
+                  <Fragment key={key}>
+                    <tr
+                      className={cn(
+                        'border-t border-border transition',
+                        idx % 2 === 1 ? 'bg-bg/40' : 'bg-surface',
+                        isExpanded && 'bg-accent/5',
+                        rowClassName?.(row, idx),
+                      )}
+                    >
+                      {columns.map((col) => {
+                        const accessor = col.accessor || ((r) => r[col.key]);
+                        const content = col.render ? col.render(row, idx) : accessor(row);
+                        return (
+                          <td
+                            key={col.key}
+                            className={cn(
+                              'px-4 py-3 text-ink align-middle',
+                              col.align === 'right' && 'text-right',
+                              col.align === 'center' && 'text-center',
+                            )}
+                          >
+                            {content ?? <span className="text-ink-muted">—</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {subRowContent && (
+                      <tr className="border-t border-border/70 bg-surface-2/40">
+                        <td colSpan={columns.length} className="p-0">
+                          {subRowContent}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

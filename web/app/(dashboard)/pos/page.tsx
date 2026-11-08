@@ -22,6 +22,10 @@ import DownloadPDFButton from '@/components/ui/DownloadPDFButton';
 import CashierModeEntry from '@/components/pos/CashierModeEntry';
 import POSProductCard from '@/components/pos/POSProductCard';
 import POSVariantSelector from '@/components/pos/POSVariantSelector';
+import POSItemContextMenu from '@/components/pos/POSItemContextMenu';
+import POSQuickAddStockModal from '@/components/pos/POSQuickAddStockModal';
+import POSQuickMakePOModal from '@/components/pos/POSQuickMakePOModal';
+import POSQuickEditModal from '@/components/pos/POSQuickEditModal';
 import CartItem from '@/components/pos/CartItem';
 import AddCustomItemModal from '@/components/pos/AddCustomItemModal';
 import CustomerFormSlideOver from '@/components/customers/CustomerFormSlideOver';
@@ -184,6 +188,17 @@ function POSPageContent() {
   const [customerFormOpen, setCustomerFormOpen] = useState(false);
   const [productFormOpen, setProductFormOpen] = useState(false);
 
+  // ---- Right-click context menu & quick actions -----------------------
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    variant: any;
+  } | null>(null);
+  const [quickActionModal, setQuickActionModal] = useState<{
+    type: 'stock' | 'po' | 'edit';
+    variant: any;
+  } | null>(null);
+
   // Fetch categories once.
   useEffect(() => {
     listCategoriesFlat()
@@ -267,8 +282,21 @@ function POSPageContent() {
   }, [addWithinStock]);
 
   useBarcodeListener(onScan, {
-    enabled: !confirmOpen && !success && !customerFormOpen && !productFormOpen,
+    enabled:
+      !confirmOpen &&
+      !success &&
+      !customerFormOpen &&
+      !productFormOpen &&
+      !quickActionModal,
   });
+
+  function handleProductContextMenu(e: any, variant: any) {
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      variant,
+    });
+  }
 
   function handleProductClick(variant: any) {
     const siblings = products.filter(
@@ -349,6 +377,7 @@ function POSPageContent() {
         activeCategoryId={activeCategoryId}
         onCategoryChange={setActiveCategoryId}
         onProductClick={handleProductClick}
+        onProductContextMenu={handleProductContextMenu}
         isOffline={isOffline}
       />
 
@@ -395,6 +424,38 @@ function POSPageContent() {
         onAdd={(v: any, qty: any) => addWithinStock(v, qty)}
       />
 
+      <POSItemContextMenu
+        open={!!contextMenu}
+        x={contextMenu?.x || 0}
+        y={contextMenu?.y || 0}
+        variant={contextMenu?.variant || null}
+        onClose={() => setContextMenu(null)}
+        onQuickAddStock={(v) => setQuickActionModal({ type: 'stock', variant: v })}
+        onQuickMakePO={(v) => setQuickActionModal({ type: 'po', variant: v })}
+        onQuickEdit={(v) => setQuickActionModal({ type: 'edit', variant: v })}
+      />
+
+      <POSQuickAddStockModal
+        open={quickActionModal?.type === 'stock'}
+        variant={quickActionModal?.variant || null}
+        onClose={() => setQuickActionModal(null)}
+        onSuccess={fetchProducts}
+      />
+
+      <POSQuickMakePOModal
+        open={quickActionModal?.type === 'po'}
+        variant={quickActionModal?.variant || null}
+        onClose={() => setQuickActionModal(null)}
+        onSuccess={fetchProducts}
+      />
+
+      <POSQuickEditModal
+        open={quickActionModal?.type === 'edit'}
+        variant={quickActionModal?.variant || null}
+        onClose={() => setQuickActionModal(null)}
+        onSuccess={fetchProducts}
+      />
+
       {confirmOpen && (
         <ConfirmPayModal
           totals={totals}
@@ -430,6 +491,7 @@ function ProductBrowser({
   activeCategoryId,
   onCategoryChange,
   onProductClick,
+  onProductContextMenu,
   isOffline,
 }: {
   search: string;
@@ -440,6 +502,7 @@ function ProductBrowser({
   activeCategoryId: string | number | null;
   onCategoryChange: (id: string | number | null) => void;
   onProductClick: (variant: any) => void;
+  onProductContextMenu?: (e: any, variant: any) => void;
   isOffline: boolean;
 }) {
   const visibleCats = useMemo(
@@ -505,6 +568,7 @@ function ProductBrowser({
                 key={v.variantId}
                 variant={v}
                 onClick={onProductClick}
+                onContextMenu={onProductContextMenu}
               />
             ))}
           </div>

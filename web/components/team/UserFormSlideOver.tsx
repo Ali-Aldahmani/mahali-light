@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button';
 import { createUser, updateUser } from '@/services/userService';
 import { listEmployees } from '@/services/employeeService';
 import { toast } from '@/store/toastStore';
+import { passwordProblem } from '@/lib/auth/password';
 
 export default function UserFormSlideOver({
   open,
@@ -81,13 +82,11 @@ export default function UserFormSlideOver({
     } else if (!/^[a-zA-Z0-9_.-]+$/.test(form.username)) {
       errs.username = 'Only letters, numbers, dot, underscore, hyphen.';
     }
-    // Same minimums as the server (server/utils/password.js): 12 for Admin, 10 otherwise.
+    // Same password rules as the server (server/utils/password.js): 12 for Admin, 10 otherwise.
     const roleName = roles.find((r: any) => r.id === form.roleId)?.name;
-    const minLength = String(roleName || '').toLowerCase() === 'admin' ? 12 : 10;
-    if (!isEdit && (!form.password || form.password.length < minLength)) {
-      errs.password = `Password must be at least ${minLength} characters.`;
-    } else if (isEdit && form.password && form.password.length < minLength) {
-      errs.password = `Password must be at least ${minLength} characters.`;
+    if (!isEdit || form.password) {
+      const problem = passwordProblem(form.password, { roleName, username: form.username });
+      if (problem) errs.password = problem;
     }
     if (!form.roleId) errs.roleId = 'Select a role.';
     setErrors(errs);

@@ -14,7 +14,15 @@ function stockTone(qty) {
 // the parent decides whether to add the variant directly or open the variant
 // selector (used when the product has multiple variants and the cashier
 // hasn't picked one yet).
-export default function POSProductCard({ variant, onClick }) {
+export default function POSProductCard({
+  variant,
+  onClick,
+  onContextMenu,
+}: {
+  variant: any;
+  onClick?: (variant: any) => void;
+  onContextMenu?: (e: any, variant: any) => void;
+}) {
   const stock = Number(variant.stockQty || 0);
   const out = stock <= 0;
   const status = stockTone(stock);
@@ -24,14 +32,20 @@ export default function POSProductCard({ variant, onClick }) {
   return (
     <button
       type="button"
+      aria-disabled={out}
       onClick={out ? undefined : () => onClick?.(variant)}
+      onContextMenu={(e) => {
+        if (onContextMenu) {
+          e.preventDefault();
+          onContextMenu(e, variant);
+        }
+      }}
       className={[
         'group text-left rounded-card border border-border bg-surface shadow-card p-3 transition',
         out
           ? 'opacity-50 cursor-not-allowed'
           : 'hover:border-accent hover:shadow-pop',
       ].join(' ')}
-      disabled={out}
     >
       <div className="aspect-square w-full rounded-md bg-surface-2 mb-2 overflow-hidden flex items-center justify-center">
         {variant.imagePath ? (

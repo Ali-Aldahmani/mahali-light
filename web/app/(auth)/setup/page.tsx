@@ -15,6 +15,7 @@ import {
 import { toast } from '@/store/toastStore';
 import { useSetupStore } from '@/store/setupStore';
 import PhoneField from '@/components/ui/PhoneField';
+import { passwordProblem } from '@/lib/auth/password';
 
 const TOTAL = 8;
 
@@ -50,6 +51,8 @@ export default function SetupWizardPage() {
     password: '',
     confirm: '',
   });
+  const [passwordTouched, setPasswordTouched] = useState(false);
+  const [confirmTouched, setConfirmTouched] = useState(false);
   const [cash, setCash] = useState({ opening_balance: 0 });
   const [bank, setBank] = useState({
     bank_name: '',
@@ -94,6 +97,33 @@ export default function SetupWizardPage() {
     if (/[^A-Za-z0-9]/.test(p)) s++;
     return s;
   }, [admin.password]);
+
+  const adminPasswordProblem = useMemo(() => {
+    if (!admin.password) return null;
+    return passwordProblem(admin.password, { roleName: 'admin', username: admin.username });
+  }, [admin.password, admin.username]);
+
+  const confirmProblem = useMemo(() => {
+    if (!admin.confirm) return null;
+    if (admin.password !== admin.confirm) return 'Passwords do not match.';
+    return null;
+  }, [admin.password, admin.confirm]);
+
+  const passwordError = useMemo(() => {
+    if (!admin.password) return null;
+    if (passwordTouched || admin.password.length >= 12) {
+      return adminPasswordProblem;
+    }
+    return null;
+  }, [admin.password, passwordTouched, adminPasswordProblem]);
+
+  const confirmError = useMemo(() => {
+    if (!admin.confirm) return null;
+    if (confirmTouched || admin.confirm.length >= admin.password.length) {
+      return confirmProblem;
+    }
+    return null;
+  }, [admin.confirm, confirmTouched, confirmProblem, admin.password.length]);
 
   async function checkSetupCode() {
     setVerifyingCode(true);
@@ -326,6 +356,13 @@ export default function SetupWizardPage() {
   }
 
   if (step === 5) {
+    const isStep5Disabled =
+      !admin.full_name.trim() ||
+      !admin.username.trim() ||
+      !admin.password ||
+      Boolean(adminPasswordProblem) ||
+      admin.password !== admin.confirm;
+
     return (
       <SetupWizardStep
         step={5}
@@ -333,20 +370,42 @@ export default function SetupWizardPage() {
         title="Create admin account"
         onBack={() => setStep(4)}
         onNext={() => setStep(6)}
-        nextDisabled={
-          !admin.full_name ||
-          !admin.username ||
-          admin.password.length < 12 ||
-          admin.password !== admin.confirm
-        }
+        nextDisabled={isStep5Disabled}
       >
-        <Input label="Full name" value={admin.full_name} onChange={(e: any) => setAdmin({ ...admin, full_name: e.target.value })} />
-        <Input label="Username" value={admin.username} onChange={(e: any) => setAdmin({ ...admin, username: e.target.value })} />
-        <Input label="Password" type="password" hint="At least 12 characters. A short phrase is easiest to remember." value={admin.password} onChange={(e: any) => setAdmin({ ...admin, password: e.target.value })} />
+        <Input
+          label="Full name"
+          value={admin.full_name}
+          onChange={(e: any) => setAdmin({ ...admin, full_name: e.target.value })}
+          required
+        />
+        <Input
+          label="Username"
+          value={admin.username}
+          onChange={(e: any) => setAdmin({ ...admin, username: e.target.value })}
+          required
+        />
+        <Input
+          label="Password"
+          type="password"
+          hint="At least 12 characters. A short phrase is easiest to remember."
+          value={admin.password}
+          onChange={(e: any) => setAdmin({ ...admin, password: e.target.value })}
+          onBlur={() => setPasswordTouched(true)}
+          error={passwordError || undefined}
+          required
+        />
         <div className="h-1 rounded bg-surface-2">
           <div className="h-1 rounded bg-accent" style={{ width: `${(passwordStrength / 4) * 100}%` }} />
         </div>
-        <Input label="Confirm password" type="password" value={admin.confirm} onChange={(e: any) => setAdmin({ ...admin, confirm: e.target.value })} />
+        <Input
+          label="Confirm password"
+          type="password"
+          value={admin.confirm}
+          onChange={(e: any) => setAdmin({ ...admin, confirm: e.target.value })}
+          onBlur={() => setConfirmTouched(true)}
+          error={confirmError || undefined}
+          required
+        />
       </SetupWizardStep>
     );
   }
