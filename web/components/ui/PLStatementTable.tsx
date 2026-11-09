@@ -99,6 +99,21 @@ export default function PLStatementTable({ data, className = '' }) {
             prev={data.previous ? `${data.previous.grossMargin.toFixed(1)}%` : null}
           />
 
+          {data.paymentFees != null && (
+            <>
+              <Section title="Card Processing Fees" />
+              <Row label="Card fees" current={data.paymentFees.total}
+                prev={data.previous?.paymentFees?.total} indent />
+              <Row label="Contribution Profit" current={data.contributionProfit}
+                prev={data.previous?.contributionProfit} bold profit />
+              <Row
+                label="Contribution Margin %"
+                current={`${Number(data.contributionMargin || 0).toFixed(1)}%`}
+                prev={data.previous ? `${Number(data.previous.contributionMargin || 0).toFixed(1)}%` : null}
+              />
+            </>
+          )}
+
           <Section title="Operating Expenses" />
           {data.expenses.lines.length === 0 ? (
             <tr>

@@ -49,13 +49,13 @@ export default function CashierPaymentDialog({
   open: boolean;
   total: number;
   customer: any | null;
-  payments: { id: string; method: string; amount: number; bankAccountId?: string | null; reference?: string | null }[];
+  payments: { id: string; method: string; amount: number; bankAccountId?: string | null; reference?: string | null; providerId?: string | null }[];
   submitting: boolean;
   error: string | null;
   onAdd: (method: string, amount: number) => void;
   onUpdate: (
     id: string,
-    patch: { method?: string; amount?: number; bankAccountId?: string | null; reference?: string | null },
+    patch: { method?: string; amount?: number; bankAccountId?: string | null; reference?: string | null; providerId?: string | null },
   ) => void;
   onRemove: (id: string) => void;
   onCancel: () => void;

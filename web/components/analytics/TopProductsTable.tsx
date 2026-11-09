@@ -57,6 +57,8 @@ export default function TopProductsTable({
             {verbose && cost && <th className="px-3 py-2 text-right">COGS</th>}
             {cost && <th className="px-3 py-2 text-right">Gross profit</th>}
             {verbose && cost && <th className="px-3 py-2 text-right">Margin</th>}
+            {verbose && cost && <th className="px-3 py-2 text-right">Card fees</th>}
+            {verbose && cost && <th className="px-3 py-2 text-right">Contribution</th>}
             {verbose && <th className="px-3 py-2 text-right">Returns</th>}
           </tr>
         </thead>
@@ -126,6 +128,19 @@ export default function TopProductsTable({
                   >
                     {Number(r.margin_pct || 0).toFixed(1)}%
                   </span>
+                </td>
+              )}
+              {verbose && cost && (
+                <td className="px-3 py-2 text-right text-ink-muted">{formatCurrency(r.payment_fees || 0)}</td>
+              )}
+              {verbose && cost && (
+                <td
+                  className={cn(
+                    'px-3 py-2 text-right',
+                    Number(r.contribution_profit) < 0 ? 'text-error' : 'text-ink',
+                  )}
+                >
+                  {formatCurrency(r.contribution_profit ?? r.gross_profit)}
                 </td>
               )}
               {verbose && (

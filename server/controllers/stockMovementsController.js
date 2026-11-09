@@ -274,7 +274,9 @@ async function summary(req, res, next) {
               p.name AS product_name, p.image_path AS product_image,
               p.unit_label, p.sold_by, p.reorder_threshold AS product_threshold,
               p.category_id,
-              (SELECT name FROM product_categories WHERE id = p.category_id) AS category_name
+              (SELECT name FROM product_categories WHERE id = p.category_id) AS category_name,
+              (SELECT COUNT(*)::int FROM inventory_batches b
+                WHERE b.variant_id = v.id AND (b.qty_on_hand > 0 OR b.qty_quarantined > 0)) AS batch_count
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
         ${whereSql}
@@ -307,6 +309,8 @@ async function summary(req, res, next) {
         categoryName: r.category_name,
         stockQty: qty,
         quarantineQty: qq,
+        // Cost groups holding stock (see /stock/batches).
+        batchCount: Number(r.batch_count || 0),
         reorderThreshold: threshold,
         unitLabel: r.unit_label,
         soldBy: r.sold_by,

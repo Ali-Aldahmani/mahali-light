@@ -19,6 +19,8 @@ export interface CheckoutPayment {
   amount: number;
   bankAccountId?: string | null;
   reference?: string | null;
+  // The card provider, for a card payment (Finance settings).
+  providerId?: string | null;
 }
 
 // Card and transfer are stored as method 'bank' with a tender (sales audit
@@ -29,7 +31,8 @@ export function samePayment(want: CheckoutPayment, stored: any): boolean {
   return method === stored.method
     && (!bankTender || (stored.tender === want.method
       && (stored.bankAccountId || null) === (want.bankAccountId || null)
-      && (stored.reference || null) === (want.reference || null)))
+      && (stored.reference || null) === (want.reference || null)
+      && (want.method !== 'card' || (stored.providerId || null) === (want.providerId || null))))
     && Math.round(Number(want.amount) * 100) === Math.round(Number(stored.amount) * 100);
 }
 
@@ -103,6 +106,8 @@ export function buildInvoiceItems(items: any[]) {
           unitPrice: Number(it.unitPrice),
           discountAmount: Number(it.lineDiscount || 0),
           serialNumber: it.serialNumber || null,
+          // The cost batches the cashier chose; omitted means oldest first.
+          ...(it.batchSelection?.length ? { batchSelection: it.batchSelection } : {}),
         },
   );
 }
@@ -236,6 +241,7 @@ export async function submitSale({
       ...(pm.method === 'card' || pm.method === 'transfer'
         ? { bankAccountId: pm.bankAccountId || null, reference: pm.reference || null }
         : {}),
+      ...(pm.method === 'card' && pm.providerId ? { providerId: pm.providerId } : {}),
     }));
   }
   const confirmed = await confirmInvoice(saved.id, closedDrawerReason);

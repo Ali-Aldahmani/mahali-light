@@ -100,3 +100,35 @@ export function getDeadStock(days = 30) {
 export function getStockValuation() {
   return apiGetWithMeta('/stock/valuation');
 }
+
+export interface StockBatch {
+  id: string;
+  batchNumber: string;
+  productId: string;
+  variantId: string;
+  qtyOnHand: number;
+  qtyQuarantined: number;
+  firstReceivedAt: string;
+  lastReceivedAt: string;
+  suppliers: string[];
+  receipts: {
+    id: string;
+    sourceType: string;
+    sourceId: string | null;
+    supplierName: string | null;
+    documentNumber: string | null;
+    quantity: number;
+    unitCost?: number;
+    receivedAt: string;
+  }[];
+  // Only for users with product.view_cost.
+  unitCost?: number;
+  value?: number;
+}
+
+// Cost batches (groups of stock at one unit cost) of the given variants.
+export function getStockBatches(variantIds: (string | number)[], { includeEmpty = false } = {}) {
+  return apiGet<StockBatch[]>('/stock/batches', {
+    params: { variantIds: variantIds.join(','), ...(includeEmpty ? { includeEmpty: 'true' } : {}) },
+  });
+}

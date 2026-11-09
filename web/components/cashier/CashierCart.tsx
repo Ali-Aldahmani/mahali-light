@@ -4,6 +4,7 @@ import { memo, useEffect, useRef } from 'react';
 import { AlertTriangle, ShoppingCart, Trash2, User, UserRound, X } from 'lucide-react';
 import InvoiceTotalsBlock from '@/components/ui/InvoiceTotalsBlock';
 import SerialNumberInput from '@/components/ui/SerialNumberInput';
+import CartBatchPicker from '@/components/pos/CartBatchPicker';
 import { formatCurrency } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import type { PriceViolation } from '@/lib/cashier/pricing';
@@ -343,6 +344,8 @@ const CartLine = memo(function CartLine({
           />
         </div>
       )}
+
+      {!line.isCustom && <CartBatchPicker line={line} />}
 
       {violations && (
         <ul role="alert" className="mt-2 space-y-0.5 text-xs font-medium text-error">

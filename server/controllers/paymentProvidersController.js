@@ -73,4 +73,16 @@ async function update(req, res, next) {
   }
 }
 
-module.exports = { list, create, update };
+// GET /api/invoices/:id/payment-fees — the card fee events of one sale.
+async function invoiceFees(req, res, next) {
+  try {
+    if (!z.string().uuid().safeParse(req.params.id).success) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    }
+    ok(res, await paymentFeeService.feesForInvoice(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { list, create, update, invoiceFees };

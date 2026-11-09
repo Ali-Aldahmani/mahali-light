@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { getInvoicePaymentFees } from '@/services/paymentProviderService';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -439,6 +440,42 @@ function PaymentsSection({
           />
         }
       />
+      {invoice?.id && invoice.status !== 'draft' && <InvoiceCardFees invoiceId={invoice.id} />}
+    </div>
+  );
+}
+
+// Card fees this sale incurred, and what refunds did to them. Finance users only.
+function InvoiceCardFees({ invoiceId }: { invoiceId: string }) {
+  const canSee = useAuthStore((s) => (s.permissions || []).includes('finance.view_pl'));
+  const [rows, setRows] = useState<any[]>([]);
+  useEffect(() => {
+    if (!canSee) return;
+    getInvoicePaymentFees(invoiceId).then((r: any) => setRows(r || [])).catch(() => setRows([]));
+  }, [canSee, invoiceId]);
+  if (!canSee || !rows.length) return null;
+  const net = rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  return (
+    <div className="border-t border-border px-4 py-3 text-xs">
+      <div className="mb-1 font-semibold text-ink">Card fees</div>
+      <ul className="space-y-0.5 text-ink-muted">
+        {rows.map((r) => (
+          <li key={r.id} className="flex justify-between gap-3">
+            <span>
+              {r.kind === 'charge'
+                ? `${r.provider_name} fee on ${formatCurrency(r.base_amount)} card payment`
+                : `Refund of ${formatCurrency(r.base_amount)} card money (${r.provider_name})`
+                  + (r.fee_refunded ? `, fee given back ${formatCurrency(r.fee_refunded)}` : '')
+                  + (r.refund_charge ? `, refund charge ${formatCurrency(r.refund_charge)}` : '')}
+            </span>
+            <span className="font-medium text-ink">{formatCurrency(r.amount)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-1 flex justify-between font-semibold text-ink">
+        <span>Net card fees</span>
+        <span>{formatCurrency(net)}</span>
+      </div>
     </div>
   );
 }
@@ -687,7 +724,7 @@ function AddPaymentSlideOver({
   const balance = Number(invoice?.balanceDue || 0);
   const [amount, setAmount] = useState<any>(balance);
   const [method, setMethod] = useState('cash');
-  const [bank, setBank] = useState<{ bankAccountId?: string | null; reference?: string | null }>({});
+  const [bank, setBank] = useState<{ bankAccountId?: string | null; reference?: string | null; providerId?: string | null }>({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -720,6 +757,7 @@ function AddPaymentSlideOver({
         amount: amt,
         notes: notes || null,
         ...(isBankTender(method) ? { bankAccountId: bank.bankAccountId, reference: bank.reference || null } : {}),
+        ...(method === 'card' && bank.providerId ? { providerId: bank.providerId } : {}),
       });
       paymentKey.current = null;
       toast.success('Payment recorded.');
@@ -798,7 +836,7 @@ function AddPaymentSlideOver({
           {isBankTender(method) && (
             <div className="mt-2">
               <BankTenderFields
-                payment={{ id: 'invoice-payment', ...bank }}
+                payment={{ id: 'invoice-payment', method, ...bank }}
                 onChange={(patch) => setBank((b) => ({ ...b, ...patch }))}
               />
             </div>

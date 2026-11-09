@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import CostBatchesTable from '@/components/inventory/CostBatchesTable';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -725,6 +726,26 @@ function StockTab({
             })}
           </tbody>
         </table>
+      </div>
+
+      <h3 className="mt-6 mb-2 text-sm font-semibold text-ink">Cost batches</h3>
+      <p className="mb-2 text-xs text-ink-muted">
+        Stock is grouped by the unit cost it was bought at. Receipts at a cost a variant already has join that group.
+      </p>
+      <div className="space-y-3">
+        {variants.map((v: any) => (
+          <div key={v.id} className="card overflow-hidden">
+            <div className="border-b border-border bg-surface-2 px-4 py-2 text-xs">
+              <code className="font-mono text-ink">{v.sku}</code>
+              {(v.attributes || []).length > 0 && (
+                <span className="ml-2 text-ink-muted">
+                  {(v.attributes || []).map((a: any) => a.value).join(' · ')}
+                </span>
+              )}
+            </div>
+            <CostBatchesTable variantId={v.id} unitLabel={product.unitLabel || ''} />
+          </div>
+        ))}
       </div>
 
       <p className="mt-3 text-xs text-ink-muted">

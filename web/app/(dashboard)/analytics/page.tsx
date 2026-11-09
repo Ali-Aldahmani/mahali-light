@@ -279,13 +279,14 @@ function ProductsTab({ range }: { range: { start_date: string; end_date: string 
             { value: 'revenue', label: 'Sort by Revenue' },
             { value: 'quantity', label: 'Sort by Quantity' },
             ...(canViewCost ? [{ value: 'margin', label: 'Sort by Margin %' }] : []),
+            ...(canViewCost ? [{ value: 'contribution', label: 'Sort by Contribution (after card fees)' }] : []),
           ]}
           className="min-w-[200px]"
         />
       </div>
       {canViewCost && (
         <p className="text-xs text-ink-muted">
-          Net of returns and all discounts, ex-VAT. Cost is the purchase cost recorded on each sale.
+          Net of returns and all discounts, ex-VAT. Cost is the purchase cost recorded on each sale. Contribution is gross profit less card fees.
         </p>
       )}
       <TopProductsTable rows={top} verbose showCategory />

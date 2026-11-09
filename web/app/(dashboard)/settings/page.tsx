@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import CardFeesSettings from '@/components/settings/CardFeesSettings';
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import SettingsSection from '@/components/settings/SettingsSection';
@@ -26,6 +27,7 @@ const NAV: { id: string; label: string; link?: string }[] = [
   { id: 'store', label: 'Store profile' },
   { id: 'invoice', label: 'Invoice & POS' },
   { id: 'vat', label: 'VAT & finance' },
+  { id: 'card_fees', label: 'Card fees' },
   { id: 'printers', label: 'Printers', link: '/settings/printers' },
   { id: 'network', label: 'Network' },
   { id: 'attendance', label: 'Attendance' },
@@ -240,6 +242,11 @@ export default function SettingsHubPage() {
               <Input label="VAT rate (%)" type="number" value={draft.vat_rate} onChange={(e: any) => patch({ vat_rate: Number(e.target.value) })} disabled={!canEdit} />
               <Input label="VAT number" value={draft.vat_number || ''} onChange={(e: any) => patch({ vat_number: e.target.value })} disabled={!canEdit} />
               <Input label="Fiscal year starts (month 1-12)" type="number" value={draft.fiscal_year_start_month} onChange={(e: any) => patch({ fiscal_year_start_month: Number(e.target.value) })} disabled={!canEdit} />
+            </SettingsSection>
+          )}
+          {section === 'card_fees' && (
+            <SettingsSection title="Card fees" description="Card providers and what they charge per card payment.">
+              <CardFeesSettings canManage={role === 'Admin' || hasPermission('finance.manage_payment_fees')} />
             </SettingsSection>
           )}
           {section === 'network' && (

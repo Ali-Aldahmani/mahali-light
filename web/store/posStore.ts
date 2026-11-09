@@ -140,6 +140,9 @@ interface PosState {
     opts?: { valid?: boolean; error?: string | null },
   ) => void;
   updateQty: (variantId: string | number, qty: number) => void;
+  // The cost batches a line is sold from: [{ batchId, quantity }], or null
+  // for "oldest first". Cleared when the line's quantity changes.
+  setBatchSelection: (variantId: string | number, selection: { batchId: string; quantity: number }[] | null) => void;
   updateUnitPrice: (variantId: string | number, unitPrice: number) => void;
   setLineDiscount: (
     variantId: string | number,
@@ -317,7 +320,7 @@ export const usePosStore = create<PosState>()((set, get) => ({
         return {
           cart: state.cart.map((i) =>
             i.variantId === variant.variantId
-              ? { ...i, quantity: round2(Number(i.quantity) + qty) }
+              ? { ...i, quantity: round2(Number(i.quantity) + qty), batchSelection: null }
               : i,
           ),
         };
@@ -404,7 +407,21 @@ export const usePosStore = create<PosState>()((set, get) => ({
   updateQty(variantId, qty) {
     set((state) => ({
       cart: state.cart.map((i) =>
-        i.variantId === variantId ? { ...i, quantity: round2(qty) } : i,
+        i.variantId === variantId
+          ? {
+              ...i,
+              quantity: round2(qty),
+              batchSelection: round2(qty) === round2(i.quantity) ? i.batchSelection : null,
+            }
+          : i,
+      ),
+    }));
+  },
+
+  setBatchSelection(variantId, selection) {
+    set((state) => ({
+      cart: state.cart.map((i) =>
+        i.variantId === variantId ? { ...i, batchSelection: selection?.length ? selection : null } : i,
       ),
     }));
   },

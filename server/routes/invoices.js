@@ -25,6 +25,8 @@ router.post('/:id/cancel', requirePermission('invoice.cancel'), invoices.cancel)
 router.get('/:id/payments', requirePermission('invoice.view'), payments.list);
 router.post('/:id/payments', requirePermission('invoice.create'), payments.create);
 router.delete('/:id/payments/:paymentId', requirePermission('invoice.create'), payments.remove);
+// Card fees a sale incurred are finance figures, not something every till sees.
+router.get('/:id/payment-fees', requirePermission('finance.view_pl'), require('../controllers/paymentProvidersController').invoiceFees);
 
 // PDF / receipt routes — gated on view (anyone who can see the invoice can
 // download), with manual force regeneration gated on print.

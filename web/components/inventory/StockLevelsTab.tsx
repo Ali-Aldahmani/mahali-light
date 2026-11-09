@@ -32,6 +32,7 @@ import StockMovementsDrawer from './StockMovementsDrawer';
 import { onStockUpdate } from '@/store/socketStore';
 import RowActions from '@/components/ui/RowActions';
 import QuarantineModal from './QuarantineModal';
+import CostBatchesTable from './CostBatchesTable';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
@@ -74,6 +75,8 @@ export default function StockLevelsTab() {
   const permissions = useAuthStore((s) => s.permissions);
   const canRequestAdj = permissions.includes('stock.adjust_request') || permissions.includes('stock.adjust_direct');
   const canSeeCost = permissions.includes('product.view_cost');
+  // Rows whose cost batches are open.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const categoriesFlat = useProductStore((s) => s.categoriesFlat);
   const ensureCats = useProductStore((s) => s.fetchCategories);
 
@@ -207,6 +210,24 @@ export default function StockLevelsTab() {
                 {formatQty(r.quarantineQty)} in quarantine
               </Badge>
             )}
+            {r.batchCount > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded((cur) => {
+                    const next = new Set(cur);
+                    if (next.has(r.variantId)) next.delete(r.variantId);
+                    else next.add(r.variantId);
+                    return next;
+                  });
+                }}
+                aria-expanded={expanded.has(r.variantId)}
+                className="text-xs text-accent hover:underline"
+              >
+                {r.batchCount === 1 ? '1 cost batch' : `${r.batchCount} cost batches`}
+              </button>
+            )}
           </div>
         ),
       },
@@ -293,7 +314,7 @@ export default function StockLevelsTab() {
       ),
     });
     return cols;
-  }, [router, canSeeCost, canRequestAdj, canResolveQuarantine]);
+  }, [router, canSeeCost, canRequestAdj, canResolveQuarantine, expanded]);
 
   function handleExport() {
     const cols: { label: string; value: (r: any) => any }[] = [
@@ -406,6 +427,8 @@ export default function StockLevelsTab() {
         columns={columns}
         rows={rows}
         rowKey={(r: any) => r.variantId}
+        expandedRowKeys={expanded}
+        renderSubRow={(r: any) => <CostBatchesTable variantId={r.variantId} unitLabel={r.unitLabel || ''} />}
         loading={loading}
         empty={
           <EmptyState

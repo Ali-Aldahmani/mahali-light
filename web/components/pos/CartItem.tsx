@@ -1,4 +1,5 @@
 import { Percent, ShieldAlert, Trash2 } from 'lucide-react';
+import CartBatchPicker from '@/components/pos/CartBatchPicker';
 import Input from '../ui/Input';
 import { formatCurrency } from '@/lib/utils/format';
 import NumberField from '../ui/number-field/NumberField';
@@ -187,6 +188,8 @@ export default function CartItem({
           {restrictionHint}
         </div>
       )}
+
+      {!item.isCustom && <CartBatchPicker line={item} />}
     </div>
   );
 }
