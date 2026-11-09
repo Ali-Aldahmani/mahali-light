@@ -11,6 +11,7 @@ const cashService = require('./cashService');
 const bankService = require('./bankService');
 const { snapshotInvoiceCustomer } = require('../utils/customerSnapshot');
 const journalService = require('./journalService');
+const paymentFeeService = require('./paymentFeeService');
 const notificationService = require('./notificationService');
 const { emitEvent } = require('../socket/events');
 
@@ -1306,6 +1307,22 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
             });
           }
         }
+      }
+    }
+
+    // --- Card fees on the refunded card money --------------------------
+    // The customer got the full refund above. Money refunded to a bank on an
+    // invoice paid by card is card money first; the store's original fee on
+    // it stays an expense unless the provider gives it back, and the provider
+    // may charge for the refund (paymentFeeService).
+    if (invoice && Array.isArray(refundPlan)) {
+      const bankRefund = money(refundPlan.filter((p) => p.method === 'bank')
+        .reduce((sum, p) => sum + money(p.amount), 0));
+      if (bankRefund > 0) {
+        await paymentFeeService.recordRefundFees(client, {
+          invoiceId: invoice.id, sourceType: 'return_order', sourceId: orderId, cardAmount: bankRefund,
+          userId: managerId, date: todayStoreDate(), label: orderNumber,
+        });
       }
     }
 

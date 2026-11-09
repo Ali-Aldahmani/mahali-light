@@ -47,13 +47,16 @@ async function netProfitTrends(req, res, next) {
 
 const topSchema = rangeSchema.extend({
   limit: z.coerce.number().min(1).max(200).optional(),
-  sort_by: z.enum(['revenue', 'profit', 'quantity', 'margin']).optional(),
+  sort_by: z.enum(['revenue', 'profit', 'quantity', 'margin', 'contribution']).optional(),
   group_by: z.enum(['product', 'variant']).optional(),
 });
 
 // Without product.view_cost a role sees sales figures only: no cost, profit or
 // margin, and no ordering by them, which would leak their ranking.
-const PRODUCT_COST_FIELDS = ['cost_total', 'gross_profit', 'margin_pct', 'missing_cost_qty'];
+const PRODUCT_COST_FIELDS = [
+  'cost_total', 'gross_profit', 'margin_pct', 'missing_cost_qty',
+  'payment_fees', 'contribution_profit', 'batch_cost_total', 'batch_gross_profit',
+];
 
 function productRankingHandler(load) {
   return async (req, res, next) => {
@@ -65,7 +68,7 @@ function productRankingHandler(load) {
         startDate: parsed.start_date,
         endDate: parsed.end_date,
         limit: parsed.limit,
-        sortBy: !canViewCost && ['profit', 'margin'].includes(parsed.sort_by) ? 'revenue' : parsed.sort_by,
+        sortBy: !canViewCost && ['profit', 'margin', 'contribution'].includes(parsed.sort_by) ? 'revenue' : parsed.sort_by,
         groupBy: parsed.group_by,
       });
       ok(res, canViewCost ? data : data.map((row) => {
@@ -255,6 +258,7 @@ async function productSeasonality(req, res, next) {
 // figures the report endpoints hide from them.
 const FINANCE_KPI_FIELDS = [
   'gross_profit', 'gross_margin_pct', 'net_profit', 'net_margin_pct',
+  'payment_fees', 'contribution_profit',
   'expenses', 'expense_ratio_pct', 'inventory_value', 'inventory_turnover',
   'payables_total',
 ];

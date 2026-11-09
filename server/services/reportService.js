@@ -206,7 +206,7 @@ async function salesByProduct(params) {
   const rows = await getProductProfit({
     startDate,
     endDate,
-    sortBy: ['profit', 'margin', 'quantity'].includes(sort) ? sort : 'revenue',
+    sortBy: ['profit', 'margin', 'quantity', 'contribution'].includes(sort) ? sort : 'revenue',
   });
   return {
     type: 'sales_by_product',
@@ -221,6 +221,9 @@ async function salesByProduct(params) {
       { key: 'cost', label: 'COGS', type: 'currency', align: 'right' },
       { key: 'profit', label: 'Gross Profit', type: 'currency', align: 'right' },
       { key: 'margin', label: 'Margin %', type: 'percent', align: 'right' },
+      { key: 'card_fees', label: 'Card Fees', type: 'currency', align: 'right' },
+      { key: 'contribution', label: 'Contribution', type: 'currency', align: 'right' },
+      { key: 'batch_cost', label: 'Batch Cost', type: 'currency', align: 'right' },
       { key: 'cost_note', label: 'Cost Note' },
     ],
     rows: rows.slice(0, 500).map((r, idx) => {
@@ -237,6 +240,9 @@ async function salesByProduct(params) {
         cost,
         profit,
         margin,
+        card_fees: money(r.payment_fees),
+        contribution: money(r.contribution_profit),
+        batch_cost: money(r.batch_cost_total),
         cost_note: Number(r.missing_cost_qty) > 0 ? `No cost on ${Number(r.missing_cost_qty)} sold` : '',
       };
     }),
@@ -245,6 +251,9 @@ async function salesByProduct(params) {
       revenue: money(rows.reduce((s, r) => s + Number(r.revenue), 0)),
       cost: money(rows.reduce((s, r) => s + Number(r.cost_total), 0)),
       profit: money(rows.reduce((s, r) => s + Number(r.gross_profit), 0)),
+      card_fees: money(rows.reduce((s, r) => s + Number(r.payment_fees), 0)),
+      contribution: money(rows.reduce((s, r) => s + Number(r.contribution_profit), 0)),
+      batch_cost: money(rows.reduce((s, r) => s + Number(r.batch_cost_total), 0)),
     },
   };
 }
@@ -2047,6 +2056,8 @@ async function netProfit(params) {
       cogs: pl.cogs.total,
       gross_profit: pl.grossProfit,
       gross_margin: pl.grossMargin,
+      payment_fees: pl.paymentFees.total,
+      contribution_profit: pl.contributionProfit,
       expenses: pl.expenses.total,
       net_profit: pl.netProfit,
       net_margin: pl.netMargin,
@@ -2067,6 +2078,8 @@ async function netProfit(params) {
       { key: 'cogs', label: 'COGS', type: 'currency', align: 'right' },
       { key: 'gross_profit', label: 'Gross Profit', type: 'currency', align: 'right' },
       { key: 'gross_margin', label: 'GP %', type: 'percent', align: 'right' },
+      { key: 'payment_fees', label: 'Card Fees', type: 'currency', align: 'right' },
+      { key: 'contribution_profit', label: 'Contribution', type: 'currency', align: 'right' },
       { key: 'expenses', label: 'Expenses', type: 'currency', align: 'right' },
       { key: 'net_profit', label: 'Net Profit', type: 'currency', align: 'right' },
       { key: 'net_margin', label: 'NP %', type: 'percent', align: 'right' },
@@ -2076,6 +2089,8 @@ async function netProfit(params) {
       revenue: money(rows.reduce((s, r) => s + r.revenue, 0)),
       cogs: money(rows.reduce((s, r) => s + r.cogs, 0)),
       gross_profit: money(rows.reduce((s, r) => s + r.gross_profit, 0)),
+      payment_fees: money(rows.reduce((s, r) => s + r.payment_fees, 0)),
+      contribution_profit: money(rows.reduce((s, r) => s + r.contribution_profit, 0)),
       expenses: money(rows.reduce((s, r) => s + r.expenses, 0)),
       net_profit: money(rows.reduce((s, r) => s + r.net_profit, 0)),
     },
@@ -2429,6 +2444,9 @@ const REGISTRY = {
           cogs: pl.cogs.total,
           grossProfit: pl.grossProfit,
           grossMarginPct: pl.grossMargin,
+          cardFees: pl.paymentFees.total,
+          contributionProfit: pl.contributionProfit,
+          contributionMarginPct: pl.contributionMargin,
           expenses: pl.expenses.total,
           netProfit: pl.netProfit,
           netMarginPct: pl.netMargin,
@@ -2515,7 +2533,7 @@ const REGISTRY = {
   sales_by_product: {
     fn: salesByProduct,
     permission: 'report.sales',
-    costFields: ['cost', 'profit', 'margin', 'cost_note'],
+    costFields: ['cost', 'profit', 'margin', 'card_fees', 'contribution', 'batch_cost', 'cost_note'],
   },
   sales_by_category: { fn: salesByCategory, permission: 'report.sales' },
   sales_by_employee: { fn: salesByEmployee, permission: 'report.sales' },

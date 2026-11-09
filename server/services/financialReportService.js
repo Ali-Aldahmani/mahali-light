@@ -132,6 +132,7 @@ async function getProfitAndLoss({ startDate, endDate, compare = false }) {
       revenue: pctChange(period.revenue.total, prev.revenue.total),
       cogs: pctChange(period.cogs.total, prev.cogs.total),
       grossProfit: pctChange(period.grossProfit, prev.grossProfit),
+      contributionProfit: pctChange(period.contributionProfit, prev.contributionProfit),
       expenses: pctChange(period.expenses.total, prev.expenses.total),
       netProfit: pctChange(period.netProfit, prev.netProfit),
     },
@@ -164,19 +165,28 @@ async function buildPLPeriod(startDate, endDate) {
     ? Math.round((grossProfit / revenueTotal) * 1000) / 10
     : 0;
 
-  // Operating expenses — everything in 5xxx except COGS (5001).
+  // Card processing fees (5017) come off gross profit to give contribution
+  // profit, before operating expenses.
+  const feeSum = await sumLines({ from, to, codes: ['5017'] });
+  const paymentFeesTotal = money(feeSum.totalDebit - feeSum.totalCredit);
+  const contributionProfit = money(grossProfit - paymentFeesTotal);
+  const contributionMargin = revenueTotal > 0
+    ? Math.round((contributionProfit / revenueTotal) * 1000) / 10
+    : 0;
+
+  // Operating expenses — everything in 5xxx except COGS (5001) and card fees.
   const expenseBreakdown = await breakdownByAccount({
     from,
     to,
     accountType: 'expense',
-    excludeCodes: ['5000', '5001'],
+    excludeCodes: ['5000', '5001', '5017'],
   });
   const expenseLines = expenseBreakdown
     .filter((r) => r.netDebit !== 0)
     .map((r) => ({ code: r.code, name: r.name, amount: r.netDebit }));
   const expenseTotal = money(expenseLines.reduce((s, r) => s + r.amount, 0));
 
-  const netProfit = money(grossProfit - expenseTotal);
+  const netProfit = money(contributionProfit - expenseTotal);
   const netMargin = revenueTotal > 0
     ? Math.round((netProfit / revenueTotal) * 1000) / 10
     : 0;
@@ -188,6 +198,9 @@ async function buildPLPeriod(startDate, endDate) {
     cogs: { total: cogsTotal },
     grossProfit,
     grossMargin,
+    paymentFees: { total: paymentFeesTotal },
+    contributionProfit,
+    contributionMargin,
     expenses: { lines: expenseLines, total: expenseTotal },
     netProfit,
     netMargin,
@@ -506,11 +519,11 @@ async function getDashboardSnapshot() {
     periodEnd: monthEnd,
     revenue: { mtd: pl.revenue.total, prev: prevPL.revenue.total,
       delta: pctChange(pl.revenue.total, prevPL.revenue.total) },
-    expenses: { mtd: money(pl.cogs.total + pl.expenses.total),
-      prev: money(prevPL.cogs.total + prevPL.expenses.total),
+    expenses: { mtd: money(pl.cogs.total + pl.paymentFees.total + pl.expenses.total),
+      prev: money(prevPL.cogs.total + prevPL.paymentFees.total + prevPL.expenses.total),
       delta: pctChange(
-        pl.cogs.total + pl.expenses.total,
-        prevPL.cogs.total + prevPL.expenses.total,
+        pl.cogs.total + pl.paymentFees.total + pl.expenses.total,
+        prevPL.cogs.total + prevPL.paymentFees.total + prevPL.expenses.total,
       ) },
     netProfit: { mtd: pl.netProfit, prev: prevPL.netProfit,
       delta: pctChange(pl.netProfit, prevPL.netProfit) },

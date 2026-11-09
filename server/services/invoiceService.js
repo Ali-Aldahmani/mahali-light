@@ -4,6 +4,7 @@ const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { checkSelection: checkBatchSelection } = require('./batchService');
+const paymentFeeService = require('./paymentFeeService');
 const { applyStockMovement, lockVariants } = require('./stockService');
 const { assertQuantity } = require('../utils/quantity');
 const { assertWithinCreditLimit } = require('./customerService');
@@ -785,6 +786,12 @@ async function confirmInvoice({ invoiceId, employeeId, io = null, closedDrawerRe
       userId: employeeId,
     });
 
+    // Card processing fees on the card-paid part, posted on their own so a
+    // later reversal of the sale entries leaves them in place.
+    await paymentFeeService.recordSaleFees(client, {
+      invoice, payments, userId: employeeId, date: todayStoreDate(),
+    });
+
     await client.query(
       `UPDATE invoices
           SET status = 'confirmed',
@@ -1105,6 +1112,15 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
         invoiceNumber: invoice.invoice_number,
         date: todayStoreDate(),
         userId: employeeId,
+      });
+    }
+
+    // All card money goes back to the customer. The store's fee on it follows
+    // each provider's refund policy (kept by default).
+    if (invoice.status === 'confirmed') {
+      await paymentFeeService.recordRefundFees(client, {
+        invoiceId, sourceType: 'invoice_cancel', sourceId: invoiceId,
+        userId: employeeId, date: todayStoreDate(), label: `cancelled ${invoice.invoice_number}`,
       });
     }
 

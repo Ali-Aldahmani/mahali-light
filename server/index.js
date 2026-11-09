@@ -67,6 +67,7 @@ const backupRouter = require('./routes/backup');
 const errorLogsRouter = require('./routes/errorLogs');
 const bugReportsRouter = require('./routes/bugReports');
 const appSettingsRouter = require('./routes/appSettings');
+const paymentProvidersRouter = require('./routes/paymentProviders');
 const telegramRouter = require('./routes/telegram');
 const setupRouter = require('./routes/setup');
 const searchRouter = require('./routes/search');
@@ -379,6 +380,7 @@ async function bootstrap() {
   app.use('/api/error-logs', errorLogsRouter);
   app.use('/api/bug-reports', bugReportsRouter);
   app.use('/api/app-settings', appSettingsRouter);
+  app.use('/api/payment-providers', paymentProvidersRouter);
   app.use('/api/integrations/telegram', telegramRouter);
   app.use('/api/setup', setupRouter);
   app.use('/api/search', searchRouter);

@@ -103,6 +103,8 @@ const PERMISSIONS = {
     journal: 'finance.view_journal',
     closePeriod: 'finance.close_period',
     exportReports: 'finance.export_reports',
+    // Card providers and their processing fees (Finance settings).
+    managePaymentFees: 'finance.manage_payment_fees',
   },
   report: {
     financial: 'report.financial',

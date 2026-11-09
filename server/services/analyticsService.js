@@ -122,6 +122,13 @@ async function getNetProfitTrends({ groupBy = 'month', startDate, endDate } = {}
             WHERE expense_date BETWEEN $1::date AND $2::date
          ) all_exp
         GROUP BY 1
+     ),
+     fees AS (
+       SELECT date_trunc('${trunc}', fee_date)::date AS bucket,
+              COALESCE(SUM(amount), 0)::float8 AS fees
+         FROM payment_fees
+        WHERE fee_date BETWEEN $1::date AND $2::date
+        GROUP BY 1
      )
      -- Bucket goes out as YYYY-MM-DD text: a DATE parsed into a JS Date lands
      -- on local midnight, and toISOString() then reads it as the day before
@@ -129,10 +136,12 @@ async function getNetProfitTrends({ groupBy = 'month', startDate, endDate } = {}
      SELECT to_char(b.bucket, 'YYYY-MM-DD') AS bucket,
             COALESCE(s.revenue, 0)::float8 AS revenue,
             COALESCE(s.cogs, 0)::float8 AS cogs,
-            COALESCE(e.expenses, 0)::float8 AS expenses
+            COALESCE(e.expenses, 0)::float8 AS expenses,
+            COALESCE(f.fees, 0)::float8 AS fees
        FROM buckets b
        LEFT JOIN sales s ON s.bucket = b.bucket
        LEFT JOIN expenses e ON e.bucket = b.bucket
+       LEFT JOIN fees f ON f.bucket = b.bucket
       ORDER BY b.bucket`,
     [range.startDate, range.endDate],
   );
@@ -142,8 +151,10 @@ async function getNetProfitTrends({ groupBy = 'month', startDate, endDate } = {}
     const revenue = money(r.revenue);
     const cogs = money(r.cogs);
     const expenses = money(r.expenses);
+    const fees = money(r.fees);
     const grossProfit = money(revenue - cogs);
-    const netProfit = money(grossProfit - expenses);
+    const contributionProfit = money(grossProfit - fees);
+    const netProfit = money(contributionProfit - expenses);
     const marginPct = revenue > 0 ? Math.round((netProfit / revenue) * 1000) / 10 : 0;
     const vsPrevPct = prevNet == null ? null : percentChange(netProfit, prevNet);
     prevNet = netProfit;
@@ -152,6 +163,8 @@ async function getNetProfitTrends({ groupBy = 'month', startDate, endDate } = {}
       revenue,
       cogs,
       gross_profit: grossProfit,
+      payment_fees: fees,
+      contribution_profit: contributionProfit,
       expenses,
       net_profit: netProfit,
       margin_pct: marginPct,
@@ -198,6 +211,10 @@ async function getTopProducts({
     revenue: money(r.revenue),
     cost_total: money(r.cost_total),
     gross_profit: money(r.gross_profit),
+    payment_fees: money(r.payment_fees),
+    contribution_profit: money(r.contribution_profit),
+    batch_cost_total: money(r.batch_cost_total),
+    batch_gross_profit: money(r.batch_gross_profit),
     margin_pct: Math.round(Number(r.margin_pct) * 10) / 10,
     return_rate_pct: Math.round(Number(r.return_rate_pct) * 10) / 10,
     invoice_count: r.invoice_count,
@@ -855,6 +872,10 @@ async function getKPIs(params = {}) {
           WHERE expense_date BETWEEN $1::date AND $2::date
        ) e
      ),
+     fees_cur AS (
+       SELECT COALESCE(SUM(amount), 0)::float8 AS total FROM payment_fees
+        WHERE fee_date BETWEEN $1::date AND $2::date
+     ),
      receivables AS (
        SELECT COALESCE(SUM(credit_balance), 0)::float8 AS total FROM customers
         WHERE credit_balance > 0
@@ -925,6 +946,7 @@ async function getKPIs(params = {}) {
             prev_window.gross AS prev_gross,
             prev_window.avg_order AS prev_avg_order,
             expenses_cur.total AS expenses,
+            fees_cur.total AS payment_fees,
             receivables.total AS receivables_total,
             payables.total AS payables_total,
             ret.refunds AS refunds,
@@ -934,7 +956,7 @@ async function getKPIs(params = {}) {
             prev_ret.revenue_reversal AS prev_returned_revenue,
             prev_ret.cogs_reversal AS prev_returned_cogs,
             inventory_value.total AS inventory_value
-       FROM cur, prev_window, expenses_cur, receivables, payables, ret, prev_ret, inventory_value`,
+       FROM cur, prev_window, expenses_cur, fees_cur, receivables, payables, ret, prev_ret, inventory_value`,
     [range.startDate, range.endDate, prev.startDate, prev.endDate],
   );
 
@@ -942,7 +964,9 @@ async function getKPIs(params = {}) {
   const revenue = Number(r.revenue || 0) - Number(r.returned_revenue || 0);
   const cogs = Number(r.cogs || 0) - Number(r.returned_cogs || 0);
   const grossProfit = revenue - cogs;
-  const netProfit = grossProfit - Number(r.expenses || 0);
+  const paymentFees = Number(r.payment_fees || 0);
+  const contributionProfit = grossProfit - paymentFees;
+  const netProfit = contributionProfit - Number(r.expenses || 0);
   const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const netMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
   const prevRevenue = Number(r.prev_revenue || 0) - Number(r.prev_returned_revenue || 0);
@@ -975,6 +999,8 @@ async function getKPIs(params = {}) {
     revenue: money(revenue),
     revenue_growth_pct: percentChange(revenue, prevRevenue),
     gross_profit: money(grossProfit),
+    payment_fees: money(paymentFees),
+    contribution_profit: money(contributionProfit),
     gross_margin_pct: Math.round(grossMargin * 10) / 10,
     net_profit: money(netProfit),
     net_margin_pct: Math.round(netMargin * 10) / 10,

@@ -21,6 +21,9 @@ const createSchema = z.object({
   amount: z.number().finite().positive().multipleOf(0.01),
   bankAccountId: z.string().uuid().optional().nullable(),
   reference: z.string().trim().max(100).optional().nullable(),
+  // The card provider (acquirer/terminal) for a card payment. Omitted: the
+  // default provider is used when the sale is confirmed.
+  providerId: z.string().uuid().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
 });
 
@@ -32,7 +35,19 @@ function storedPayment(body) {
     tender: isBank ? BANK_TENDERS[body.method] : null,
     bankAccountId: isBank ? body.bankAccountId || null : null,
     reference: isBank ? body.reference || null : null,
+    providerId: body.method === 'card' ? body.providerId || null : null,
   };
+}
+
+async function assertActiveProvider(client, providerId) {
+  if (!providerId) return;
+  const { rows } = await client.query(
+    `SELECT 1 FROM payment_providers WHERE id = $1 AND is_active = true`, [providerId],
+  );
+  if (!rows.length) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+      'That card provider is not available.', { status: 400, details: { field: 'providerId' } });
+  }
 }
 
 async function assertActiveBankAccount(client, bankAccountId) {
@@ -61,6 +76,7 @@ function shape(row) {
     // 'card' or 'transfer' for bank payments taken from now on.
     tender: row.tender || null,
     reference: row.reference || null,
+    providerId: row.provider_id || null,
     amount: Number(row.amount),
     bankAccountId: row.bank_account_id,
     employeeId: row.employee_id,
@@ -129,6 +145,7 @@ async function create(req, res, next) {
             (payment.bank_account_id || null) !== pay.bankAccountId ||
             (payment.tender || null) !== pay.tender ||
             (payment.reference || null) !== pay.reference ||
+            (payment.provider_id || null) !== pay.providerId ||
             (payment.notes || null) !== (body.notes || null)) {
           throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
             'This payment key was already used with different payment details.', { status: 409 });
@@ -160,12 +177,13 @@ async function create(req, res, next) {
         }
       }
       if (pay.method === 'bank') await assertActiveBankAccount(client, pay.bankAccountId);
+      await assertActiveProvider(client, pay.providerId);
 
       const { rows: insertRows } = await client.query(
         `INSERT INTO invoice_payments
            (invoice_id, method, amount, bank_account_id, employee_id, notes, idempotency_key,
-            tender, reference)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+            tender, reference, provider_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          RETURNING id`,
         [
           invoiceId,
@@ -177,6 +195,7 @@ async function create(req, res, next) {
           body.idempotencyKey,
           pay.tender,
           pay.reference,
+          pay.providerId,
         ],
       );
 

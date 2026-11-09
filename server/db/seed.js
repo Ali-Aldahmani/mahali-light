@@ -89,6 +89,7 @@ const ALL_PERMISSIONS = [
   ['finance.view_journal', 'View Journal Entries', 'finance'],
   ['finance.close_period', 'Close Financial Period', 'finance'],
   ['finance.export_reports', 'Export Financial Reports', 'finance'],
+  ['finance.manage_payment_fees', 'Manage Card Fees', 'finance'],
   ['report.financial', 'Financial Reports', 'report'],
   ['report.schedule', 'Schedule Reports', 'report'],
   ['report.sales', 'Sales Reports', 'report'],
