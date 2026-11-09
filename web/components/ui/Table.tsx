@@ -24,7 +24,7 @@ export interface TablePagination {
 export interface TableProps {
   columns: TableColumn[];
   rows: any[];
-  rowKey?: (row: any) => string | number;
+  rowKey?: (row: any, idx: number) => string | number;
   loading?: boolean;
   empty?: ReactNode;
   initialSort?: { key: string; direction: 'asc' | 'desc' } | null;
@@ -37,7 +37,7 @@ export interface TableProps {
 
 // columns: [{ key, header, render?, sortable?, width?, align?, accessor? }]
 // rows: any[]
-// rowKey: (row) => string
+// rowKey: (row, idx) => string; idx is the row's position as displayed
 export default function Table({
   columns,
   rows,
@@ -140,7 +140,7 @@ export default function Table({
               </tr>
             ) : (
               sortedRows.map((row, idx) => {
-                const key = rowKey(row);
+                const key = rowKey(row, idx);
                 const isExpanded = Boolean(expandedRowKeys?.has(key));
                 const subRowContent = isExpanded && renderSubRow ? renderSubRow(row, isExpanded) : null;
                 return (
