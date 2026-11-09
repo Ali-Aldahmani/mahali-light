@@ -90,12 +90,14 @@ export default function MobileDashboard() {
   const canKpis = hasAnyPermission(permissions, ['analytics.view_dashboard']);
   const canTop = hasAnyPermission(permissions, ['analytics.view']);
   const canDrawer = hasAnyPermission(permissions, ['cash.view']);
+  const canViewCost = hasAnyPermission(permissions, ['product.view_cost']);
+  const sortBy = canViewCost ? 'profit' : 'revenue';
   const range = useMemo(() => rangeDates(DEFAULT_DASHBOARD_RANGE), []);
 
   const kpis = useMobileQuery(() => getKPIs(range), [range], { enabled: canKpis });
   const top = useMobileQuery(
-    () => getTopProducts({ ...range, limit: 3, sort_by: 'revenue' }).then((r: any) => r?.data || r || []),
-    [range],
+    () => getTopProducts({ ...range, limit: 3, sort_by: sortBy }).then((r: any) => r?.data || r || []),
+    [range, sortBy],
     { enabled: canTop },
   );
   const k: any = kpis.data;
@@ -156,7 +158,9 @@ export default function MobileDashboard() {
 
       <MobileCard className="px-2 pb-3 pt-4">
         <div className="mb-3 flex items-center justify-between px-3">
-          <h2 className="font-m-inter text-[14px] font-semibold text-ink">Top products</h2>
+          <h2 className="font-m-inter text-[14px] font-semibold text-ink">
+            {canViewCost ? 'Most profitable' : 'Top products'}
+          </h2>
           {canTop && (
             <Link
               href="/m/top-products"

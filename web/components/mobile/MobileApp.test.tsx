@@ -309,6 +309,21 @@ describe('read-only data screens', () => {
     expect(screen.getByText('SKU A9F74320')).toBeInTheDocument();
     expect(screen.getByText('320')).toBeInTheDocument();
     expect(getTopProducts).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, sort_by: 'revenue' }));
+    expect(screen.getByText('Top products')).toBeInTheDocument();
+  });
+
+  it('top products ranks by gross profit for a user who may see cost', async () => {
+    signIn(['analytics.view', 'product.view_cost']);
+    getTopProducts.mockResolvedValue([
+      { ...TOP[0], gross_profit: 5200 },
+      { product_id: 'p3', variant_id: null, rank: 2, product_name: 'Two-way Switch', sku: '', variant_count: 3,
+        units_sold: 12, revenue: 600, gross_profit: -40 },
+    ]);
+    render(<MobileTopProducts />);
+    expect(await screen.findByText('Most profitable products')).toBeInTheDocument();
+    expect(screen.getByText('Profit AED 5,200')).toBeInTheDocument();
+    expect(screen.getByText('3 variants')).toBeInTheDocument();
+    expect(getTopProducts).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, sort_by: 'profit' }));
   });
 });
 

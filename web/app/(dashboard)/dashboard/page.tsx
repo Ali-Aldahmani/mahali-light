@@ -50,6 +50,7 @@ export default function DashboardPage() {
   const permissions = useAuthStore((s) => s.permissions);
   const owned = useMemo(() => new Set(permissions || []), [permissions]);
   const canAnalytics = owned.has('analytics.view_dashboard');
+  const canViewCost = owned.has('product.view_cost');
 
   const [rangeKey, setRangeKey] = useState('this_month');
   const range = useMemo(() => rangeDates(rangeKey), [rangeKey]);
@@ -90,7 +91,7 @@ export default function DashboardPage() {
     try {
       const [tl, tp, emp, cat, hm] = await Promise.all([
         getSalesTimeline(range).then((r: any) => r?.data || r).catch(() => []),
-        getTopProducts({ ...range, limit: 5, sort_by: 'revenue' })
+        getTopProducts({ ...range, limit: 5, sort_by: canViewCost ? 'profit' : 'revenue' })
           .then((r: any) => r?.data || r)
           .catch(() => []),
         getEmployeePerformance(range).then((r: any) => r?.data || r).catch(() => []),
@@ -107,7 +108,7 @@ export default function DashboardPage() {
     } finally {
       setBusy(false);
     }
-  }, [canAnalytics, range]);
+  }, [canAnalytics, canViewCost, range]);
 
   useEffect(() => {
     loadKpiBundle();
@@ -210,7 +211,9 @@ export default function DashboardPage() {
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
             <div className="flex flex-col h-full">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-ink">Top products</h3>
+                <h3 className="text-sm font-semibold text-ink">
+                  {canViewCost ? 'Most profitable products' : 'Top products'}
+                </h3>
                 <Link href="/analytics?tab=products" className="text-xs text-accent">
                   View all
                 </Link>

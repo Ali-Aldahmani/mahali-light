@@ -18,10 +18,13 @@ export interface TopProductRow {
   sku?: string | null;
   units_sold: number | string;
   revenue: number | string;
+  gross_profit?: number | string;
+  variant_count?: number;
 }
 
 const GRID = 'grid grid-cols-[36px_minmax(0,1fr)_52px_92px] items-center gap-x-2';
 
+// Gross profit shows under revenue when the API sent it (product.view_cost).
 export default function MobileTopProductsTable({ rows }: { rows: TopProductRow[] }) {
   return (
     <div role="table" aria-label="Top products" className="font-m-inter">
@@ -35,7 +38,7 @@ export default function MobileTopProductsTable({ rows }: { rows: TopProductRow[]
         {rows.map((r) => (
           <div
             role="row"
-            key={`${r.product_id}-${r.variant_id ?? ''}`}
+            key={`${r.rank}-${r.product_id}-${r.variant_id ?? ''}`}
             className={cn(GRID, 'min-h-[72px] rounded-[10px] bg-m-row px-2 py-3')}
           >
             <span role="cell">
@@ -50,15 +53,29 @@ export default function MobileTopProductsTable({ rows }: { rows: TopProductRow[]
             </span>
             <span role="cell" className="min-w-0">
               <span className="line-clamp-2 break-words text-[14px] font-medium text-ink">{r.product_name}</span>
-              {r.sku && <span className="block truncate text-[12px] text-ink-muted">SKU {r.sku}</span>}
+              {r.sku ? (
+                <span className="block truncate text-[12px] text-ink-muted">SKU {r.sku}</span>
+              ) : (r.variant_count || 0) > 1 ? (
+                <span className="block truncate text-[12px] text-ink-muted">{r.variant_count} variants</span>
+              ) : null}
             </span>
             <span role="cell" className="text-center text-[14px] text-ink">
               {formatQty(r.units_sold)}
             </span>
-            <span role="cell" className="flex justify-center">
+            <span role="cell" className="flex flex-col items-center gap-1">
               <span className="inline-flex min-h-[36px] items-center justify-center rounded-full bg-accent-light px-3 text-center text-[12px] font-semibold leading-tight text-accent">
                 {formatAed(r.revenue)}
               </span>
+              {r.gross_profit !== undefined && (
+                <span
+                  className={cn(
+                    'text-center text-[11px] leading-tight',
+                    Number(r.gross_profit) < 0 ? 'text-error' : 'text-ink-muted',
+                  )}
+                >
+                  Profit {formatAed(r.gross_profit)}
+                </span>
+              )}
             </span>
           </div>
         ))}

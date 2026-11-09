@@ -23,8 +23,11 @@ function RankBadge({ rank }) {
   );
 }
 
-// Ranked product list. Compact = use in dashboard column. Verbose adds units,
-// invoice count and a margin badge.
+const hasCost = (rows) => rows.some((r) => r.gross_profit !== undefined);
+
+// Ranked product list. Compact = use in dashboard column. Verbose adds COGS,
+// gross profit, margin and returns. Cost columns appear only when the API sent
+// them (it leaves them out for users without product.view_cost).
 export default function TopProductsTable({
   rows = [],
   verbose = false,
@@ -40,8 +43,9 @@ export default function TopProductsTable({
       </div>
     );
   }
+  const cost = hasCost(rows);
   return (
-    <div className={cn('rounded-card border border-border bg-surface overflow-hidden', className)}>
+    <div className={cn('rounded-card border border-border bg-surface overflow-x-auto', className)}>
       <table className="w-full text-sm">
         <thead className="bg-surface-2 text-ink-muted">
           <tr>
@@ -50,25 +54,38 @@ export default function TopProductsTable({
             {showCategory && <th className="px-3 py-2 text-left">Category</th>}
             <th className="px-3 py-2 text-right">Units</th>
             <th className="px-3 py-2 text-right">Revenue</th>
-            {verbose && <th className="px-3 py-2 text-right">Margin</th>}
+            {verbose && cost && <th className="px-3 py-2 text-right">COGS</th>}
+            {cost && <th className="px-3 py-2 text-right">Gross profit</th>}
+            {verbose && cost && <th className="px-3 py-2 text-right">Margin</th>}
             {verbose && <th className="px-3 py-2 text-right">Returns</th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={`${r.product_id}-${r.variant_id}`} className="border-t border-border">
+            <tr key={`${r.rank}-${r.product_id}-${r.variant_id}`} className="border-t border-border">
               <td className="px-3 py-2">
                 <RankBadge rank={r.rank} />
               </td>
               <td className="px-3 py-2">
-                <Link
-                  href={linkTo(r)}
-                  className="font-medium text-ink hover:text-accent"
-                >
-                  {r.product_name}
-                </Link>
-                {r.sku && (
+                {r.product_id ? (
+                  <Link
+                    href={linkTo(r)}
+                    className="font-medium text-ink hover:text-accent"
+                  >
+                    {r.product_name}
+                  </Link>
+                ) : (
+                  <span className="font-medium text-ink">{r.product_name}</span>
+                )}
+                {r.sku ? (
                   <div className="text-xs text-ink-muted">SKU {r.sku}</div>
+                ) : r.variant_count > 1 ? (
+                  <div className="text-xs text-ink-muted">{r.variant_count} variants</div>
+                ) : null}
+                {Number(r.missing_cost_qty) > 0 && (
+                  <div className="mt-0.5 text-xs text-amber-700">
+                    No cost on {formatQty(r.missing_cost_qty)} sold, so profit is overstated
+                  </div>
                 )}
               </td>
               {showCategory && (
@@ -82,7 +99,20 @@ export default function TopProductsTable({
                   {formatCurrency(r.revenue)}
                 </span>
               </td>
-              {verbose && (
+              {verbose && cost && (
+                <td className="px-3 py-2 text-right text-ink-muted">{formatCurrency(r.cost_total)}</td>
+              )}
+              {cost && (
+                <td
+                  className={cn(
+                    'px-3 py-2 text-right font-semibold',
+                    Number(r.gross_profit) < 0 ? 'text-error' : 'text-ink',
+                  )}
+                >
+                  {formatCurrency(r.gross_profit)}
+                </td>
+              )}
+              {verbose && cost && (
                 <td className="px-3 py-2 text-right">
                   <span
                     className={cn(

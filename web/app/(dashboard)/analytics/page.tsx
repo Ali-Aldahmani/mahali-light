@@ -213,15 +213,17 @@ function OverviewTab({ range }: { range: { start_date: string; end_date: string 
 // Tab: Products
 // =======================================================================
 function ProductsTab({ range }: { range: { start_date: string; end_date: string } }) {
-  const [sortBy, setSortBy] = useState('revenue');
+  const owned = useAuthStore((s) => s.permissions) || [];
+  const canSeasonality = owned.includes('analytics.view_seasonality');
+  // Profit and margin need cost, which only product.view_cost may see.
+  const canViewCost = owned.includes('product.view_cost');
+  const [sortBy, setSortBy] = useState(canViewCost ? 'profit' : 'revenue');
   const [top, setTop] = useState<any[]>([]);
   const [worst, setWorst] = useState<any[]>([]);
   const [productQuery, setProductQuery] = useState('');
   const [productOptions, setProductOptions] = useState<any[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<any>(null);
   const [seasonality, setSeasonality] = useState<any>(null);
-  const owned = useAuthStore((s) => s.permissions) || [];
-  const canSeasonality = owned.includes('analytics.view_seasonality');
 
   useEffect(() => {
     Promise.all([
@@ -267,20 +269,25 @@ function ProductsTab({ range }: { range: { start_date: string; end_date: string 
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-ink">Best products</h3>
         <Select
           value={sortBy}
           onChange={setSortBy}
           options={[
+            ...(canViewCost ? [{ value: 'profit', label: 'Sort by Gross Profit' }] : []),
             { value: 'revenue', label: 'Sort by Revenue' },
-            { value: 'profit', label: 'Sort by Profit' },
             { value: 'quantity', label: 'Sort by Quantity' },
-            { value: 'margin', label: 'Sort by Margin' },
+            ...(canViewCost ? [{ value: 'margin', label: 'Sort by Margin %' }] : []),
           ]}
           className="min-w-[200px]"
         />
       </div>
+      {canViewCost && (
+        <p className="text-xs text-ink-muted">
+          Net of returns and all discounts, ex-VAT. Cost is the purchase cost recorded on each sale.
+        </p>
+      )}
       <TopProductsTable rows={top} verbose showCategory />
 
       <h3 className="text-sm font-semibold text-ink">Worst products</h3>
