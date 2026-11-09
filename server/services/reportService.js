@@ -2,6 +2,7 @@ const { query } = require('../db/postgres');
 const { storeDate, todayStoreDate, assertReportRange } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const financialReportService = require('./financialReportService');
+const { getProductProfit } = require('./productProfitService');
 const errorLogService = require('./errorLogService');
 
 // =======================================================================
@@ -201,47 +202,36 @@ async function salesByPeriod(params) {
 async function salesByProduct(params) {
   const { startDate, endDate } = parseDateRange(params);
   const sort = String(params.sort || 'revenue').toLowerCase();
-  const sortCol =
-    sort === 'profit' ? 'profit' : sort === 'margin' ? 'margin' : sort === 'quantity' ? 'qty' : 'revenue';
-  const { rows } = await query(
-    `SELECT ii.product_id, ii.product_name, ii.sku,
-            COALESCE(SUM(ii.quantity),0)::float8 AS qty,
-            COALESCE(SUM(ii.line_total),0)::float8 AS revenue,
-            COALESCE(SUM(ii.quantity * ii.cost_price_at_time),0)::float8 AS cost,
-            COALESCE(SUM(ii.line_total - ii.quantity * ii.cost_price_at_time),0)::float8 AS profit,
-            COALESCE(SUM(ii.line_total - ii.quantity * ii.cost_price_at_time)
-              / NULLIF(SUM(ii.line_total), 0), 0)::float8 AS margin
-       FROM invoice_items ii
-       JOIN invoices i ON i.id = ii.invoice_id
-      WHERE i.status = 'confirmed'
-        AND i.confirmed_at::date BETWEEN $1::date AND $2::date
-      GROUP BY ii.product_id, ii.product_name, ii.sku
-      ORDER BY ${sortCol} DESC
-      LIMIT 500`,
-    [startDate, endDate],
-  );
+  // Every product is read so the totals cover them all; the table shows 500.
+  const rows = await getProductProfit({
+    startDate,
+    endDate,
+    sortBy: ['profit', 'margin', 'quantity'].includes(sort) ? sort : 'revenue',
+  });
   return {
     type: 'sales_by_product',
     title: 'Sales by Product',
     period: { startDate, endDate, label: rangeLabel({ startDate, endDate }) },
     columns: [
+      { key: 'rank', label: '#', type: 'number', align: 'right' },
       { key: 'product_name', label: 'Product' },
       { key: 'sku', label: 'SKU' },
-      { key: 'qty', label: 'Qty Sold', type: 'number', align: 'right' },
-      { key: 'revenue', label: 'Revenue', type: 'currency', align: 'right' },
-      { key: 'cost', label: 'Cost', type: 'currency', align: 'right' },
+      { key: 'qty', label: 'Net Qty', type: 'number', align: 'right' },
+      { key: 'revenue', label: 'Net Revenue', type: 'currency', align: 'right' },
+      { key: 'cost', label: 'COGS', type: 'currency', align: 'right' },
       { key: 'profit', label: 'Gross Profit', type: 'currency', align: 'right' },
       { key: 'margin', label: 'Margin %', type: 'percent', align: 'right' },
     ],
-    rows: rows.map((r) => {
+    rows: rows.slice(0, 500).map((r, idx) => {
       const revenue = money(r.revenue);
-      const cost = money(r.cost);
-      const profit = money(r.profit);
+      const cost = money(r.cost_total);
+      const profit = money(r.gross_profit);
       const margin = revenue > 0 ? Math.round((profit / revenue) * 1000) / 10 : 0;
       return {
+        rank: idx + 1,
         product_name: r.product_name,
-        sku: r.sku || '',
-        qty: Number(r.qty) || 0,
+        sku: r.sku || (r.variant_count > 1 ? `${r.variant_count} variants` : ''),
+        qty: Number(r.units_sold) || 0,
         revenue,
         cost,
         profit,
@@ -249,10 +239,10 @@ async function salesByProduct(params) {
       };
     }),
     totals: {
-      qty: Number(rows.reduce((s, r) => s + Number(r.qty), 0).toFixed(2)),
+      qty: Number(rows.reduce((s, r) => s + Number(r.units_sold), 0).toFixed(2)),
       revenue: money(rows.reduce((s, r) => s + Number(r.revenue), 0)),
-      cost: money(rows.reduce((s, r) => s + Number(r.cost), 0)),
-      profit: money(rows.reduce((s, r) => s + Number(r.profit), 0)),
+      cost: money(rows.reduce((s, r) => s + Number(r.cost_total), 0)),
+      profit: money(rows.reduce((s, r) => s + Number(r.gross_profit), 0)),
     },
   };
 }

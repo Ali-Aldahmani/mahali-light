@@ -48,6 +48,7 @@ async function netProfitTrends(req, res, next) {
 const topSchema = rangeSchema.extend({
   limit: z.coerce.number().min(1).max(200).optional(),
   sort_by: z.enum(['revenue', 'profit', 'quantity', 'margin']).optional(),
+  group_by: z.enum(['product', 'variant']).optional(),
 });
 
 async function topProducts(req, res, next) {
@@ -58,6 +59,7 @@ async function topProducts(req, res, next) {
       endDate: parsed.end_date,
       limit: parsed.limit,
       sortBy: parsed.sort_by,
+      groupBy: parsed.group_by,
     });
     ok(res, data);
   } catch (err) {
@@ -73,6 +75,7 @@ async function worstProducts(req, res, next) {
       endDate: parsed.end_date,
       limit: parsed.limit,
       sortBy: parsed.sort_by,
+      groupBy: parsed.group_by,
     });
     ok(res, data);
   } catch (err) {

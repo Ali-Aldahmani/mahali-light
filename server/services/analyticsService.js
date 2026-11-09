@@ -1,5 +1,6 @@
 const { query } = require('../db/postgres');
 const { assertReportRange } = require('../utils/dates');
+const { getProductProfit } = require('./productProfitService');
 
 // =======================================================================
 // Helpers
@@ -168,77 +169,30 @@ async function getTopProducts({
   limit = 10,
   sortBy = 'revenue',
   descending = true,
+  groupBy = 'product',
 } = {}) {
   const range = parseDateRange({ start_date: startDate, end_date: endDate });
-  const sortCol =
-    sortBy === 'profit'
-      ? 'gross_profit'
-      : sortBy === 'quantity'
-        ? 'units_sold'
-        : sortBy === 'margin'
-          ? 'margin_pct'
-          : 'revenue';
-
-  // Current month isn't aggregated yet — pull straight from invoice_items
-  // for the whole window. Historical performance for completed months can
-  // still come from sales_history_monthly when callers care about speed.
-  const { rows } = await query(
-    `WITH sales AS (
-       SELECT ii.product_id, ii.variant_id, ii.product_name, ii.sku,
-              SUM(ii.quantity)::float8 AS units_sold,
-              SUM(ii.line_total)::float8 AS revenue,
-              SUM(ii.quantity * ii.cost_price_at_time)::float8 AS cost_total,
-              SUM(ii.line_total - ii.quantity * ii.cost_price_at_time)::float8 AS gross_profit,
-              COUNT(DISTINCT i.id)::int AS invoice_count
-         FROM invoice_items ii
-         JOIN invoices i ON i.id = ii.invoice_id
-        WHERE i.status = 'confirmed'
-          AND i.confirmed_at::date BETWEEN $1::date AND $2::date
-        GROUP BY ii.product_id, ii.variant_id, ii.product_name, ii.sku
-     ),
-     returns AS (
-       SELECT roi.product_id, roi.variant_id,
-              SUM(roi.quantity)::float8 AS qty,
-              SUM(roi.total_value)::float8 AS value
-         FROM return_order_items roi
-         JOIN return_orders ro ON ro.id = roi.return_order_id
-        WHERE ro.created_at::date BETWEEN $1::date AND $2::date
-          -- Customer-facing returns only — a supplier_return of defective
-          -- stock isn't a customer return and must not inflate this
-          -- product's return_rate_pct (matches the filter already applied
-          -- to the equivalent CTEs in getKPIs/getSupplierScorecard below).
-          AND ro.return_type IN ('customer_refund', 'customer_replace')
-        GROUP BY roi.product_id, roi.variant_id
-     )
-     SELECT s.*,
-            COALESCE(r.qty, 0)::float8 AS returned_qty,
-            COALESCE(r.value, 0)::float8 AS returned_value,
-            CASE WHEN s.units_sold > 0
-                 THEN (COALESCE(r.qty,0)/s.units_sold * 100)
-                 ELSE 0 END AS return_rate_pct,
-            CASE WHEN s.revenue > 0
-                 THEN (s.gross_profit / s.revenue * 100)
-                 ELSE 0 END AS margin_pct,
-            p.image_path,
-            pc.name AS category_name
-       FROM sales s
-       LEFT JOIN returns r ON r.variant_id = s.variant_id
-       LEFT JOIN products p ON p.id = s.product_id
-       LEFT JOIN product_categories pc ON pc.id = p.category_id
-      ORDER BY ${sortCol} ${descending ? 'DESC' : 'ASC'}
-      LIMIT $3`,
-    [range.startDate, range.endDate, Math.min(Math.max(Number(limit) || 10, 1), 200)],
-  );
+  const rows = await getProductProfit({
+    startDate: range.startDate,
+    endDate: range.endDate,
+    sortBy,
+    descending,
+    groupBy,
+    limit: Math.min(Math.max(Number(limit) || 10, 1), 200),
+  });
 
   return rows.map((r, idx) => ({
     rank: idx + 1,
     product_id: r.product_id,
     variant_id: r.variant_id,
+    variant_count: r.variant_count,
     product_name: r.product_name,
     sku: r.sku || '',
     image_path: r.image_path || null,
     category_name: r.category_name || null,
     units_sold: Number(r.units_sold) || 0,
+    gross_units: Number(r.gross_units) || 0,
+    returned_qty: Number(r.returned_qty) || 0,
     revenue: money(r.revenue),
     cost_total: money(r.cost_total),
     gross_profit: money(r.gross_profit),
