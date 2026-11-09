@@ -188,6 +188,33 @@ describe.skipIf(!enabled)('product profit on real PostgreSQL', () => {
     expect(row('Single Lamp')).toMatchObject({ units_sold: 5, gross_profit: 400 });
   });
 
+  it('flags units sold with no cost on file, in analytics and the report', async () => {
+    expect(row('Zero Cost Item')).toMatchObject({ missing_cost_qty: 1, gross_profit: 100 });
+    expect(row('Single Lamp').missing_cost_qty).toBe(0);
+    const report = must(await adminUser.as('get',
+      `/reports/sales_by_product?start_date=${today}&end_date=${today}`), 200);
+    expect(report.rows.find((r) => r.product_name === 'Zero Cost Item').cost_note).toBe('No cost on 1 sold');
+    expect(report.rows.find((r) => r.product_name === 'Single Lamp').cost_note).toBe('');
+  });
+
+  it('hides cost, profit and margin from a role with analytics but not cost', async () => {
+    const { rows: [role] } = await db.query(`INSERT INTO roles (name) VALUES ('Analyst') RETURNING id`);
+    await db.query(
+      `INSERT INTO role_permissions (role_id, permission_id) SELECT $1, id FROM permissions WHERE key = 'analytics.view'`,
+      [role.id]);
+    const analyst = await user('Analyst');
+    const q = `start_date=${today}&end_date=${today}&limit=50`;
+    for (const path of ['top-products', 'worst-products']) {
+      const byProfit = must(await analyst.as('get', `/analytics/${path}?${q}&sort_by=profit`), 200);
+      const byRevenue = must(await analyst.as('get', `/analytics/${path}?${q}&sort_by=revenue`), 200);
+      expect(byProfit.map((r) => r.product_name)).toEqual(byRevenue.map((r) => r.product_name));
+      for (const r of byProfit) {
+        expect(Object.keys(r).filter((k) => /cost|profit|margin/.test(k))).toEqual([]);
+        expect(r.revenue).toEqual(expect.any(Number));
+      }
+    }
+  });
+
   it('lists a custom line under its own name', () => {
     expect(row('Third party chandelier')).toMatchObject({ product_id: null, revenue: 200, cost_total: 120, gross_profit: 80 });
   });

@@ -221,6 +221,7 @@ async function salesByProduct(params) {
       { key: 'cost', label: 'COGS', type: 'currency', align: 'right' },
       { key: 'profit', label: 'Gross Profit', type: 'currency', align: 'right' },
       { key: 'margin', label: 'Margin %', type: 'percent', align: 'right' },
+      { key: 'cost_note', label: 'Cost Note' },
     ],
     rows: rows.slice(0, 500).map((r, idx) => {
       const revenue = money(r.revenue);
@@ -236,6 +237,7 @@ async function salesByProduct(params) {
         cost,
         profit,
         margin,
+        cost_note: Number(r.missing_cost_qty) > 0 ? `No cost on ${Number(r.missing_cost_qty)} sold` : '',
       };
     }),
     totals: {
@@ -2513,7 +2515,7 @@ const REGISTRY = {
   sales_by_product: {
     fn: salesByProduct,
     permission: 'report.sales',
-    costFields: ['cost', 'profit', 'margin'],
+    costFields: ['cost', 'profit', 'margin', 'cost_note'],
   },
   sales_by_category: { fn: salesByCategory, permission: 'report.sales' },
   sales_by_employee: { fn: salesByEmployee, permission: 'report.sales' },

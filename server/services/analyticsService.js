@@ -193,6 +193,8 @@ async function getTopProducts({
     units_sold: Number(r.units_sold) || 0,
     gross_units: Number(r.gross_units) || 0,
     returned_qty: Number(r.returned_qty) || 0,
+    // Units sold with no cost on file: their profit is overstated.
+    missing_cost_qty: Number(r.missing_cost_qty) || 0,
     revenue: money(r.revenue),
     cost_total: money(r.cost_total),
     gross_profit: money(r.gross_profit),

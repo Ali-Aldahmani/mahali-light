@@ -51,37 +51,36 @@ const topSchema = rangeSchema.extend({
   group_by: z.enum(['product', 'variant']).optional(),
 });
 
-async function topProducts(req, res, next) {
-  try {
-    const parsed = topSchema.parse(req.query);
-    const data = await analyticsService.getTopProducts({
-      startDate: parsed.start_date,
-      endDate: parsed.end_date,
-      limit: parsed.limit,
-      sortBy: parsed.sort_by,
-      groupBy: parsed.group_by,
-    });
-    ok(res, data);
-  } catch (err) {
-    next(err.errors ? zodFail(err) : err);
-  }
+// Without product.view_cost a role sees sales figures only: no cost, profit or
+// margin, and no ordering by them, which would leak their ranking.
+const PRODUCT_COST_FIELDS = ['cost_total', 'gross_profit', 'margin_pct', 'missing_cost_qty'];
+
+function productRankingHandler(load) {
+  return async (req, res, next) => {
+    try {
+      const parsed = topSchema.parse(req.query);
+      const owned = req.user?.permissions || [];
+      const canViewCost = owned.includes('product.view_cost') || owned.includes('*');
+      const data = await load({
+        startDate: parsed.start_date,
+        endDate: parsed.end_date,
+        limit: parsed.limit,
+        sortBy: !canViewCost && ['profit', 'margin'].includes(parsed.sort_by) ? 'revenue' : parsed.sort_by,
+        groupBy: parsed.group_by,
+      });
+      ok(res, canViewCost ? data : data.map((row) => {
+        const visible = { ...row };
+        for (const key of PRODUCT_COST_FIELDS) delete visible[key];
+        return visible;
+      }));
+    } catch (err) {
+      next(err.errors ? zodFail(err) : err);
+    }
+  };
 }
 
-async function worstProducts(req, res, next) {
-  try {
-    const parsed = topSchema.parse(req.query);
-    const data = await analyticsService.getWorstProducts({
-      startDate: parsed.start_date,
-      endDate: parsed.end_date,
-      limit: parsed.limit,
-      sortBy: parsed.sort_by,
-      groupBy: parsed.group_by,
-    });
-    ok(res, data);
-  } catch (err) {
-    next(err.errors ? zodFail(err) : err);
-  }
-}
+const topProducts = productRankingHandler((params) => analyticsService.getTopProducts(params));
+const worstProducts = productRankingHandler((params) => analyticsService.getWorstProducts(params));
 
 async function topSuppliers(req, res, next) {
   try {
