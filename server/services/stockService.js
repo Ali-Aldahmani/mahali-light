@@ -3,6 +3,7 @@ const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { assertQuantity } = require('../utils/quantity');
 const { checkReorderThreshold } = require('./reorderService');
+const { applyBatchMovement } = require('./batchService');
 const journalService = require('./journalService');
 const notificationService = require('./notificationService');
 const { emitEvent } = require('../socket/events');
@@ -111,6 +112,16 @@ async function applyStockMovement(params) {
     // receipt cost, or the cost a sale was booked at. Defaults to the
     // product's cost right now.
     unitCost = null,
+    // Cost batches (see batchService). An outgoing or quarantine movement can
+    // name the batches it takes from, [{ batchId, quantity }]; otherwise the
+    // oldest are used, preferring those received from `preferSource`. A sale
+    // passes its invoiceItemId so the batches it used are recorded; goods
+    // coming back from a line pass restoreFromItemId to return to them.
+    batchAllocations = null,
+    invoiceItemId = null,
+    restoreFromItemId = null,
+    batchSource = null,
+    preferSource = null,
   } = params;
 
   if (!variantId) {
@@ -251,6 +262,23 @@ async function applyStockMovement(params) {
       ],
     );
 
+    const batches = await applyBatchMovement(client, {
+      variantId,
+      productId,
+      type,
+      movement: movementRows[0],
+      stockBefore: before,
+      quarantineBefore: beforeQuarantine,
+      stockChange: rounded(finalAfter - before),
+      unitCost: movementCost,
+      batchAllocations,
+      invoiceItemId,
+      restoreFromItemId,
+      source: batchSource,
+      preferSource,
+      employeeId,
+    });
+
     // Stock adjustments + count corrections post inventory ↔ equity, at the
     // same cost the movement records, so the two always agree.
     if (ADJUSTMENT_JOURNAL_TYPES.has(type) && Math.abs(movementQuantity) > 0) {
@@ -270,6 +298,7 @@ async function applyStockMovement(params) {
 
     return {
       movement: movementRows[0],
+      batches,
       variant: {
         id: variantId,
         productId,

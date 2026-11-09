@@ -55,8 +55,16 @@ function makeMockClient({ stockQty = 100, quarantineQty = 0 } = {}) {
           qty_after: stockQty + 5,
         }],
       })
-      // Default fallback for any additional calls (e.g., journal entry)
-      .mockResolvedValue({ rows: [] }),
+      // Any later call (cost batches, journal entry). Batch quantities are
+      // covered against real PostgreSQL in costBatches.test.js; here the
+      // variant has one batch holding all its stock.
+      .mockImplementation(async (sql) => {
+        if (/FROM inventory_batches[\s\S]*FOR UPDATE/.test(sql)) {
+          return { rows: [{ id: 'batch-1', unit_cost: 0, qty_on_hand: stockQty, qty_quarantined: quarantineQty }] };
+        }
+        if (/INSERT INTO inventory_batches/.test(sql)) return { rows: [{ id: 'batch-1' }] };
+        return { rows: [] };
+      }),
   };
 }
 

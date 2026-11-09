@@ -47,8 +47,11 @@ async function resolveQuarantine(req, res, next) {
         notes: `Quarantine ${body.action === 'release' ? 'released' : 'written off'}: ${body.reason}`,
       });
       if (body.action === 'write_off') {
+        const released = moved.batches;
         moved = await applyStockMovement({
           ...common, type: 'adjustment', quantity: -body.quantity, notes: `Write-off: ${body.reason}`,
+          // Written off from the batches the units were held in.
+          batchAllocations: released.map((b) => ({ batchId: b.batchId, quantity: b.quantity })),
         });
       }
       await logActivity({

@@ -330,8 +330,9 @@ async function create(req, res, next) {
           ],
         );
 
+        let released = null;
         if (it.fromQuarantine) {
-          await applyStockMovement({
+          ({ batches: released } = await applyStockMovement({
             client,
             variantId: it.variantId,
             productId: it.productId,
@@ -342,7 +343,7 @@ async function create(req, res, next) {
             employeeId: req.user.id,
             notes: `Going back to the supplier on ${returnNumber}`,
             skipReorderCheck: true,
-          });
+          }));
         }
 
         // Returning to supplier = stock out of our warehouse.
@@ -357,6 +358,10 @@ async function create(req, res, next) {
           employeeId: req.user.id,
           notes: `Supplier return ${returnNumber}`,
           skipReorderCheck: true,
+          // Released units leave from the batches they were held in; otherwise
+          // goods received on the named PO go first.
+          batchAllocations: released ? released.map((b) => ({ batchId: b.batchId, quantity: b.quantity })) : null,
+          preferSource: body.purchaseOrderId ? { sourceType: 'purchase_order', sourceId: body.purchaseOrderId } : null,
         });
       }
 

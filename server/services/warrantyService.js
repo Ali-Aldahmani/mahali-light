@@ -822,6 +822,7 @@ async function resolveWarrantyClaim({
         quantity: 1,
         referenceType: 'invoice',
         referenceId: replacementInvoiceId,
+        invoiceItemId: built.replacementInvoiceItemId,
         employeeId: managerId,
         notes: `Warranty replacement: ${claim.warranty_number}`,
         io: null,

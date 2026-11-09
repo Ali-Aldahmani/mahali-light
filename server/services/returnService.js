@@ -963,6 +963,8 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
             quantity: Number(it.quantity),
             referenceType: 'return_order',
             referenceId: orderId,
+            preferSource: request.reference_type === 'purchase_order'
+              ? { sourceType: 'purchase_order', sourceId: request.reference_id } : null,
             employeeId: managerId,
             notes: `Supplier return ${orderNumber}`,
             io: null,
@@ -1000,6 +1002,7 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
             quantity: Number(it.quantity),
             referenceType: 'return_order',
             referenceId: orderId,
+            restoreFromItemId: it.invoice_item_id || null,
             employeeId: managerId,
             notes: `Return ${orderNumber}`,
             io: null,
@@ -1020,7 +1023,7 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
             },
           });
         } else if (stockAction === 'quarantined') {
-          const { variant } = await applyStockMovement({
+          const { variant, batches: returnedBatches } = await applyStockMovement({
             client,
             variantId: it.variant_id,
             productId: it.product_id,
@@ -1028,6 +1031,7 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
             quantity: Number(it.quantity),
             referenceType: 'return_order',
             referenceId: orderId,
+            restoreFromItemId: it.invoice_item_id || null,
             employeeId: managerId,
             notes: `Return ${orderNumber} (defective)`,
             io: null,
@@ -1041,6 +1045,8 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
             quantity: Number(it.quantity),
             referenceType: 'return_order',
             referenceId: orderId,
+            // The same units that just came back, from the batches they went to.
+            batchAllocations: returnedBatches.map((b) => ({ batchId: b.batchId, quantity: b.quantity })),
             employeeId: managerId,
             notes: `Return ${orderNumber} quarantined`,
             io: null,
@@ -1540,13 +1546,14 @@ async function buildReplacementInvoice(
     // between request creation and approval.
     const unitPrice = money(it.unitPrice);
 
-    await client.query(
+    const { rows: [replacementLine] } = await client.query(
       `INSERT INTO invoice_items (
         invoice_id, product_id, variant_id, product_name, variant_attributes,
         sku, unit_label, quantity, unit_price, cost_price_at_time,
         discount_percent, discount_amount, line_subtotal, line_total, position,
         serial_number
-      ) VALUES ($1,$2,$3,$4,'{}'::jsonb,$5,$6,$7,$8,$9,0,0,$10,$11,0,NULL)`,
+      ) VALUES ($1,$2,$3,$4,'{}'::jsonb,$5,$6,$7,$8,$9,0,0,$10,$11,0,NULL)
+      RETURNING id`,
       [
         invoiceId,
         v.product_id,
@@ -1570,6 +1577,7 @@ async function buildReplacementInvoice(
       quantity: qty,
       referenceType: 'invoice',
       referenceId: invoiceId,
+      invoiceItemId: replacementLine.id,
       employeeId: managerId,
       notes: `Replacement under ${returnOrderNumber}`,
       io: null,

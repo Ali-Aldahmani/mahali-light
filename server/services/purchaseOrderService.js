@@ -259,6 +259,7 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
         unitCost: item.cost_price_per_unit,
         referenceType: 'purchase_order',
         referenceId: poId,
+        batchSource: { sourceType: 'purchase_order', sourceId: poId, supplierId: po.supplier_id || null },
         employeeId,
         notes: `Receiving PO ${po.po_number}`,
         skipReorderCheck: true,

@@ -10,6 +10,9 @@ const { requirePermission, requireAnyPermission } = require('../middleware/permi
 const router = express.Router();
 router.use(requireAuth());
 
+// Cost batches: inventory screens, and the till when a cashier picks a batch.
+router.get('/batches', requireAnyPermission('stock.view', 'invoice.create'), require('../controllers/stockBatchesController').list);
+
 // Stock summary + movements ---------------------------------------------------
 router.get('/summary', requirePermission('stock.view'), movements.summary);
 router.get('/movements', requirePermission('stock.view'), movements.list);

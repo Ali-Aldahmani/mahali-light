@@ -56,6 +56,7 @@ function toServiceItems(items = []) {
     custom_description: i.customDescription,
     custom_cost_price: i.customCostPrice,
     third_party_name: i.thirdPartyName,
+    batch_selection: i.batchSelection || null,
   }));
 }
 
@@ -175,6 +176,7 @@ function shapeItem(row, { includeCost = false } = {}) {
     serialNumber: row.serial_number || null,
     isCustom: !!row.is_custom,
     thirdPartyName: row.third_party_name || null,
+    batchSelection: row.batch_selection || null,
   };
   if (includeCost) out.costPriceAtTime = Number(row.cost_price_at_time);
   return out;
@@ -424,6 +426,12 @@ const itemSchema = z
     customDescription: z.string().min(1).max(200).optional(),
     customCostPrice: z.number().min(0).max(999999).optional().default(0),
     thirdPartyName: z.string().max(200).optional().nullable(),
+    // The cost batches this line is sold from (see batchService). Omitted:
+    // the oldest batches are used.
+    batchSelection: z.array(z.object({
+      batchId: z.string().uuid(),
+      quantity: z.number().finite().positive(),
+    })).max(50).optional().nullable(),
   })
   .superRefine((item, ctx) => {
     if (item.isCustom) {
@@ -632,18 +640,7 @@ async function updateItems(req, res, next) {
       await replaceItems(
         client,
         id,
-        body.items.map((i) => ({
-          variant_id: i.variantId,
-          quantity: i.quantity,
-          unit_price: i.unitPrice,
-          discount_amount: i.discountAmount,
-          discount_percent: i.discountPercent,
-          serial_number: i.serialNumber,
-          is_custom: i.isCustom,
-          custom_description: i.customDescription,
-          custom_cost_price: i.customCostPrice,
-          third_party_name: i.thirdPartyName,
-        })),
+        toServiceItems(body.items),
         { allowPriceOverride: canOverridePrice(req) },
       );
 

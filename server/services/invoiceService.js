@@ -3,6 +3,7 @@ const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { nextDocumentNumber } = require('../utils/docNumbers');
+const { checkSelection: checkBatchSelection } = require('./batchService');
 const { applyStockMovement, lockVariants } = require('./stockService');
 const { assertQuantity } = require('../utils/quantity');
 const { assertWithinCreditLimit } = require('./customerService');
@@ -313,13 +314,15 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
         ? String(raw.serial_number).trim()
         : null;
 
+    const batchSelection = await checkBatchSelection(client, v.id, raw.batch_selection, item.quantity);
+
     await client.query(
       `INSERT INTO invoice_items (
         invoice_id, product_id, variant_id, product_name, variant_attributes,
         sku, unit_label, quantity, unit_price, cost_price_at_time,
         discount_percent, discount_amount, line_subtotal, line_total, position,
-        serial_number
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        serial_number, batch_selection
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [
         invoiceId,
         v.product_id,
@@ -337,6 +340,7 @@ async function replaceItems(client, invoiceId, items, { append = false, startPos
         figures.lineTotal,
         position++,
         serial,
+        batchSelection ? JSON.stringify(batchSelection) : null,
       ],
     );
   }
@@ -653,6 +657,8 @@ async function confirmInvoice({ invoiceId, employeeId, io = null, closedDrawerRe
         employeeId,
         unitLabel: it.unit_label,
         unitCost: it.cost_price_at_time,
+        invoiceItemId: it.id,
+        batchAllocations: it.batch_selection || null,
         skipReorderCheck: false,
         io: null,
       });
@@ -1010,6 +1016,7 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
           quantity: it.quantity,
           referenceType: 'invoice_cancel',
           unitCost: it.cost_price_at_time,
+          restoreFromItemId: it.id,
           referenceId: invoiceId,
           employeeId,
           io: null,
@@ -1329,9 +1336,10 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
         }
         const oldQty = cur ? Number(cur.quantity) : 0;
         const delta = money(newQty - oldQty);
+        let addedMovementId = null;
         if (invoice.status === 'confirmed' && Math.abs(delta) > 0.0001) {
           if (delta > 0) {
-            const { variant } = await applyStockMovement({
+            const { variant, movement: saleMovement } = await applyStockMovement({
               client,
               variantId: requested.variant_id,
               type: 'sale',
@@ -1339,11 +1347,13 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
               referenceType: 'invoice_edit',
               referenceId: req.invoice_id,
               unitCost: cur ? cur.cost_price_at_time : null,
+              invoiceItemId: cur ? cur.id : null,
               employeeId: managerId,
               io: null,
               skipReorderCheck: true,
             });
             stockEmits.push({ event: 'stock_updated', payload: emitPayload(variant, 'sale', managerId, req.invoice_id) });
+            if (!cur) addedMovementId = saleMovement.id;
           } else {
             const { variant } = await applyStockMovement({
               client,
@@ -1353,6 +1363,7 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
               referenceType: 'invoice_edit',
               referenceId: req.invoice_id,
               unitCost: cur ? cur.cost_price_at_time : null,
+              restoreFromItemId: cur ? cur.id : null,
               employeeId: managerId,
               io: null,
               skipReorderCheck: true,
@@ -1372,6 +1383,16 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
               // product's current selling_price otherwise.
               allowPriceOverride: priceChangeAllowed,
             });
+            if (addedMovementId) {
+              await client.query(
+                `UPDATE inventory_batch_allocations a
+                    SET invoice_item_id = (SELECT id FROM invoice_items
+                                            WHERE invoice_id = $2 AND variant_id = $3
+                                            ORDER BY created_at DESC LIMIT 1)
+                  WHERE a.stock_movement_id = $1`,
+                [addedMovementId, req.invoice_id, requested.variant_id],
+              );
+            }
           }
           continue;
         }
