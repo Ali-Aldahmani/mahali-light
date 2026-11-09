@@ -284,17 +284,76 @@ describe.skipIf(!enabled)('invoice integrity on real PostgreSQL', () => {
       replacement: { items: [{ variantId: v.id, quantity: 1 }], differencePayment: { method: 'bank', bankAccountId: bank.id } } });
     const result = await approve(r);
     const newId = result.order.replacement_invoice_id;
-    // The customer pays 120 − 105 = 15, VAT included at the sale's 5%.
+    // The customer pays 126 − 105 = 21: both sides VAT included at the sale's 5%.
     const replacement = await invoice(newId);
-    expect(Number(replacement.total)).toBe(15);
-    expect(Number(replacement.tax_amount)).toBe(0.71);
-    expect(Number(replacement.taxable_amount)).toBe(14.29);
-    expect(await net(newId, '2002')).toBe(-0.71);
-    expect(await net(newId, '4001')).toBe(-14.29);
-    expect(await net(newId, '1002')).toBe(15);
+    expect(Number(replacement.total)).toBe(21);
+    expect(Number(replacement.tax_amount)).toBe(1);
+    expect(Number(replacement.taxable_amount)).toBe(20);
+    expect(await net(newId, '2002')).toBe(-1);
+    expect(await net(newId, '4001')).toBe(-20);
+    expect(await net(newId, '1002')).toBe(21);
     expect(await cash()).toBe(cashBefore);
     expect(Number((await db.query('SELECT current_balance FROM bank_accounts WHERE id=$1', [bank.id])).rows[0].current_balance))
-      .toBe(bankBefore + 15);
+      .toBeCloseTo(bankBefore + 21, 2);
+  });
+
+  describe('exchanges on a VAT invoice value both sides with VAT at approval', () => {
+    it('a like-for-like swap is approved and moves no money', async () => {
+      const inv = await sale({ price: 100, taxRate: 5 }); // paid 105
+      const before = await cash();
+      const r = await returnRequest(inv, { plan: null, replacement: { items: [{ variantId: inv.variant.id, quantity: 1 }] } });
+      const result = await approve(r);
+      expect(await cash()).toBe(before);
+      const replacement = await invoice(result.order.replacement_invoice_id);
+      expect(Number(replacement.total)).toBe(0);
+      expect(Number(replacement.tax_amount)).toBe(0);
+    });
+
+    it('one for two charges the full VAT-inclusive difference', async () => {
+      const inv = await sale({ price: 100, taxRate: 5 }); // paid 105
+      const before = await cash();
+      const r = await returnRequest(inv, { plan: null, replacement: { items: [{ variantId: inv.variant.id, quantity: 2 }] } });
+      const result = await approve(r);
+      expect(await cash()).toBeCloseTo(before + 105, 2); // 210 − 105, not 200 − 105
+      const replacement = await invoice(result.order.replacement_invoice_id);
+      expect(Number(replacement.total)).toBe(105);
+      expect(Number(replacement.tax_amount)).toBe(5);
+      expect(Number(replacement.taxable_amount)).toBe(100);
+    });
+
+    it('a cheaper replacement refunds exactly the VAT-inclusive difference', async () => {
+      const inv = await sale({ price: 100, taxRate: 5 }); // paid 105
+      const before = await cash();
+      const v = await variant({ price: 50, cost: 20 }); // 52.50 with VAT
+      const r = await returnRequest(inv, { plan: [{ method: 'cash', amount: 52.5 }],
+        replacement: { items: [{ variantId: v.id, quantity: 1 }] } });
+      const result = await approve(r);
+      expect(await cash()).toBeCloseTo(before - 52.5, 2);
+      expect(Number((await invoice(result.order.replacement_invoice_id)).total)).toBe(0);
+    });
+
+    it('a price change between request and approval does not alter the frozen value', async () => {
+      const inv = await sale({ price: 100, taxRate: 5 });
+      const before = await cash();
+      const v = await variant({ price: 100, cost: 30 });
+      const r = await returnRequest(inv, { plan: null, replacement: { items: [{ variantId: v.id, quantity: 1 }] } });
+      await db.query('UPDATE product_variants SET selling_price = 500 WHERE id = $1', [v.id]);
+      const result = await approve(r);
+      expect(await cash()).toBe(before);
+      expect(Number((await invoice(result.order.replacement_invoice_id)).total)).toBe(0);
+    });
+
+    it('a request frozen before replacements carried VAT keeps the value it was validated at', async () => {
+      const inv = await sale({ price: 100, taxRate: 5 }); // paid 105
+      const before = await cash();
+      const r = await returnRequest(inv, { plan: null, replacement: { items: [{ variantId: inv.variant.id, quantity: 2 }] } });
+      // Older requests stored the ex-VAT value; the customer was quoted 200 − 105.
+      await db.query(`UPDATE return_requests
+          SET replacement_plan = jsonb_set(replacement_plan, '{items,0,lineTotal}', '200'::jsonb)
+        WHERE id = $1`, [r.request.id]);
+      await approve(r);
+      expect(await cash()).toBeCloseTo(before + 95, 2);
+    });
   });
 
   it('F7 simultaneous credit sales serialize the shared credit limit', async () => {

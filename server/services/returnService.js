@@ -287,13 +287,21 @@ async function loadFrozenReplacementPlan(client, plan) {
     const v = await loadCatalogVariant(client, it.variantId);
     const qty = Number(it.quantity);
     const unitPrice = money(it.unitPrice);
+    // lineTotal is frozen too: it carries the VAT the request was validated
+    // with. Recomputing it ex-VAT here made a like-for-like swap on a VAT
+    // invoice demand a refund of the VAT, and undercharged a dearer one. Only
+    // a plan with no stored value falls back to the plain price.
+    const frozenTotal = it.lineTotal == null ? money(unitPrice * qty) : Number(it.lineTotal);
+    if (!Number.isFinite(frozenTotal) || frozenTotal < 0) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Invalid replacement item.');
+    }
     items.push({
       variantId: v.id,
       productId: v.product_id,
       productName: v.product_name,
       quantity: qty,
       unitPrice,
-      lineTotal: money(unitPrice * qty),
+      lineTotal: money(frozenTotal),
     });
   }
   const replacementTotal = money(items.reduce((sum, it) => sum + it.lineTotal, 0));
