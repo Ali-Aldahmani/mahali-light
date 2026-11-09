@@ -247,8 +247,9 @@ async function applyBatchMovement(client, {
 }
 
 // Batches of a variant (or several), with their receipts. Cost is left out
-// unless the viewer may see it.
-async function listBatches({ variantIds, includeEmpty = false, includeCost = false }) {
+// unless the viewer may see it, and suppliers and documents unless they may
+// see suppliers (a cashier picking a batch gets number, date and quantity).
+async function listBatches({ variantIds, includeEmpty = false, includeCost = false, includeSuppliers = false }) {
   const { rows } = await query(
     `SELECT b.id, b.batch_number, b.product_id, b.variant_id, b.unit_cost,
             b.qty_on_hand::float8 AS qty_on_hand, b.qty_quarantined::float8 AS qty_quarantined,
@@ -270,7 +271,11 @@ async function listBatches({ variantIds, includeEmpty = false, includeCost = fal
     [variantIds, includeEmpty],
   );
   return rows.map((b) => {
-    const receipts = b.receipts.map((r) => (includeCost ? r : { ...r, unitCost: undefined }));
+    const receipts = b.receipts.map((r) => ({
+      ...r,
+      unitCost: includeCost ? r.unitCost : undefined,
+      ...(includeSuppliers ? {} : { supplierId: undefined, supplierName: undefined, documentNumber: undefined, sourceId: undefined }),
+    }));
     const suppliers = [...new Set(receipts.map((r) => r.supplierName).filter(Boolean))];
     return {
       id: b.id,

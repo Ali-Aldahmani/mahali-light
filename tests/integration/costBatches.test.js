@@ -156,6 +156,9 @@ describe.skipIf(!enabled)('inventory cost batches on real PostgreSQL', () => {
     expect(list[0]).not.toHaveProperty('unitCost');
     expect(list[0]).not.toHaveProperty('value');
     expect(list[0].receipts[0].unitCost).toBeUndefined();
+    expect(list[0].suppliers).toEqual([]);
+    expect(list[0].receipts[0].supplierName).toBeUndefined();
+    expect(list[0].receipts[0].documentNumber).toBeUndefined();
   });
 
   it('sells from the batches the cashier chose, across two groups, and records each cost', async () => {

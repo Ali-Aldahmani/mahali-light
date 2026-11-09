@@ -23,6 +23,7 @@ async function list(req, res, next) {
       variantIds: ids,
       includeEmpty: parsed.includeEmpty === 'true',
       includeCost: owned.includes('product.view_cost') || owned.includes('*'),
+      includeSuppliers: owned.includes('supplier.view') || owned.includes('*'),
     });
     ok(res, data);
   } catch (err) {
