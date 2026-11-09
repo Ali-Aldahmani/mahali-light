@@ -7,6 +7,9 @@ export default function PLStatementTable({ data, className = '' }) {
   if (!data) return null;
   const showCompare = !!data.previous;
 
+  // Amounts are numbers; ready-made labels such as "62.2%" pass through as is.
+  const show = (v) => (v == null ? '—' : typeof v === 'string' ? v : formatCurrency(v));
+
   function Row({ label, current, prev, bold = false, indent = false, profit = false }) {
     const colorCurrent = profit
       ? current >= 0
@@ -30,7 +33,7 @@ export default function PLStatementTable({ data, className = '' }) {
           {label}
         </td>
         <td className={cn('py-2 px-3 text-sm text-right font-mono', colorCurrent)}>
-          {current != null ? formatCurrency(current) : '—'}
+          {show(current)}
         </td>
         {showCompare && (
           <td
@@ -39,7 +42,7 @@ export default function PLStatementTable({ data, className = '' }) {
               colorPrev,
             )}
           >
-            {prev != null ? formatCurrency(prev) : '—'}
+            {show(prev)}
           </td>
         )}
       </tr>
