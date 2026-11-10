@@ -2648,7 +2648,7 @@ const REGISTRY = {
   // Employees
   employee_performance: { fn: employeePerformance, permission: 'report.employees' },
   employee_activity: { fn: employeeActivity, permission: 'report.employees' },
-  payroll: { fn: payroll, permission: 'report.employees' },
+  payroll: { fn: payroll, permission: 'payroll.view' },
 
   // Attendance
   attendance_monthly_sheet: { fn: attendanceMonthlySheet, permission: 'report.attendance' },

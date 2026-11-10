@@ -201,6 +201,13 @@ async function createSchedule(req, res, next) {
         status: 400,
       });
     }
+    // A schedule runs as the system, so its creator must hold the report's
+    // own permission, or scheduling would bypass it (payroll, finance).
+    const needed = reportService.requiredPermission(body.report_type);
+    const owned = req.user?.permissions || [];
+    if (!owned.includes(needed) && !owned.includes('*')) {
+      throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, undefined, { status: 403, details: { missing: [needed] } });
+    }
     const created = await scheduledReportService.createSchedule({
       ...body,
       createdBy: req.user?.id || null,

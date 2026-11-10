@@ -106,6 +106,13 @@ const PERMISSIONS = {
     // Card providers and their processing fees (Finance settings).
     managePaymentFees: 'finance.manage_payment_fees',
   },
+  // Salaries and payroll (migration 063). Admin only by default.
+  payroll: {
+    view: 'payroll.view',
+    manage: 'payroll.manage',
+    approve: 'payroll.approve',
+    pay: 'payroll.pay',
+  },
   report: {
     financial: 'report.financial',
     sales: 'report.sales',
