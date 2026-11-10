@@ -37,11 +37,12 @@ async function resolvePoTaxAmount(client, subtotal) {
   return money(subtotal * (rate / 100));
 }
 
-// Line cost defaults to catalog cost_price; only callers with cost visibility
-// may override (negotiated supplier pricing).
+// Line cost defaults to the last purchase price (the average cost before any
+// purchase); only callers with cost visibility may override (negotiated
+// supplier pricing).
 async function resolvePoLineCost(client, { variantId, productId = null, clientCost, canOverrideCost }) {
   const { rows } = await client.query(
-    `SELECT cost_price, product_id FROM product_variants WHERE id = $1`,
+    `SELECT COALESCE(last_purchase_cost, cost_price) AS cost_price, product_id FROM product_variants WHERE id = $1`,
     [variantId],
   );
   if (!rows.length) {
@@ -207,6 +208,8 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
 
     const affectedVariants = [];
     const costChanges = [];
+    // What this receipt added to the books, the sum of its stock movements.
+    let bookValueReceived = 0;
     // Track value received in this call to post a single journal entry below.
     let receivedValue = 0;
     const receivedValueBefore = await receivedValueOf(client, poId);
@@ -250,7 +253,10 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
       // Apply the stock movement via the central engine. We're inside an
       // outer transaction so we reuse the client and skip the engine's own
       // socket emit (we emit a single aggregate `po_received` afterwards).
-      await applyStockMovement({
+      const { rows: [beforeRow] } = await client.query(
+        `SELECT cost_price FROM product_variants WHERE id = $1`, [item.variant_id],
+      );
+      const { valueChange: receivedBook } = await applyStockMovement({
         client,
         variantId: item.variant_id,
         productId: item.product_id,
@@ -292,27 +298,27 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
         ],
       );
 
-      // If the cost per unit is different from the variant's current
-      // cost_price, update the variant and remember the change for logging.
-      const { rows: variantRows } = await client.query(
-        `SELECT cost_price FROM product_variants WHERE id = $1`,
-        [item.variant_id],
-      );
-      const currentCost = Number(variantRows[0]?.cost_price || 0);
+      // Weighted average (migration 061): the receipt adds what it cost to the
+      // book value, and the engine has recomputed the average. The latest
+      // purchase price is kept for display; history is in product_cost_history.
+      bookValueReceived = money(bookValueReceived + receivedBook);
       const newCost = Number(item.cost_price_per_unit);
-      // A zero-priced line (free goods) must not revalue the whole shelf at zero.
-      if (newCost > 0 && Math.abs(currentCost - newCost) > 0.001) {
+      if (newCost > 0) {
         await client.query(
-          `UPDATE product_variants
-              SET cost_price = $1, updated_at = NOW()
-            WHERE id = $2`,
+          `UPDATE product_variants SET last_purchase_cost = $1 WHERE id = $2`,
           [newCost, item.variant_id],
         );
+      }
+      const { rows: [afterRow] } = await client.query(
+        `SELECT cost_price FROM product_variants WHERE id = $1`, [item.variant_id],
+      );
+      const currentCost = Number(beforeRow?.cost_price || 0);
+      if (Math.abs(currentCost - Number(afterRow.cost_price)) > 0.001) {
         costChanges.push({
           variantId: item.variant_id,
           productId: item.product_id,
           oldCost: currentCost,
-          newCost,
+          newCost: Number(afterRow.cost_price),
         });
       }
 
@@ -382,6 +388,7 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
         poNumber: po.po_number,
         date: todayStoreDate(),
         inventoryValue: receivedValue,
+        bookValue: bookValueReceived,
         vatAmount: receivedVat,
         userId: employeeId,
       });

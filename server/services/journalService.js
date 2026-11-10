@@ -542,17 +542,30 @@ async function postReturnedInventoryEntry(client, { returnOrderId, returnOrderNu
 // Goods returned to a supplier: DR payables for the gross amount, CR
 // inventory at cost and CR 2002 to reverse the input VAT booked when they
 // were received (postPurchaseReceiveEntry).
+// `amount` is what the supplier owes back for the goods (payables);
+// `inventoryValue` what they leave the books at (weighted average), when that
+// differs. The difference is a purchase price variance, booked to COGS.
 async function postSupplierReturnEntry(client, {
-  returnOrderId, returnOrderNumber, amount, vatAmount = 0, date, userId,
+  returnOrderId, returnOrderNumber, amount, inventoryValue = null, vatAmount = 0, date, userId,
 }) {
   const value = money(amount);
+  const book = inventoryValue == null ? value : money(inventoryValue);
   const vat = money(vatAmount);
-  if (value <= 0 && vat <= 0) return null;
-  const lines = [
-    { accountId: await getAccountIdByCode('2001', client), debit: money(value + vat), credit: 0 },
-  ];
-  if (value > 0) {
-    lines.push({ accountId: await getAccountIdByCode('1004', client), debit: 0, credit: value });
+  if (value <= 0 && vat <= 0 && book <= 0) return null;
+  const lines = [];
+  if (money(value + vat) > 0) {
+    lines.push({ accountId: await getAccountIdByCode('2001', client), debit: money(value + vat), credit: 0 });
+  }
+  if (book > 0) {
+    lines.push({ accountId: await getAccountIdByCode('1004', client), debit: 0, credit: book });
+  }
+  const variance = money(value - book);
+  if (variance !== 0) {
+    lines.push({
+      accountId: await getAccountIdByCode('5001', client),
+      debit: variance < 0 ? -variance : 0,
+      credit: variance > 0 ? variance : 0,
+    });
   }
   if (vat > 0) {
     lines.push({ accountId: await getAccountIdByCode('2002', client), debit: 0, credit: vat });
@@ -608,21 +621,30 @@ async function reverseCustomerPaymentEntries(client, paymentId, { date, userId }
 }
 
 // PO received: DR inventory, CR accounts payable. Posted line-by-line value.
+// `inventoryValue` is what the payable covers; `bookValue`, when given, what
+// the received stock added to the books (the sum of its movements). They can
+// differ by rounding across lines; the cent goes to COGS.
 async function postPurchaseReceiveEntry(client, {
   poId,
   poNumber,
   date,
   inventoryValue,
+  bookValue = null,
   vatAmount,
   userId,
 }) {
   const inv = money(inventoryValue);
+  const book = bookValue == null ? inv : money(bookValue);
   const vat = money(vatAmount);
-  if (inv <= 0 && vat <= 0) return null;
+  if (inv <= 0 && vat <= 0 && book <= 0) return null;
   const totalPayable = money(inv + vat);
   const lines = [];
-  if (inv > 0) {
-    lines.push({ accountId: await getAccountIdByCode('1004', client), debit: inv, credit: 0 });
+  if (book > 0) {
+    lines.push({ accountId: await getAccountIdByCode('1004', client), debit: book, credit: 0 });
+  }
+  if (money(inv - book) !== 0) {
+    const d = money(inv - book);
+    lines.push({ accountId: await getAccountIdByCode('5001', client), debit: d > 0 ? d : 0, credit: d < 0 ? -d : 0 });
   }
   if (vat > 0) {
     // Input VAT — a reduction of VAT Payable (debit the same account).
@@ -816,12 +838,14 @@ async function postStockAdjustmentEntry(client, {
   variantId,
   delta,
   costPrice,
+  value: bookValue = null,
   date,
   userId,
 }) {
-  const value = money(Math.abs(Number(delta) * Number(costPrice)));
+  // bookValue: the movement's value change at the weighted average (stockService).
+  const value = money(Math.abs(bookValue != null ? Number(bookValue) : Number(delta) * Number(costPrice)));
   if (value <= 0) return null;
-  const increase = Number(delta) > 0;
+  const increase = bookValue != null ? Number(bookValue) > 0 : Number(delta) > 0;
   const lines = increase
     ? [
         { accountId: await getAccountIdByCode('1004', client), debit: value, credit: 0 },

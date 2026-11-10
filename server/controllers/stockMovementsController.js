@@ -269,7 +269,7 @@ async function summary(req, res, next) {
     params.push(limit, offset);
     const { rows } = await query(
       `SELECT v.id AS variant_id, v.product_id, v.sku, v.barcode, v.internal_barcode,
-              v.stock_qty, v.quarantine_qty, v.reorder_threshold AS variant_threshold,
+              v.stock_qty, v.quarantine_qty, v.reorder_threshold AS variant_threshold, v.inventory_value,
               v.cost_price, v.selling_price, v.image_path AS variant_image,
               p.name AS product_name, p.image_path AS product_image,
               p.unit_label, p.sold_by, p.reorder_threshold AS product_threshold,
@@ -319,7 +319,7 @@ async function summary(req, res, next) {
       };
       if (includeCost) {
         out.costPrice = Number(r.cost_price || 0);
-        out.stockValue = qty * Number(r.cost_price || 0);
+        out.stockValue = Number(r.inventory_value || 0);
       }
       return out;
     });
@@ -337,7 +337,7 @@ async function summary(req, res, next) {
                 AND v.stock_qty <= COALESCE(v.reorder_threshold, p.reorder_threshold)
             )::int AS low_stock,
             COUNT(*) FILTER (WHERE v.quarantine_qty > 0)::int AS in_quarantine,
-            COALESCE(SUM(v.stock_qty * v.cost_price), 0)::numeric AS total_value
+            COALESCE(SUM(v.inventory_value), 0)::numeric AS total_value
            FROM product_variants v
            JOIN products p ON p.id = v.product_id
           WHERE p.is_active = true AND v.is_active = true`,

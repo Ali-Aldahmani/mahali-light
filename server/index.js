@@ -166,6 +166,14 @@ async function bootstrap() {
   await runSeed();
   await runSeedProducts();
   await runSeedSettings();
+  // Weighted average valuation (migration 061): book the one-time correction
+  // of the ledger's inventory account. A closed period must not stop the
+  // server; the reconciliation report shows the gap until it is booked.
+  try {
+    await require('./services/inventoryValuationService').ensureOpeningCorrection();
+  } catch (err) {
+    console.error('[inventory] opening valuation correction not booked:', err.message);
+  }
   // Fresh first-run setup code in the server log while setup is pending
   // (services/setupTokenService.js). Server mode only, so a client-mode API
   // sharing the database can't rotate the code the operator is using.

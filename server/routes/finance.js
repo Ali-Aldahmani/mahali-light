@@ -12,6 +12,14 @@ router.get('/balance-sheet', requirePermission('finance.view_balance_sheet'), ct
 router.get('/cash-flow',     requirePermission('finance.view_cashflow'),      ctrl.cashFlow);
 router.get('/vat',           requirePermission('finance.view_vat'),           ctrl.vat);
 router.get('/dashboard',     requirePermission('finance.view_dashboard'),     ctrl.dashboard);
+// Inventory valuation: ledger 1004 against book value, and every quantity check.
+router.get('/inventory-reconciliation', requirePermission('finance.view_balance_sheet'), async (req, res, next) => {
+  try {
+    require('../utils/response').ok(res, await require('../services/inventoryValuationService').getReconciliation());
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Journal — viewing requires finance.view_journal, posting manual entries
 // requires Admin (enforced via finance.close_period / role check at the

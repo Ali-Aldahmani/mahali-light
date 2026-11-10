@@ -814,7 +814,7 @@ async function resolveWarrantyClaim({
 
       // Deduct stock for the replacement item. We hand the open client to
       // applyStockMovement so the entire claim transaction stays atomic.
-      const { variant } = await applyStockMovement({
+      const { variant, valueChange: replacementValue } = await applyStockMovement({
         client,
         variantId,
         productId,
@@ -843,12 +843,14 @@ async function resolveWarrantyClaim({
         },
       });
 
+      await require('./lineCogsService').setLineCogs(client, built.replacementInvoiceItemId, -replacementValue, 1);
       // The unit leaves inventory at cost and becomes warranty expense, in
       // the same transaction as the stock movement (audit Phase 4).
       await journalService.postWarrantyReplacementEntry(client, {
         claimId: claim.id,
         claimNumber: claim.claim_number || claim.warranty_number,
-        cost: Number(built.replacementVariant.cost_price || 0),
+        // What the unit took off the books at the weighted average.
+        cost: Math.abs(Number(replacementValue || 0)),
         date: todayStoreDate(),
         userId: managerId,
       });

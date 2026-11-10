@@ -72,7 +72,7 @@ async function getProductProfit({
                     / NULLIF(SUM(ii.line_total) OVER (PARTITION BY ii.invoice_id), 0),
                   0)
               END AS revenue,
-              ii.quantity * ii.cost_price_at_time AS cost,
+              COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time) AS cost,
               CASE WHEN ii.cost_price_at_time = 0 AND ii.line_total > 0
                    THEN ii.quantity ELSE 0 END AS missing_cost_qty,
               COALESCE(lb.cost, ii.quantity * ii.cost_price_at_time) AS batch_cost,
@@ -89,7 +89,7 @@ async function getProductProfit({
               0,
               rri.quantity,
               -rri.total_value / (1 + COALESCE(orig.tax_rate, 0) / 100),
-              -rri.quantity * COALESCE(ii.cost_price_at_time, v.cost_price, 0),
+              -COALESCE(rm.value_change, rri.quantity * COALESCE(ii.cost_price_at_time, v.cost_price, 0)),
               0,
               -rri.quantity * COALESCE(lb.cost / NULLIF(ii.quantity, 0), ii.cost_price_at_time, v.cost_price, 0),
               0
@@ -99,6 +99,12 @@ async function getProductProfit({
          LEFT JOIN invoice_items ii ON ii.id = rri.invoice_item_id
          LEFT JOIN invoices orig ON orig.id = ii.invoice_id
          LEFT JOIN product_variants v ON v.id = rri.variant_id
+         -- What the returned goods added back to the books (weighted average).
+         LEFT JOIN LATERAL (
+           SELECT SUM(m.value_change) AS value_change FROM stock_movements m
+            WHERE m.reference_type = 'return_order' AND m.reference_id = ro.id
+              AND m.variant_id = rri.variant_id AND m.movement_type = 'return_in'
+         ) rm ON true
         WHERE ro.created_at::date BETWEEN $1::date AND $2::date
           AND ro.return_type IN ('customer_refund', 'customer_replace')
        UNION ALL

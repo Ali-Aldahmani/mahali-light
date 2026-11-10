@@ -63,8 +63,8 @@ async function aggregateMonthlySales({ year, month } = {}) {
     `SELECT ii.product_id, ii.variant_id,
             SUM(ii.quantity)::float8 AS units_sold,
             SUM(ii.line_total)::float8 AS revenue,
-            SUM(ii.quantity * ii.cost_price_at_time)::float8 AS cost_total,
-            SUM(ii.line_total - ii.quantity * ii.cost_price_at_time)::float8 AS gross_profit,
+            SUM(COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time))::float8 AS cost_total,
+            SUM(ii.line_total - COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time))::float8 AS gross_profit,
             COUNT(DISTINCT i.id)::int AS invoice_count,
             AVG(ii.unit_price)::float8 AS avg_selling_price,
             AVG(ii.cost_price_at_time)::float8 AS avg_cost_price

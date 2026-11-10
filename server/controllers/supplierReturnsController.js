@@ -311,6 +311,7 @@ async function create(req, res, next) {
       );
       const returnId = insertRows[0].id;
 
+      let bookValueOut = 0;
       for (const it of resolvedItems) {
         const lineTotal = Number(it.quantity) * Number(it.unitCost);
         await client.query(
@@ -347,7 +348,7 @@ async function create(req, res, next) {
         }
 
         // Returning to supplier = stock out of our warehouse.
-        await applyStockMovement({
+        const { valueChange: outValue } = await applyStockMovement({
           client,
           variantId: it.variantId,
           productId: it.productId,
@@ -363,6 +364,7 @@ async function create(req, res, next) {
           batchAllocations: released ? released.map((b) => ({ batchId: b.batchId, quantity: b.quantity })) : null,
           preferSource: body.purchaseOrderId ? { sourceType: 'purchase_order', sourceId: body.purchaseOrderId } : null,
         });
+        bookValueOut = money(bookValueOut - outValue);
       }
 
       // What the PO still owes drops by what went back.
@@ -377,6 +379,7 @@ async function create(req, res, next) {
         returnOrderId: returnId,
         returnOrderNumber: returnNumber,
         amount: value,
+        inventoryValue: bookValueOut,
         vatAmount: await supplierReturnVat(client, body.purchaseOrderId || null, value),
         date: body.returnDate || todayStoreDate(),
         userId: req.user.id,
@@ -456,6 +459,14 @@ async function resolve(req, res, next) {
           [id],
         );
         for (const it of items) {
+          // Back at the value they left at, which the journal reversal restores.
+          const { rows: [out] } = await client.query(
+            `SELECT COALESCE(SUM(-value_change), 0)::numeric AS value, COUNT(value_change)::int AS valued
+               FROM stock_movements
+              WHERE reference_type = 'supplier_return' AND reference_id = $1
+                AND variant_id = $2 AND movement_type = 'return_out'`,
+            [id, it.variant_id],
+          );
           await applyStockMovement({
             client,
             variantId: it.variant_id,
@@ -464,6 +475,7 @@ async function resolve(req, res, next) {
             quantity: Number(it.quantity),
             referenceType: 'supplier_return',
             referenceId: id,
+            valueOverride: out.valued ? Number(out.value) : null,
             employeeId: req.user.id,
             notes: `Supplier return ${rows[0].return_number} ${body.resolution}`,
             skipReorderCheck: true,

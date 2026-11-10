@@ -277,14 +277,15 @@ describe.skipIf(!enabled)('inventory cost batches on real PostgreSQL', () => {
     await assertInvariant();
   });
 
-  it('keeps journal cost on the store policy whatever batch is sold', async () => {
+  it('books the weighted average whatever batch is sold, and records the batch cost apart', async () => {
     const v = await variant('Policy Bulb');
     await receive(v, 5, 10);
-    await receive(v, 5, 30); // latest cost is now 30
+    await receive(v, 5, 30); // average is now (50 + 150) / 10 = 20
     const [old] = await batches(v);
     const inv = await sale([{ variantId: v.variantId, quantity: 1, batchSelection: [{ batchId: old.id, quantity: 1 }] }]);
-    const { rows: [line] } = await db.query(`SELECT cost_price_at_time::float8 AS cost FROM invoice_items WHERE invoice_id = $1`, [inv.id]);
-    expect(line.cost).toBe(30);
+    const { rows: [line] } = await db.query(
+      `SELECT cost_price_at_time::float8 AS cost, cogs_value::float8 AS cogs FROM invoice_items WHERE invoice_id = $1`, [inv.id]);
+    expect(line).toEqual({ cost: 20, cogs: 20 });
     const { rows: [alloc] } = await db.query(
       `SELECT a.unit_cost::float8 AS cost FROM inventory_batch_allocations a JOIN invoice_items ii ON ii.id = a.invoice_item_id
         WHERE ii.invoice_id = $1`, [inv.id]);

@@ -100,7 +100,7 @@ async function getNetProfitTrends({ groupBy = 'month', startDate, endDate } = {}
               COALESCE(SUM(quantity_cost), 0)::float8 AS cogs
          FROM (
            SELECT i.confirmed_at, i.taxable_amount, i.total,
-                  COALESCE(SUM(ii.quantity * ii.cost_price_at_time), 0) AS quantity_cost
+                  COALESCE(SUM(COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time)), 0) AS quantity_cost
              FROM invoices i
              LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
             WHERE i.status = 'confirmed'
@@ -833,7 +833,7 @@ async function getKPIs(params = {}) {
   const { rows: agg } = await query(
     `WITH inv AS (
        SELECT i.*,
-              COALESCE((SELECT SUM(ii.quantity * ii.cost_price_at_time)
+              COALESCE((SELECT SUM(COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time))
                           FROM invoice_items ii
                          WHERE ii.invoice_id = i.id), 0) AS cogs,
               -- The part put on the customer's account: it settles the
@@ -909,12 +909,18 @@ async function getKPIs(params = {}) {
               -- header row and return_order_items is one-to-many, so joining
               -- them directly here would fan out and multiply ro.total_value
               -- / ro.refund_total once per item row.
-              COALESCE(SUM((
+              -- What the returned goods added back to the books; returns from
+              -- before book values (migration 061) at the variant's cost.
+              COALESCE(SUM(COALESCE((
+                SELECT SUM(m.value_change) FROM stock_movements m
+                 WHERE m.reference_type = 'return_order' AND m.reference_id = ro.id
+                   AND m.movement_type = 'return_in'
+              ), (
                 SELECT SUM(roi.quantity * v.cost_price)
                   FROM return_order_items roi
                   JOIN product_variants v ON v.id = roi.variant_id
                  WHERE roi.return_order_id = ro.id
-              )), 0)::float8 AS cogs_reversal
+              ))), 0)::float8 AS cogs_reversal
          FROM return_orders ro
          LEFT JOIN invoices i ON i.id = ro.original_invoice_id
         WHERE ro.return_type IN ('customer_refund', 'customer_replace')
@@ -925,19 +931,25 @@ async function getKPIs(params = {}) {
                 CASE WHEN i.tax_rate > 0 THEN ro.total_value / (1 + i.tax_rate / 100)
                      ELSE ro.total_value END
               ), 0)::float8 AS revenue_reversal,
-              COALESCE(SUM((
+              -- What the returned goods added back to the books; returns from
+              -- before book values (migration 061) at the variant's cost.
+              COALESCE(SUM(COALESCE((
+                SELECT SUM(m.value_change) FROM stock_movements m
+                 WHERE m.reference_type = 'return_order' AND m.reference_id = ro.id
+                   AND m.movement_type = 'return_in'
+              ), (
                 SELECT SUM(roi.quantity * v.cost_price)
                   FROM return_order_items roi
                   JOIN product_variants v ON v.id = roi.variant_id
                  WHERE roi.return_order_id = ro.id
-              )), 0)::float8 AS cogs_reversal
+              ))), 0)::float8 AS cogs_reversal
          FROM return_orders ro
          LEFT JOIN invoices i ON i.id = ro.original_invoice_id
         WHERE ro.return_type IN ('customer_refund', 'customer_replace')
           AND ro.created_at::date BETWEEN $3::date AND $4::date
      ),
      inventory_value AS (
-       SELECT COALESCE(SUM(stock_qty * cost_price), 0)::float8 AS total
+       SELECT COALESCE(SUM(inventory_value), 0)::float8 AS total
          FROM product_variants
      )
      SELECT cur.*,
@@ -1254,7 +1266,7 @@ async function getKpiSeries(params = {}) {
      inv AS (
        SELECT i.confirmed_at::date AS d,
               SUM(i.taxable_amount) AS revenue,
-              SUM(COALESCE((SELECT SUM(ii.quantity * ii.cost_price_at_time)
+              SUM(COALESCE((SELECT SUM(COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time))
                               FROM invoice_items ii WHERE ii.invoice_id = i.id), 0)) AS cogs
          FROM invoices i
         WHERE i.status = 'confirmed'

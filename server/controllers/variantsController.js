@@ -11,7 +11,7 @@ const {
 } = require('../utils/sku');
 const { saveProductImage, deleteImageFile } = require('../utils/upload');
 const { emitProductChange } = require('./productsController');
-const { applyStockMovement } = require('../services/stockService');
+const { applyStockMovement, revalueVariantCost } = require('../services/stockService');
 const { checkVariants } = require('../services/reorderService');
 const { emitEvent } = require('../socket/events');
 
@@ -292,11 +292,24 @@ async function update(req, res, next) {
         }
       }
 
+      // Cost is the weighted average of the stock on hand; setting it by hand
+      // revalues that stock with a journal entry (stockService).
+      let revaluation = null;
+      if (body.costPrice !== undefined && body.costPrice !== '' &&
+          Math.abs(Number(body.costPrice) - Number(existing[0].cost_price)) > 0.001) {
+        revaluation = await revalueVariantCost(client, { variantId: vid, newCost: Number(body.costPrice), userId: req.user.id });
+        if (revaluation.revalued) {
+          await logActivity({
+            client, entityType: 'variant', entityId: vid, action: 'variant.cost_revalued', performedBy: req.user.id,
+            oldValue: { costPrice: Number(existing[0].cost_price) },
+            newValue: { costPrice: Number(body.costPrice), bookValueChange: revaluation.difference },
+          });
+        }
+      }
       const map = {
         sku: 'sku',
         supplierBarcode: 'supplier_barcode',
         sellingPrice: 'selling_price',
-        costPrice: 'cost_price',
         reorderThreshold: 'reorder_threshold',
         isActive: 'is_active',
       };

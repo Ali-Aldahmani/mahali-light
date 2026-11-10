@@ -12,6 +12,7 @@ const bankService = require('./bankService');
 const { snapshotInvoiceCustomer } = require('../utils/customerSnapshot');
 const journalService = require('./journalService');
 const paymentFeeService = require('./paymentFeeService');
+const lineCogs = require('./lineCogsService');
 const notificationService = require('./notificationService');
 const { emitEvent } = require('../socket/events');
 
@@ -952,11 +953,27 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
     const orderId = order.id;
 
     // --- Move stock + record return_order_items ------------------------
+    // What each returned line is worth on the books: its share of the COGS
+    // the sale removed (weighted average), all of what is left when these
+    // are the line's last units out. No-invoice returns enter at the average.
+    let returnedInventoryValue = 0;
+    const returnedValueFor = async (it) => {
+      if (!it.invoice_item_id) return null;
+      const original = originalItems.find((line) => line.id === it.invoice_item_id);
+      const { rows: [done] } = await client.query(
+        `SELECT COALESCE(SUM(rri.quantity), 0)::numeric AS qty
+           FROM return_request_items rri JOIN return_requests rr ON rr.id = rri.return_request_id
+          WHERE rri.invoice_item_id = $1 AND rr.status = 'approved'`,
+        [it.invoice_item_id],
+      );
+      const final = !original || money(Number(done.qty) + Number(it.quantity)) >= Number(original.quantity) - 0.0001;
+      return lineCogs.takeReturnedCogs(client, it.invoice_item_id, it.quantity, { final });
+    };
     for (const it of items) {
       const stockAction = stockActionFor(it.condition);
       if (it.variant_id) {
         if (request.return_type === 'supplier_return') {
-          const { variant } = await applyStockMovement({
+          const { variant, valueChange: outValue } = await applyStockMovement({
             client,
             variantId: it.variant_id,
             productId: it.product_id,
@@ -974,11 +991,8 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
           // stored total_value/unit_price (those are priced at selling_price
           // for non-invoice-referenced returns — see buildRequestItems —
           // which is the wrong basis for what the supplier actually owes us).
-          const { rows: costRows } = await client.query(
-            `SELECT cost_price FROM product_variants WHERE id = $1`,
-            [it.variant_id],
-          );
-          supplierReturnCost += Number(it.quantity) * Number(costRows[0]?.cost_price || 0);
+          // The goods leave the books at the weighted average.
+          supplierReturnCost = money(supplierReturnCost - outValue);
           executionEvents.push({
             event: 'stock_updated',
             payload: {
@@ -1004,10 +1018,11 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
             referenceType: 'return_order',
             referenceId: orderId,
             restoreFromItemId: it.invoice_item_id || null,
+            valueOverride: await returnedValueFor(it),
             employeeId: managerId,
             notes: `Return ${orderNumber}`,
             io: null,
-          });
+          }).then((r) => { returnedInventoryValue = money(returnedInventoryValue + r.valueChange); return r; });
           executionEvents.push({
             event: 'stock_updated',
             payload: {
@@ -1033,10 +1048,11 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
             referenceType: 'return_order',
             referenceId: orderId,
             restoreFromItemId: it.invoice_item_id || null,
+            valueOverride: await returnedValueFor(it),
             employeeId: managerId,
             notes: `Return ${orderNumber} (defective)`,
             io: null,
-          });
+          }).then((r) => { returnedInventoryValue = money(returnedInventoryValue + r.valueChange); return r; });
           // Then immediately quarantine the same units.
           const { variant: variantQ } = await applyStockMovement({
             client,
@@ -1142,19 +1158,9 @@ async function approveAndExecute({ requestId, managerId, approver = null, notes 
       // the ledger too, at today's cost (there is no sale to read it from).
       // Their refund has no VAT reversal: without a tax invoice there is no
       // output tax to reverse.
-      let returnedCost = 0;
-      for (const it of items) {
-        if (stockActionFor(it.condition) === 'disposed') continue;
-        const original = invoice ? originalItems.find((line) => line.id === it.invoice_item_id) : null;
-        let unitCost = original ? Number(original.cost_price_at_time) : null;
-        if (unitCost == null && it.variant_id) {
-          const { rows: [v] } = await client.query(`SELECT cost_price FROM product_variants WHERE id = $1`, [it.variant_id]);
-          unitCost = Number(v?.cost_price || 0);
-        }
-        returnedCost = money(returnedCost + Number(it.quantity) * Number(unitCost || 0));
-      }
+      // Exactly what the returned goods added to stock (weighted average).
       await journalService.postReturnedInventoryEntry(client, {
-        returnOrderId: orderId, returnOrderNumber: orderNumber, amount: returnedCost,
+        returnOrderId: orderId, returnOrderNumber: orderNumber, amount: returnedInventoryValue,
         date: todayStoreDate(), userId: managerId,
       });
     }
@@ -1555,7 +1561,6 @@ async function buildReplacementInvoice(
       );
     }
     const v = vRows[0];
-    cogsAmount += Number(v.cost_price || 0) * qty;
     // Charge the price frozen into the replacement plan (see
     // loadFrozenReplacementPlan), not the catalog's current selling_price —
     // the invoice total must match what was already validated against the
@@ -1586,7 +1591,7 @@ async function buildReplacementInvoice(
       ],
     );
 
-    const { variant } = await applyStockMovement({
+    const { variant, valueChange: replacementValue } = await applyStockMovement({
       client,
       variantId: it.variantId,
       productId: v.product_id,
@@ -1599,6 +1604,9 @@ async function buildReplacementInvoice(
       notes: `Replacement under ${returnOrderNumber}`,
       io: null,
     });
+    // The replacement leaves the books at the weighted average; that is its COGS.
+    const set = await lineCogs.setLineCogs(client, replacementLine.id, -replacementValue, qty);
+    cogsAmount = money(cogsAmount + set.cogsValue);
     stockEmits.push({
       event: 'stock_updated',
       payload: {

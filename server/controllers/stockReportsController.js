@@ -57,7 +57,7 @@ async function deadStock(req, res, next) {
 
     const { rows } = await query(
       `SELECT v.id AS variant_id, v.product_id, v.sku, v.internal_barcode AS barcode,
-              v.stock_qty, v.cost_price,
+              v.stock_qty, v.cost_price, v.inventory_value,
               p.name AS product_name, p.unit_label, p.image_path AS product_image,
               p.category_id,
               (SELECT name FROM product_categories WHERE id = p.category_id) AS category_name,
@@ -74,7 +74,7 @@ async function deadStock(req, res, next) {
                 AND m.movement_type = 'sale'
                 AND m.timestamp > NOW() - ($1::int * INTERVAL '1 day')
           )
-        ORDER BY v.stock_qty * v.cost_price DESC NULLS LAST
+        ORDER BY v.inventory_value DESC NULLS LAST
         LIMIT 500`,
       [days],
     );
@@ -98,7 +98,7 @@ async function deadStock(req, res, next) {
         };
         if (includeCost) {
           out.costPrice = Number(r.cost_price || 0);
-          out.tiedValue = Number(r.stock_qty) * Number(r.cost_price || 0);
+          out.tiedValue = Number(r.inventory_value || 0);
         }
         return out;
       }),
@@ -122,7 +122,7 @@ async function valuation(req, res, next) {
               COUNT(DISTINCT p.id)::int AS product_count,
               COUNT(v.id)::int AS variant_count,
               COALESCE(SUM(v.stock_qty), 0)::numeric AS total_qty,
-              COALESCE(SUM(v.stock_qty * v.cost_price), 0)::numeric AS total_value
+              COALESCE(SUM(v.inventory_value), 0)::numeric AS total_value
          FROM product_categories c
          LEFT JOIN products p ON p.category_id = c.id AND p.is_active = true
          LEFT JOIN product_variants v ON v.product_id = p.id AND v.is_active = true
@@ -131,7 +131,7 @@ async function valuation(req, res, next) {
     );
 
     const { rows: totalRows } = await query(
-      `SELECT COALESCE(SUM(v.stock_qty * v.cost_price), 0)::numeric AS total_value,
+      `SELECT COALESCE(SUM(v.inventory_value), 0)::numeric AS total_value,
               COUNT(*)::int AS variant_count
          FROM product_variants v
          JOIN products p ON p.id = v.product_id

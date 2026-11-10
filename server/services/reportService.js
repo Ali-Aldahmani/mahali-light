@@ -419,7 +419,7 @@ async function inventoryStockLevels(params) {
     `SELECT p.id AS product_id, p.name AS product_name, p.unit_label,
             pc.name AS category_name,
             COALESCE(SUM(pv.stock_qty),0)::float8 AS stock_qty,
-            COALESCE(SUM(pv.stock_qty * pv.cost_price),0)::float8 AS cost_value,
+            COALESCE(SUM(pv.inventory_value),0)::float8 AS cost_value,
             COALESCE(SUM(pv.stock_qty * pv.selling_price),0)::float8 AS potential_revenue,
             COALESCE(p.reorder_threshold,0)::float8 AS reorder_threshold
        FROM products p
@@ -524,12 +524,14 @@ async function inventoryValuation(params) {
     `SELECT COALESCE(pc.name, 'Uncategorised') AS category_name,
             COUNT(DISTINCT p.id)::int AS product_count,
             COALESCE(SUM(pv.stock_qty),0)::float8 AS units_on_hand,
-            COALESCE(SUM(pv.stock_qty * pv.cost_price),0)::float8 AS cost_value,
+            COALESCE(SUM(pv.inventory_value),0)::float8 AS cost_value,
             COALESCE(SUM(pv.stock_qty * pv.selling_price),0)::float8 AS potential_revenue
        FROM products p
        LEFT JOIN product_categories pc ON pc.id = p.category_id
        LEFT JOIN product_variants pv ON pv.product_id = p.id
-      WHERE p.is_active = true
+      -- Every product holding stock, active or not: book value (weighted
+      -- average, quarantine included) adds up to ledger account 1004.
+      WHERE p.is_active = true OR pv.stock_qty > 0 OR pv.quarantine_qty > 0
       GROUP BY pc.name
       ORDER BY cost_value DESC`,
   );
@@ -618,7 +620,7 @@ async function deadStock(params) {
   const { rows } = await query(
     `SELECT p.id AS product_id, p.name AS product_name, p.unit_label,
             COALESCE(SUM(pv.stock_qty),0)::float8 AS stock_qty,
-            COALESCE(SUM(pv.stock_qty * pv.cost_price),0)::float8 AS cost_value,
+            COALESCE(SUM(pv.inventory_value),0)::float8 AS cost_value,
             (SELECT MAX(i.confirmed_at) FROM invoice_items ii
                JOIN invoices i ON i.id = ii.invoice_id
               WHERE ii.product_id = p.id AND i.status = 'confirmed') AS last_sold_at

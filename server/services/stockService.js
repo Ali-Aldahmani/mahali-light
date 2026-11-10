@@ -122,6 +122,12 @@ async function applyStockMovement(params) {
     restoreFromItemId = null,
     batchSource = null,
     preferSource = null,
+    // Weighted average valuation (migration 061). Incoming goods are valued
+    // at unitCost (receipts) or the current average. Goods coming back from a
+    // sale or a supplier return pass valueOverride: the exact book value they
+    // left at, so the journal that reverses the original posting matches.
+    // Outgoing goods always leave at the average; unitCost is ignored for them.
+    valueOverride = null,
   } = params;
 
   if (!variantId) {
@@ -141,7 +147,9 @@ async function applyStockMovement(params) {
   const doWork = async (client) => {
     // Lock the variant row to prevent concurrent updates.
     const { rows: lockRows } = await client.query(
-      `SELECT id, product_id, stock_qty, quarantine_qty, cost_price
+      `SELECT id, product_id, stock_qty, quarantine_qty, cost_price, inventory_value,
+              (SELECT COALESCE(SUM(b.qty_on_hand + b.qty_quarantined), 0)
+                 FROM inventory_batches b WHERE b.variant_id = product_variants.id) AS batched_held
          FROM product_variants
         WHERE id = $1
         FOR UPDATE`,
@@ -153,7 +161,6 @@ async function applyStockMovement(params) {
       });
     }
     const row = lockRows[0];
-    const movementCost = Math.round(Number(unitCost ?? row.cost_price ?? 0) * 100) / 100;
     const productId = paramProductId || row.product_id;
 
     // Read product unit_label for the movement record.
@@ -220,13 +227,71 @@ async function applyStockMovement(params) {
     const finalAfter = rounded(after);
     const finalQuarantine = rounded(newQuarantine);
 
+    // --- Book value (weighted average) -------------------------------------
+    const heldBefore = rounded(before + beforeQuarantine);
+    const heldAfter = rounded(finalAfter + finalQuarantine);
+    let bookBefore = rounded(Number(row.inventory_value || 0));
+    // Stock that reached the variant outside this engine (an import, a direct
+    // edit) has no book value. The batch layer folds it into a batch at the
+    // current cost; it enters the books the same way, against owner equity
+    // like any stock adjustment, so the ledger keeps matching.
+    const outsideBooks = row.batched_held == null ? 0 : rounded(heldBefore - Number(row.batched_held));
+    if (outsideBooks !== 0) {
+      const bookedBefore = rounded(heldBefore - outsideBooks);
+      const unit = outsideBooks > 0 || bookedBefore <= 0
+        ? Number(row.cost_price || 0)
+        : bookBefore / bookedBefore;
+      const healValue = outsideBooks > 0
+        ? rounded(outsideBooks * unit)
+        : -Math.min(bookBefore, rounded(-outsideBooks * unit));
+      if (healValue !== 0) {
+        bookBefore = rounded(bookBefore + healValue);
+        await client.query(`UPDATE product_variants SET inventory_value = $2 WHERE id = $1`, [variantId, bookBefore]);
+        const inv = await journalService.getAccountIdByCode('1004', client);
+        const equity = await journalService.getAccountIdByCode('3001', client);
+        await journalService.postJournalEntryWith(client, {
+          referenceType: 'variant_cost',
+          referenceId: variantId,
+          date: todayStoreDate(),
+          description: `Stock of ${outsideBooks} recorded outside the stock engine brought onto the books`,
+          userId: employeeId,
+          lines: healValue > 0
+            ? [{ accountId: inv, debit: healValue, credit: 0 }, { accountId: equity, debit: 0, credit: healValue }]
+            : [{ accountId: equity, debit: -healValue, credit: 0 }, { accountId: inv, debit: 0, credit: -healValue }],
+        });
+      }
+    }
+    const average = heldBefore > 0 ? bookBefore / heldBefore : Number(row.cost_price || 0);
+    const averageUnit = rounded(average);
+    const heldChange = rounded(heldAfter - heldBefore);
+    let valueChange = 0;
+    if (heldChange > 0) {
+      valueChange = valueOverride != null
+        ? rounded(Math.abs(Number(valueOverride)))
+        : rounded(heldChange * Number(unitCost ?? averageUnit));
+    } else if (heldChange < 0) {
+      // Emptying the variant takes its whole remaining value, so no rounding
+      // residue is left on the books.
+      valueChange = heldAfter <= 0
+        ? -bookBefore
+        : -Math.min(bookBefore, rounded(-heldChange * averageUnit));
+    }
+    const bookAfter = rounded(bookBefore + valueChange);
+    // One unit's value for this movement, for its record and cost batches.
+    const movementCost = heldChange > 0
+      ? rounded(valueChange / heldChange)
+      : heldChange < 0 ? averageUnit : rounded(Number(unitCost ?? averageUnit));
+    const costAfter = heldAfter > 0 ? rounded(bookAfter / heldAfter) : Number(row.cost_price || 0);
+
     await client.query(
       `UPDATE product_variants
           SET stock_qty = $1,
               quarantine_qty = $2,
+              inventory_value = $4,
+              cost_price = $5,
               updated_at = NOW()
         WHERE id = $3`,
-      [finalAfter, finalQuarantine, variantId],
+      [finalAfter, finalQuarantine, variantId, bookAfter, costAfter],
     );
 
     // Persisted quantity for the movement row uses the actual signed delta
@@ -243,8 +308,8 @@ async function applyStockMovement(params) {
     const { rows: movementRows } = await client.query(
       `INSERT INTO stock_movements
          (product_id, variant_id, movement_type, quantity, qty_before, qty_after,
-          reference_type, reference_id, unit_label, employee_id, notes, unit_cost, timestamp)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, clock_timestamp())
+          reference_type, reference_id, unit_label, employee_id, notes, unit_cost, value_change, timestamp)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, clock_timestamp())
        RETURNING *`,
       [
         productId,
@@ -259,6 +324,7 @@ async function applyStockMovement(params) {
         employeeId,
         notes,
         movementCost,
+        valueChange,
       ],
     );
 
@@ -270,7 +336,9 @@ async function applyStockMovement(params) {
       stockBefore: before,
       quarantineBefore: beforeQuarantine,
       stockChange: rounded(finalAfter - before),
-      unitCost: movementCost,
+      // Receipts keep what the goods were bought at; anything else enters a
+      // group at its value per unit.
+      unitCost: type === 'purchase' && unitCost != null ? rounded(Number(unitCost)) : movementCost,
       batchAllocations,
       invoiceItemId,
       restoreFromItemId,
@@ -281,24 +349,24 @@ async function applyStockMovement(params) {
 
     // Stock adjustments + count corrections post inventory ↔ equity, at the
     // same cost the movement records, so the two always agree.
-    if (ADJUSTMENT_JOURNAL_TYPES.has(type) && Math.abs(movementQuantity) > 0) {
-      const costPrice = movementCost;
-      if (costPrice > 0) {
-        await journalService.postStockAdjustmentEntry(client, {
-          movementId: movementRows[0].id,
-          movementType: type,
-          variantId,
-          delta: movementQuantity,
-          costPrice,
-          date: todayStoreDate(),
-          userId: employeeId,
-        });
-      }
+    if (ADJUSTMENT_JOURNAL_TYPES.has(type) && valueChange !== 0) {
+      await journalService.postStockAdjustmentEntry(client, {
+        movementId: movementRows[0].id,
+        movementType: type,
+        variantId,
+        delta: movementQuantity,
+        costPrice: movementCost,
+        value: valueChange,
+        date: todayStoreDate(),
+        userId: employeeId,
+      });
     }
 
     return {
       movement: movementRows[0],
       batches,
+      // The book value this movement added (+) or removed (-).
+      valueChange,
       variant: {
         id: variantId,
         productId,
@@ -399,6 +467,49 @@ function emitDeferred(io, payloads = []) {
 }
 
 /**
+ * Sets a variant's cost by hand (weighted average, migration 061). With stock
+ * on hand this revalues it: the book value becomes quantity x the new cost,
+ * and the difference is posted against owner equity, the way stock
+ * adjustments are, so the ledger keeps matching. Logged by the caller.
+ * Returns { revalued, difference }.
+ */
+async function revalueVariantCost(client, { variantId, newCost, userId = null }) {
+  const { rows: [v] } = await client.query(
+    `SELECT id, stock_qty, quarantine_qty, inventory_value, cost_price FROM product_variants WHERE id = $1 FOR UPDATE`,
+    [variantId],
+  );
+  if (!v) return { revalued: false, difference: 0 };
+  const round = (n) => Math.round(Number(n) * 100) / 100;
+  const held = round(Number(v.stock_qty) + Number(v.quarantine_qty));
+  const cost = round(newCost);
+  if (held <= 0) {
+    await client.query(`UPDATE product_variants SET cost_price = $2, updated_at = NOW() WHERE id = $1`, [variantId, cost]);
+    return { revalued: false, difference: 0 };
+  }
+  const value = round(held * cost);
+  const difference = round(value - Number(v.inventory_value));
+  await client.query(
+    `UPDATE product_variants SET cost_price = $2, inventory_value = $3, updated_at = NOW() WHERE id = $1`,
+    [variantId, cost, value],
+  );
+  if (difference !== 0) {
+    const inv = await journalService.getAccountIdByCode('1004', client);
+    const equity = await journalService.getAccountIdByCode('3001', client);
+    await journalService.postJournalEntryWith(client, {
+      referenceType: 'variant_cost',
+      referenceId: variantId,
+      date: todayStoreDate(),
+      description: `Cost corrected to ${cost.toFixed(2)} on ${held} units`,
+      userId,
+      lines: difference > 0
+        ? [{ accountId: inv, debit: difference, credit: 0 }, { accountId: equity, debit: 0, credit: difference }]
+        : [{ accountId: equity, debit: -difference, credit: 0 }, { accountId: inv, debit: 0, credit: -difference }],
+    });
+  }
+  return { revalued: true, difference };
+}
+
+/**
  * Lock several variants in one fixed order (by id). Every transaction that
  * moves stock on more than one variant calls this first, so two of them can't
  * each hold one variant while waiting for the other's.
@@ -443,6 +554,7 @@ async function isVariantUnderActiveCount(variantId, client = null) {
 
 module.exports = {
   applyStockMovement,
+  revalueVariantCost,
   emitDeferred,
   isVariantUnderActiveCount,
   lockStockCounts,

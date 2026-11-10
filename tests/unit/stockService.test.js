@@ -63,6 +63,14 @@ function makeMockClient({ stockQty = 100, quarantineQty = 0 } = {}) {
           return { rows: [{ id: 'batch-1', unit_cost: 0, qty_on_hand: stockQty, qty_quarantined: quarantineQty }] };
         }
         if (/INSERT INTO inventory_batches/.test(sql)) return { rows: [{ id: 'batch-1' }] };
+        // ...and one receipt holding all of it.
+        if (/SUM\(qty_on_hand\)[\s\S]*FROM inventory_batch_receipts/.test(sql)) {
+          return { rows: [{ on_hand: stockQty, held: quarantineQty }] };
+        }
+        if (/FROM inventory_batch_receipts[\s\S]*FOR UPDATE/.test(sql)) {
+          return { rows: [{ id: 'receipt-1', qty_on_hand: stockQty, qty_quarantined: quarantineQty }] };
+        }
+        if (/INSERT INTO inventory_batch_receipts/.test(sql)) return { rows: [{ id: 'receipt-1' }] };
         return { rows: [] };
       }),
   };

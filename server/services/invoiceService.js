@@ -5,6 +5,7 @@ const { assertNotOwnRequest } = require('../../shared/authzPolicy');
 const { nextDocumentNumber } = require('../utils/docNumbers');
 const { checkSelection: checkBatchSelection } = require('./batchService');
 const paymentFeeService = require('./paymentFeeService');
+const lineCogs = require('./lineCogsService');
 const { applyStockMovement, lockVariants } = require('./stockService');
 const { assertQuantity } = require('../utils/quantity');
 const { assertWithinCreditLimit } = require('./customerService');
@@ -647,7 +648,7 @@ async function confirmInvoice({ invoiceId, employeeId, io = null, closedDrawerRe
     // after we commit the outer transaction.
     const stockEmits = [];
     for (const it of catalogItems) {
-      const { variant } = await applyStockMovement({
+      const { variant, valueChange } = await applyStockMovement({
         client,
         variantId: it.variant_id,
         productId: it.product_id,
@@ -657,12 +658,16 @@ async function confirmInvoice({ invoiceId, employeeId, io = null, closedDrawerRe
         referenceId: invoiceId,
         employeeId,
         unitLabel: it.unit_label,
-        unitCost: it.cost_price_at_time,
         invoiceItemId: it.id,
         batchAllocations: it.batch_selection || null,
         skipReorderCheck: false,
         io: null,
       });
+      // The line's COGS is what the sale took off the books at the weighted
+      // average, as it stands now under the variant lock (not at draft save).
+      const set = await lineCogs.setLineCogs(client, it.id, -valueChange, it.quantity);
+      it.cogs_value = set.cogsValue;
+      it.cost_price_at_time = set.unitCost;
       stockEmits.push({
         event: 'stock_updated',
         payload: {
@@ -759,9 +764,8 @@ async function confirmInvoice({ invoiceId, employeeId, io = null, closedDrawerRe
     let thirdPartyCostAmount = 0;
     for (const it of items) {
       const cost = Number(it.cost_price_at_time) || 0;
-      const lineCost = cost * Number(it.quantity);
-      if (it.is_custom) thirdPartyCostAmount += lineCost;
-      else cogsAmount += lineCost;
+      if (it.is_custom) thirdPartyCostAmount += cost * Number(it.quantity);
+      else cogsAmount += lineCogs.lineTotal(it);
     }
     cogsAmount = money(cogsAmount);
     thirdPartyCostAmount = money(thirdPartyCostAmount);
@@ -1022,8 +1026,9 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
           type: 'return_in',
           quantity: it.quantity,
           referenceType: 'invoice_cancel',
-          unitCost: it.cost_price_at_time,
           restoreFromItemId: it.id,
+          // Back at the value the sale removed, which the COGS reversal undoes.
+          valueOverride: await lineCogs.takeReturnedCogs(client, it.id, it.quantity, { final: true }),
           referenceId: invoiceId,
           employeeId,
           io: null,
@@ -1362,12 +1367,12 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
               quantity: delta,
               referenceType: 'invoice_edit',
               referenceId: req.invoice_id,
-              unitCost: cur ? cur.cost_price_at_time : null,
               invoiceItemId: cur ? cur.id : null,
               employeeId: managerId,
               io: null,
               skipReorderCheck: true,
             });
+            if (cur) await lineCogs.addLineCogs(client, cur.id, -saleMovement.value_change);
             stockEmits.push({ event: 'stock_updated', payload: emitPayload(variant, 'sale', managerId, req.invoice_id) });
             if (!cur) addedMovementId = saleMovement.id;
           } else {
@@ -1378,8 +1383,10 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
               quantity: Math.abs(delta),
               referenceType: 'invoice_edit',
               referenceId: req.invoice_id,
-              unitCost: cur ? cur.cost_price_at_time : null,
               restoreFromItemId: cur ? cur.id : null,
+              valueOverride: cur
+                ? await lineCogs.takeShrunkCogs(client, cur.id, Math.abs(delta), { final: newQty <= 0 })
+                : null,
               employeeId: managerId,
               io: null,
               skipReorderCheck: true,
@@ -1400,6 +1407,13 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
               allowPriceOverride: priceChangeAllowed,
             });
             if (addedMovementId) {
+              const { rows: [added] } = await client.query(
+                `SELECT ii.id, ii.quantity, m.value_change FROM invoice_items ii, stock_movements m
+                  WHERE ii.invoice_id = $1 AND ii.variant_id = $2 AND m.id = $3
+                  ORDER BY ii.created_at DESC LIMIT 1`,
+                [req.invoice_id, requested.variant_id, addedMovementId],
+              );
+              if (added) await lineCogs.setLineCogs(client, added.id, -Number(added.value_change), added.quantity);
               await client.query(
                 `UPDATE inventory_batch_allocations a
                     SET invoice_item_id = (SELECT id FROM invoice_items
@@ -1535,9 +1549,8 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
       let cogsAmount = 0;
       let thirdPartyCostAmount = 0;
       for (const it of items) {
-        const lineCost = (Number(it.cost_price_at_time) || 0) * Number(it.quantity);
-        if (it.is_custom) thirdPartyCostAmount += lineCost;
-        else cogsAmount += lineCost;
+        if (it.is_custom) thirdPartyCostAmount += (Number(it.cost_price_at_time) || 0) * Number(it.quantity);
+        else cogsAmount += lineCogs.lineTotal(it);
       }
       await journalService.postSaleEntry(client, {
         invoiceId: req.invoice_id, invoiceNumber: invoice.invoice_number, date,

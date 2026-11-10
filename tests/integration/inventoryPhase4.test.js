@@ -178,13 +178,20 @@ describe.skipIf(!enabled)('inventory phase 4 on real PostgreSQL', () => {
       await invoices.replaceItems(client, inv.id, [{ variant_id: p.variantId, quantity: 1, unit_price: 0 }]);
       await invoices.recalculateAndPersistTotals(client, inv.id);
     });
+    // A cost captured when the draft was saved is not what the sale books:
+    // under weighted average (migration 061) the sale takes the average at
+    // confirm (10 here), and the cancel puts back exactly that.
     await db.query(`UPDATE invoice_items SET cost_price_at_time = 12.5 WHERE invoice_id = $1`, [inv.id]);
     await invoices.confirmInvoice({ invoiceId: inv.id, employeeId: userId });
+    const { rows: [line] } = await db.query(
+      `SELECT cost_price_at_time::float8 AS cost, cogs_value::float8 AS cogs FROM invoice_items WHERE invoice_id = $1`, [inv.id]);
+    expect(line).toEqual({ cost: 10, cogs: 10 });
     await invoices.cancelInvoice({ invoiceId: inv.id, employeeId: userId, reason: 'Wrong item scanned' });
 
     const { rows } = await db.query(
-      `SELECT movement_type, unit_cost FROM stock_movements WHERE reference_id = $1 ORDER BY timestamp`, [inv.id]);
-    expect(rows.map((r) => [r.movement_type, Number(r.unit_cost)])).toEqual([['sale', 12.5], ['return_in', 12.5]]);
+      `SELECT movement_type, unit_cost, value_change FROM stock_movements WHERE reference_id = $1 ORDER BY timestamp`, [inv.id]);
+    expect(rows.map((r) => [r.movement_type, Number(r.unit_cost), Number(r.value_change)]))
+      .toEqual([['sale', 10, -10], ['return_in', 10, 10]]);
   });
 
   it('INV-007: movements from before the change show no cost instead of today\'s', async () => {

@@ -145,7 +145,11 @@ describe.skipIf(!enabled)('treasury and ledger on real PostgreSQL', () => {
     const { rows: [p] } = await db.query(`INSERT INTO products (name) VALUES ('Kettle') RETURNING id`);
     const { rows: [v] } = await db.query(
       `INSERT INTO product_variants (product_id, sku, selling_price, cost_price, stock_qty)
-       VALUES ($1, $2, 100, 40, 5) RETURNING id`, [p.id, randomUUID()]);
+       VALUES ($1, $2, 100, 40, 0) RETURNING id`, [p.id, randomUUID()]);
+    // Stock enters through the engine, so it is on the books at 40 a unit.
+    await require('../../server/services/stockService').applyStockMovement({
+      variantId: v.id, type: 'opening_stock', quantity: 5, unitCost: 40,
+    });
     const { rows: [w] } = await db.query(
       `INSERT INTO warranties (warranty_number, product_id, variant_id, start_date, end_date, duration_months)
        VALUES ($1, $2, $3, CURRENT_DATE, CURRENT_DATE + 365, 12) RETURNING id`, [`W-${randomUUID()}`, p.id, v.id]);
