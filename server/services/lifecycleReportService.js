@@ -1,6 +1,7 @@
 const { query } = require('../db/postgres');
 const lifecycle = require('./productLifecycleService');
 const valuation = require('./inventoryValuationService');
+const { storeDate } = require('../utils/dates');
 
 // Product lifecycle reports, set-based (one or two queries per report, never
 // one per product). Definitions are those of productLifecycleService. Each
@@ -38,7 +39,7 @@ async function inventoryAging({ label }) {
       product_name: p.name,
       on_hand: a.remainingUnits,
       average_age_days: a.averageAgeDays,
-      oldest_received: a.oldestRemaining ? String(a.oldestRemaining.receivedAt).slice(0, 10) : null,
+      oldest_received: a.oldestRemaining ? storeDate(new Date(a.oldestRemaining.receivedAt)) : null,
       oldest_age_days: a.oldestRemaining?.days ?? null,
       physical_value: money(a.buckets.reduce((s, b) => s + b.physicalValue, 0)),
       book_value: money(a.buckets.reduce((s, b) => s + b.bookValue, 0)),
@@ -138,7 +139,7 @@ async function performanceRows({ startDate, endDate, deadStockDays }) {
       velocity_per_day: Math.round(velocity * 100) / 100,
       days_of_cover: cover,
       sell_through_pct: available > 0 ? pct((netSold / available) * 100) : null,
-      last_sale: r.last_sale ? new Date(r.last_sale).toISOString().slice(0, 10) : null,
+      last_sale: r.last_sale ? storeDate(new Date(r.last_sale)) : null,
       days_since_sale: daysSinceSale,
       classification,
       opening_value: openingValue,
@@ -303,15 +304,17 @@ async function costGroupProfitability({ startDate, endDate, label, level = 'grou
   }
   const rows = [...groups.values()].map((g) => {
     const m = (level === 'receipt' && g.receipt_id ? metaByReceipt.get(g.receipt_id) : null) || metaByBatch.get(g.batch_id) || {};
+    // Sold before receipts were tracked: the cost group is known, the receipt is not.
+    const unknownReceipt = level === 'receipt' && !g.receipt_id;
     return {
       product_name: m.product_name,
       sku: m.sku,
       batch_number: m.batch_number,
       ...(level === 'receipt' ? {
-        received_at: m.received_at ? String(new Date(m.received_at).toISOString()).slice(0, 10) : null,
-        supplier: m.supplier_name || null,
-        po_number: m.po_number || null,
-        remaining: qty(m.receipt_remaining),
+        received_at: !unknownReceipt && m.received_at ? storeDate(new Date(m.received_at)) : null,
+        supplier: unknownReceipt ? 'Receipt not recorded (sold before receipt tracking)' : m.supplier_name || null,
+        po_number: unknownReceipt ? null : m.po_number || null,
+        remaining: unknownReceipt ? null : qty(m.receipt_remaining),
       } : { remaining: qty(m.group_remaining) }),
       unit_cost: m.unit_cost,
       ...profitRow(g),

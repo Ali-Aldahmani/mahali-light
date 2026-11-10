@@ -285,6 +285,19 @@ describe.skipIf(!enabled)('product lifecycle on real PostgreSQL', () => {
     expect(wr.rows[0]).not.toHaveProperty('unitCost');
   });
 
+  it('dates a receipt by the store day, not the UTC day', async () => {
+    const { rows: [p] } = await db.query(`INSERT INTO products (name) VALUES ('Midnight Delivery') RETURNING id`);
+    const { rows: [v] } = await db.query(
+      `INSERT INTO product_variants (product_id, sku, selling_price, cost_price, stock_qty) VALUES ($1, 'MD-1', 10, 5, 0) RETURNING id`, [p.id]);
+    await require('../../server/services/stockService').applyStockMovement({ variantId: v.id, type: 'opening_stock', quantity: 2, unitCost: 5 });
+    // 00:30 in Dubai (UTC+4) is 20:30 the day before in UTC.
+    await db.query(
+      `UPDATE inventory_batch_receipts SET received_at = $2::timestamptz
+        WHERE batch_id IN (SELECT id FROM inventory_batches WHERE variant_id = $1)`, [v.id, `${today}T00:30:00+04:00`]);
+    const aging = must(await adminUser.as('get', '/reports/inventory_aging'), 200);
+    expect(aging.rows.find((r) => r.product_name === 'Midnight Delivery').oldest_received).toBe(today);
+  });
+
   it('runs every lifecycle report, and redacts cost for a cashier', async () => {
     const q = `start_date=2020-01-01&end_date=${today}`;
     for (const type of ['inventory_aging', 'slow_moving', 'inventory_turnover', 'cost_group_profitability',

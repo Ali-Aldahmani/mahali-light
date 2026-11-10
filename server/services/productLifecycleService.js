@@ -1,5 +1,12 @@
 const { query } = require('../db/postgres');
-const { todayStoreDate } = require('../utils/dates');
+const { todayStoreDate, storeDate } = require('../utils/dates');
+
+// The calendar day before a YYYY-MM-DD date, independent of time zone.
+function dayBefore(date) {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
 
 // Product lifecycle: from purchase receipt to sale, return and what remains.
 //
@@ -44,6 +51,8 @@ const LINES_SQL = `
                ELSE COALESCE(l.line_total * l.taxable_amount / NULLIF(l.invoice_lines, 0), 0) END)::float8 AS revenue,
          COALESCE(l.cogs_value, l.quantity * l.cost_price_at_time)::float8 AS cogs,
          l.cogs_returned::float8 AS cogs_returned,
+         (l.cogs_value IS NULL) AS legacy_cogs,
+         l.cost_price_at_time::float8 AS cost_at_sale,
          COALESCE(ret.qty, 0)::float8 AS returned_qty,
          COALESCE(ret.value / (1 + COALESCE(l.tax_rate, 0) / 100), 0)::float8 AS returned_revenue,
          COALESCE(ret.replaced, false) AS exchanged,
@@ -61,9 +70,12 @@ const LINES_SQL = `
     ) fee ON true
    WHERE l.product_id IS NOT NULL AND ($1::uuid[] IS NULL OR l.product_id = ANY($1))`;
 
+// Lines sold before migration 061 have no recorded COGS or returned COGS:
+// their returns come back at the line's unit cost, as product profit counts them.
 function lineFigures(l) {
   const revenue = money(l.revenue - l.returned_revenue);
-  const cogs = money(l.cogs - l.cogs_returned);
+  const returnedCogs = l.legacy_cogs ? money(l.returned_qty * l.cost_at_sale) : l.cogs_returned;
+  const cogs = money(l.cogs - returnedCogs);
   const grossProfit = money(revenue - cogs);
   return {
     netQuantity: qty(l.quantity - l.returned_qty),
@@ -210,7 +222,7 @@ async function positionAt(productIds, date) {
 async function performance(productIds, { startDate, endDate, deadStockDays = 30 }) {
   const days = Math.max(1, Math.round(daysBetween(`${startDate}T00:00:00`, `${endDate}T23:59:59`)));
   const [opening, closing] = await Promise.all([
-    positionAt(productIds, new Date(new Date(`${startDate}T00:00:00`) - 1).toISOString().slice(0, 10)),
+    positionAt(productIds, dayBefore(startDate)),
     positionAt(productIds, endDate),
   ]);
   const sum = (rows, key) => rows.reduce((s, r) => s + Number(r[key] || 0), 0);
@@ -380,7 +392,7 @@ async function getLifecycle(productId, { startDate = null, endDate = null, deadS
   const received = receipts.filter((r) => RECEIVING_SOURCES.has(r.source_type));
   const dates = received.map((r) => new Date(r.received_at)).sort((a, b) => a - b);
   const period = {
-    startDate: startDate || (dates[0] ? dates[0].toISOString().slice(0, 10) : todayStoreDate()),
+    startDate: startDate || (dates[0] ? storeDate(dates[0]) : todayStoreDate()),
     endDate: endDate || todayStoreDate(),
   };
   const perf = await performance(ids, { ...period, deadStockDays });
