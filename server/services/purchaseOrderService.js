@@ -1,5 +1,5 @@
 const { withTransaction, query } = require('../db/postgres');
-const { todayStoreDate } = require('../utils/dates');
+const { todayStoreDate, storeDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { applyStockMovement } = require('./stockService');
 const { nextDocumentNumber } = require('../utils/docNumbers');
@@ -138,7 +138,8 @@ async function returnedValueOf(client, poId) {
 // amount marks the PO paid instead of leaving it partial and overdue.
 async function recalculatePOTotals(client, poId) {
   const { rows } = await client.query(
-    `SELECT COALESCE(SUM(quantity * cost_price_per_unit), 0)::numeric AS subtotal
+    // A closed remainder (quantity_cancelled) is not part of the order any more.
+    `SELECT COALESCE(SUM((quantity - quantity_cancelled) * cost_price_per_unit), 0)::numeric AS subtotal
        FROM purchase_order_items WHERE purchase_order_id = $1`,
     [poId],
   );
@@ -179,7 +180,24 @@ async function receivedValueOf(client, poId) {
   return money(rows[0].value);
 }
 
-async function receiveItems({ poId, items, employeeId, requestKey = null }) {
+// When the goods arrived, as entered by the person receiving them (supplier
+// delivery audit P0). Not in the future, and not before the order was sent.
+function resolveDeliveredAt(deliveredAt, po) {
+  if (deliveredAt == null || deliveredAt === '') return { at: new Date(), source: 'defaulted' };
+  const at = new Date(deliveredAt);
+  if (Number.isNaN(at.getTime())) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'The delivery time is not a valid date.', { status: 400 });
+  }
+  if (at.getTime() > Date.now() + 5 * 60 * 1000) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'The delivery time can’t be in the future.', { status: 400 });
+  }
+  if (po.confirmed_at && at.getTime() < new Date(po.confirmed_at).getTime()) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'The delivery time can’t be before the order was sent to the supplier.', { status: 400 });
+  }
+  return { at, source: 'entered' };
+}
+
+async function receiveItems({ poId, items, employeeId, requestKey = null, deliveredAt = null, deliveryNote = null }) {
   if (!Array.isArray(items) || !items.length) {
     throw new AppError(
       ERROR_CODES.VALIDATION_FAILED,
@@ -205,6 +223,22 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
         { status: 409 },
       );
     }
+
+    const delivered = resolveDeliveredAt(deliveredAt, po);
+    // One receipt per delivery; created with its first line.
+    let receiptId = null;
+    const receiptFor = async () => {
+      if (!receiptId) {
+        const { rows: [r] } = await client.query(
+          `INSERT INTO purchase_order_receipts
+             (purchase_order_id, supplier_id, delivered_at, delivered_at_source, recorded_by, delivery_note)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [poId, po.supplier_id || null, delivered.at, delivered.source, employeeId, deliveryNote || null],
+        );
+        receiptId = r.id;
+      }
+      return receiptId;
+    };
 
     const affectedVariants = [];
     const costChanges = [];
@@ -232,7 +266,8 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
         );
       }
       const item = itemRows[0];
-      const ordered = Number(item.quantity);
+      // What was closed as never coming can't be received any more.
+      const ordered = Number(item.quantity) - Number(item.quantity_cancelled || 0);
       const alreadyReceived = Number(item.quantity_received);
       if (alreadyReceived + recvQty > ordered + 1e-6) {
         throw new AppError(
@@ -277,6 +312,11 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
             SET quantity_received = quantity_received + $1
           WHERE id = $2`,
         [recvQty, i.id],
+      );
+      await client.query(
+        `INSERT INTO purchase_order_receipt_lines (receipt_id, purchase_order_item_id, variant_id, quantity)
+         VALUES ($1,$2,$3,$4)`,
+        [await receiptFor(), i.id, item.variant_id, recvQty],
       );
 
       receivedValue = money(receivedValue + recvQty * Number(item.cost_price_per_unit));
@@ -344,7 +384,7 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
 
     // Re-read item state to compute new PO status.
     const { rows: allItems } = await client.query(
-      `SELECT quantity, quantity_received FROM purchase_order_items
+      `SELECT quantity, quantity_received, quantity_cancelled FROM purchase_order_items
         WHERE purchase_order_id = $1`,
       [poId],
     );
@@ -364,10 +404,14 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
     // $1 is cast explicitly: used both as the varchar status and in a text
     // comparison, Postgres rejected it ("inconsistent types deduced for
     // parameter $1", 42P08), so every receive failed with a 500.
+    // received_date is the day the last goods arrived (store time), not the
+    // day the last receipt was typed in.
     await client.query(
       `UPDATE purchase_orders
           SET status = $1::varchar,
-              received_date = CASE WHEN $1::varchar = 'received' THEN CURRENT_DATE ELSE received_date END,
+              received_date = CASE WHEN $1::varchar = 'received' THEN
+                (SELECT MAX(delivered_at)::date FROM purchase_order_receipts WHERE purchase_order_id = $2)
+                ELSE received_date END,
               updated_at = NOW()
         WHERE id = $2`,
       [nextStatus, poId],
@@ -413,7 +457,10 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
   // A retry with the same request key returns the first receipt instead of
   // adding the same goods to stock twice (a partial receipt would otherwise
   // be accepted again while the order still had quantity left).
-  const payload = { poId, items: items.map((it) => ({ id: it.id, quantityReceived: Number(it.quantityReceived) })) };
+  const payload = {
+    poId, deliveredAt: deliveredAt || null,
+    items: items.map((it) => ({ id: it.id, quantityReceived: Number(it.quantityReceived) })),
+  };
   return withTransaction(async (client) => {
     const { result, replayed } = await runOnce(
       client,
@@ -424,7 +471,100 @@ async function receiveItems({ poId, items, employeeId, requestKey = null }) {
   });
 }
 
+// Close what the supplier will never deliver (supplier delivery audit P0):
+// each line's outstanding quantity becomes cancelled, the order is complete
+// as of its last delivery, and it is owed only for what arrived.
+async function closeRemainder({ poId, reason, userId }) {
+  return withTransaction(async (client) => {
+    const { rows: [po] } = await client.query(`SELECT * FROM purchase_orders WHERE id = $1 FOR UPDATE`, [poId]);
+    if (!po) throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    if (po.status === 'confirmed') {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+        'Nothing has been received on this order yet. Cancel it instead.', { status: 409 });
+    }
+    if (po.status !== 'partially_received') {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+        `Only a partly received order has a remainder to close (this one is "${po.status}").`, { status: 409 });
+    }
+    const { rows: [after] } = await client.query(
+      `SELECT COALESCE(SUM(quantity_received * cost_price_per_unit), 0)::numeric AS subtotal
+         FROM purchase_order_items WHERE purchase_order_id = $1`, [poId]);
+    const subtotal = money(after.subtotal);
+    const newTotal = money(subtotal + await resolvePoTaxAmount(client, subtotal));
+    const owed = money(newTotal - await returnedValueOf(client, poId));
+    if (Number(po.amount_paid || 0) > owed + 0.0001) {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+        `${Number(po.amount_paid).toFixed(2)} has been paid but only ${owed.toFixed(2)} was delivered. Reverse the extra payment first.`,
+        { status: 409 });
+    }
+    const { rows: closed } = await client.query(
+      `UPDATE purchase_order_items SET quantity_cancelled = quantity - quantity_received
+        WHERE purchase_order_id = $1 AND quantity - quantity_received - quantity_cancelled > 0
+        RETURNING id, quantity - quantity_received AS cancelled`, [poId]);
+    await recalculatePOTotals(client, poId);
+    await client.query(
+      `UPDATE purchase_orders
+          SET status = 'received',
+              received_date = (SELECT MAX(delivered_at)::date FROM purchase_order_receipts WHERE purchase_order_id = $1),
+              short_closed_at = NOW(), short_closed_by = $2, short_close_reason = $3, updated_at = NOW()
+        WHERE id = $1`, [poId, userId, reason]);
+    await logActivity({
+      client, entityType: 'purchase_order', entityId: poId, action: 'purchase_order.remainder_closed',
+      performedBy: userId, oldValue: { status: po.status },
+      newValue: { status: 'received', lines: closed.map((c) => ({ id: c.id, cancelled: Number(c.cancelled) })) },
+      notes: `${po.po_number}: ${reason}`,
+    });
+    const { rows: [updated] } = await client.query(`SELECT * FROM purchase_orders WHERE id = $1`, [poId]);
+    return updated;
+  });
+}
+
+// A delivery date promised for an order. History is append-only; the first
+// supplier promise is the original and never changes.
+async function addPromise(client, { po, promisedDate, source, note = null, userId }) {
+  const d = String(promisedDate).slice(0, 10);
+  const orderDay = storeDate(po.order_date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'The promised date is not a valid date.', { status: 400 });
+  }
+  if (d < orderDay) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'A delivery date can’t be before the order date.', { status: 400 });
+  }
+  await client.query(
+    `INSERT INTO purchase_order_promises (purchase_order_id, promised_date, source, recorded_by, note)
+     VALUES ($1,$2::date,$3,$4,$5)`, [po.id, d, source, userId, note]);
+  if (source === 'supplier') {
+    await client.query(
+      `UPDATE purchase_orders
+          SET promised_date = $2::date,
+              original_promised_date = COALESCE(original_promised_date, $2::date),
+              updated_at = NOW()
+        WHERE id = $1`, [po.id, d]);
+  }
+}
+
+async function recordSupplierPromise({ poId, promisedDate, note, userId }) {
+  return withTransaction(async (client) => {
+    const { rows: [po] } = await client.query(`SELECT * FROM purchase_orders WHERE id = $1 FOR UPDATE`, [poId]);
+    if (!po) throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, undefined, { status: 404 });
+    if (!['confirmed', 'partially_received'].includes(po.status)) {
+      throw new AppError(ERROR_CODES.BIZ_INVALID_STATE,
+        'A supplier’s delivery date can be recorded once the order is sent and until it is complete.', { status: 409 });
+    }
+    await addPromise(client, { po, promisedDate, source: 'supplier', note, userId });
+    await logActivity({
+      client, entityType: 'purchase_order', entityId: poId, action: 'purchase_order.promise_recorded',
+      performedBy: userId, oldValue: { promisedDate: po.promised_date }, newValue: { promisedDate }, notes: note,
+    });
+    const { rows: [updated] } = await client.query(`SELECT * FROM purchase_orders WHERE id = $1`, [poId]);
+    return updated;
+  });
+}
+
 module.exports = {
+  closeRemainder,
+  addPromise,
+  recordSupplierPromise,
   returnedValueOf,
   assertReturnFitsPurchaseOrder,
   generatePoNumber,

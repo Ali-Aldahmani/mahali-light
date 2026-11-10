@@ -115,10 +115,17 @@ async function getSupplierRankings({ startDate, endDate, includeCost = false }) 
   // so a supplier can't look reliable by simply never delivering.
   const delivery = query(
     `WITH po AS (
+       -- The supplier's original promise, else the store's estimate, else
+       -- the lead time that applied when the order was sent (from the
+       -- lead-time history, not today's value).
        SELECT p.supplier_id, p.received_date,
-              COALESCE(p.expected_date,
+              COALESCE(p.original_promised_date, p.expected_date,
                        COALESCE(p.confirmed_at::date, p.order_date)
-                         + COALESCE(s.default_lead_time_days, 3)) AS promised
+                         + COALESCE((SELECT h.lead_time_days FROM supplier_lead_time_history h
+                                      WHERE h.supplier_id = p.supplier_id
+                                        AND h.effective_from <= COALESCE(p.confirmed_at, p.created_at)
+                                      ORDER BY h.effective_from DESC LIMIT 1),
+                                    s.default_lead_time_days, 3)) AS promised
          FROM purchase_orders p
          JOIN suppliers s ON s.id = p.supplier_id
         WHERE p.status NOT IN ('draft', 'cancelled')

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import DeliveryHistoryCard from '@/components/purchases/DeliveryHistoryCard';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -313,6 +314,9 @@ function PurchaseOrderDetailPageContent() {
         </div>
 
         <div className="space-y-4">
+          {po.status !== 'draft' && po.status !== 'cancelled' && (
+            <DeliveryHistoryCard po={po} canEdit={canCreatePo} onChanged={() => load()} />
+          )}
           <div className="card p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-ink">Invoice attachment</h2>

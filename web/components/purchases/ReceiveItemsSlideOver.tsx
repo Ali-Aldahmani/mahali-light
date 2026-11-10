@@ -58,9 +58,18 @@ export default function ReceiveItemsSlideOver({
 
   const [items, setItems] = useState<ReceiveRow[]>([]);
   const [saving, setSaving] = useState(false);
+  // When the goods arrived: now unless changed (a delivery entered late).
+  const [arrivedAt, setArrivedAt] = useState('');
+  const [arrivalChanged, setArrivalChanged] = useState(false);
+  const [deliveryNote, setDeliveryNote] = useState('');
 
   useEffect(() => {
-    if (open) setItems(remaining);
+    if (open) {
+      setItems(remaining);
+      setArrivedAt(localNow());
+      setArrivalChanged(false);
+      setDeliveryNote('');
+    }
   }, [open, remaining]);
 
   function patch(idx: number, val: number) {
@@ -81,7 +90,10 @@ export default function ReceiveItemsSlideOver({
     }
     setSaving(true);
     try {
-      const updated = await receivePurchaseOrderItems(po!.id, payload, requestKey.current());
+      const updated = await receivePurchaseOrderItems(po!.id, payload, requestKey.current(), {
+        deliveredAt: arrivalChanged && arrivedAt ? new Date(arrivedAt).toISOString() : null,
+        deliveryNote: deliveryNote.trim() || null,
+      });
       toast.success('Stock updated. Movements logged.');
       onReceived?.(updated);
       onClose?.();
@@ -116,6 +128,29 @@ export default function ReceiveItemsSlideOver({
         </div>
       ) : (
         <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs font-medium text-ink-muted">Arrived at</span>
+              <input
+                type="datetime-local"
+                value={arrivedAt}
+                max={localNow()}
+                onChange={(e) => { setArrivedAt(e.target.value); setArrivalChanged(true); }}
+                className="h-9 w-full rounded-input border border-border bg-surface px-2 text-sm focus:border-accent focus:outline-none"
+              />
+              <span className="mt-1 block text-[11px] text-ink-muted">Change it if the goods came earlier than now.</span>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs font-medium text-ink-muted">Delivery note number</span>
+              <input
+                value={deliveryNote}
+                maxLength={200}
+                onChange={(e) => setDeliveryNote(e.target.value)}
+                placeholder="Optional"
+                className="h-9 w-full rounded-input border border-border bg-surface px-2 text-sm focus:border-accent focus:outline-none"
+              />
+            </label>
+          </div>
           {items.map((it, idx) => (
             <div
               key={it.id}
@@ -162,6 +197,13 @@ export default function ReceiveItemsSlideOver({
       )}
     </SlideOver>
   );
+}
+
+// Now, as a datetime-local value in this PC's time.
+function localNow() {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
 function clamp(n: number, min: number, max: number) {

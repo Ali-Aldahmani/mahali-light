@@ -73,8 +73,23 @@ export function confirmPurchaseOrder(id) {
 }
 
 // requestKey: see lib/requestKey — a retried partial receipt can't add the goods twice.
-export function receivePurchaseOrderItems(id, items, requestKey?: string) {
-  return apiPost(`/purchase-orders/${id}/receive`, { items }, withRequestKey(requestKey));
+// deliveredAt: when the goods arrived (ISO), if not just now; deliveryNote:
+// the supplier's delivery note number.
+export function receivePurchaseOrderItems(
+  id, items, requestKey?: string,
+  extra: { deliveredAt?: string | null; deliveryNote?: string | null } = {},
+) {
+  return apiPost(`/purchase-orders/${id}/receive`, { items, ...extra }, withRequestKey(requestKey));
+}
+
+// Marks what the supplier will never deliver as cancelled; the order is then complete.
+export function closePurchaseOrderRemainder(id, reason: string) {
+  return apiPost(`/purchase-orders/${id}/close-remainder`, { reason });
+}
+
+// A delivery date the supplier gave. Kept as history; the first never changes.
+export function recordSupplierPromise(id, promisedDate: string, note?: string | null) {
+  return apiPost(`/purchase-orders/${id}/promises`, { promisedDate, note: note || null });
 }
 
 export async function uploadPurchaseOrderAttachment(id, file, opts?: UploadOptions) {

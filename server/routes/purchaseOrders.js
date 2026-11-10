@@ -34,6 +34,17 @@ router.post(
   requirePermission('supplier.purchase_order.create'),
   pos.receive,
 );
+// Close what the supplier will never deliver, and record their delivery dates.
+router.post(
+  '/:id/close-remainder',
+  requirePermission('supplier.purchase_order.create'),
+  pos.closeRemainder,
+);
+router.post(
+  '/:id/promises',
+  requirePermission('supplier.purchase_order.create'),
+  pos.recordPromise,
+);
 router.post(
   '/:id/attachment',
   requirePermission('supplier.purchase_order.create'),

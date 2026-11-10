@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { todayStoreDate } = require('../utils/dates');
+const { todayStoreDate, storeDate } = require('../utils/dates');
 const { query, withTransaction } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
@@ -11,6 +11,9 @@ const {
   recalculatePOTotals,
   resolvePoLineCost,
   receiveItems: receiveItemsService,
+  closeRemainder: closeRemainderService,
+  recordSupplierPromise,
+  addPromise,
 } = require('../services/purchaseOrderService');
 const {
   savePurchaseOrderAttachment,
@@ -53,7 +56,30 @@ const receiveSchema = z.object({
       }),
     )
     .min(1),
+  // When the goods actually arrived; defaults to now (supplier delivery audit P0).
+  deliveredAt: z.string().max(40).optional().nullable(),
+  deliveryNote: z.string().max(200).optional().nullable(),
 });
+
+const closeRemainderSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+const promiseSchema = z.object({
+  promisedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-30.'),
+  note: z.string().max(300).optional().nullable(),
+});
+
+// Order and expected dates a person types (supplier delivery audit P0): an
+// order can't be dated in the future, and nothing is expected before it was
+// ordered. Lead times are measured from confirmation, not from these.
+function assertOrderDates(orderDate, expectedDate) {
+  const order = orderDate ? storeDate(orderDate) : null;
+  const expected = expectedDate ? storeDate(expectedDate) : null;
+  if (order && order > todayStoreDate()) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'The order date can’t be in the future.', { status: 400 });
+  }
+  if (order && expected && expected < order) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'The expected date can’t be before the order date.', { status: 400 });
+  }
+}
 
 function canSeeCost(req) {
   return (req.user?.permissions || []).includes('product.view_cost');
@@ -72,7 +98,12 @@ function shapePO(row, includeCost) {
     cancelledAt: row.cancelled_at || null,
     cancelReason: row.cancel_reason || null,
     expectedDate: row.expected_date,
+    // The supplier's first promise (never changes) and their latest one.
+    originalPromisedDate: row.original_promised_date || null,
+    promisedDate: row.promised_date || null,
     receivedDate: row.received_date,
+    shortClosedAt: row.short_closed_at || null,
+    shortCloseReason: row.short_close_reason || null,
     dueDate: row.due_date,
     status: row.status,
     paymentStatus: row.payment_status,
@@ -106,8 +137,9 @@ function shapePOItem(row, includeCost) {
     quantity: Number(row.quantity),
     unitLabel: row.unit_label,
     quantityReceived: Number(row.quantity_received),
+    quantityCancelled: Number(row.quantity_cancelled || 0),
     quantityRemaining:
-      Number(row.quantity) - Number(row.quantity_received),
+      Number(row.quantity) - Number(row.quantity_received) - Number(row.quantity_cancelled || 0),
     productName: row.product_name,
     productImage: row.product_image,
     sku: row.sku,
@@ -255,9 +287,38 @@ async function getOne(req, res, next) {
       [id],
     );
 
+    // Delivery history: each delivery with its lines, and every promised date.
+    const { rows: receipts } = await query(
+      `SELECT r.id, r.delivered_at, r.delivered_at_source, r.recorded_at, r.delivery_note,
+              u.username AS recorded_by,
+              COALESCE(json_agg(json_build_object('itemId', l.purchase_order_item_id, 'variantId', l.variant_id,
+                                                  'quantity', l.quantity::float8)) FILTER (WHERE l.id IS NOT NULL), '[]') AS lines
+         FROM purchase_order_receipts r
+         LEFT JOIN purchase_order_receipt_lines l ON l.receipt_id = r.id
+         LEFT JOIN users u ON u.id = r.recorded_by
+        WHERE r.purchase_order_id = $1
+        GROUP BY r.id, u.username
+        ORDER BY r.delivered_at`,
+      [id],
+    );
+    const { rows: promises } = await query(
+      `SELECT p.id, p.promised_date, p.source, p.recorded_at, p.note, u.username AS recorded_by
+         FROM purchase_order_promises p LEFT JOIN users u ON u.id = p.recorded_by
+        WHERE p.purchase_order_id = $1 ORDER BY p.recorded_at`,
+      [id],
+    );
+
     return ok(res, {
       ...shapePO(rows[0], includeCost),
       items: items.map((it) => shapePOItem(it, includeCost)),
+      receipts: receipts.map((r) => ({
+        id: r.id, deliveredAt: r.delivered_at, deliveredAtSource: r.delivered_at_source,
+        recordedAt: r.recorded_at, recordedBy: r.recorded_by, deliveryNote: r.delivery_note, lines: r.lines,
+      })),
+      promises: promises.map((p) => ({
+        id: p.id, promisedDate: storeDate(p.promised_date), source: p.source,
+        recordedAt: p.recorded_at, recordedBy: p.recorded_by, note: p.note,
+      })),
     });
   } catch (err) {
     next(err);
@@ -268,6 +329,7 @@ async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
     const includeCost = canSeeCost(req);
+    assertOrderDates(body.orderDate || todayStoreDate(), body.expectedDate);
 
     // Validate supplier is active.
     const { rows: supplierRows } = await query(
@@ -451,6 +513,9 @@ async function update(req, res, next) {
           );
         }
       }
+      const { rows: [dates] } = await client.query(
+        `SELECT order_date, expected_date FROM purchase_orders WHERE id = $1`, [id]);
+      assertOrderDates(dates.order_date, dates.expected_date);
       await recalculatePOTotals(client, id);
       if (amountPaid > 0) {
         const { rows: [totals] } = await client.query(
@@ -588,10 +653,18 @@ async function confirm(req, res, next) {
           { status: 409 },
         );
       }
-      await client.query(
-        `UPDATE purchase_orders SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      const { rows: [po] } = await client.query(
+        `UPDATE purchase_orders SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW()
+          WHERE id = $1 RETURNING *`,
         [id],
       );
+      // The store's own expected date starts the order's promise history.
+      if (po.expected_date) {
+        await addPromise(client, {
+          po, promisedDate: storeDate(po.expected_date), source: 'store_estimate',
+          note: 'Expected date when the order was sent', userId: req.user.id,
+        });
+      }
     });
 
     await logActivity({
@@ -617,6 +690,8 @@ async function receive(req, res, next) {
     const result = await receiveItemsService({
       poId: id,
       items: body.items,
+      deliveredAt: body.deliveredAt || null,
+      deliveryNote: body.deliveryNote || null,
       employeeId: req.user.id,
       requestKey: requestKeyFrom(req, { required: true }),
     });
@@ -759,7 +834,31 @@ async function removeAttachment(req, res, next) {
   }
 }
 
+async function closeRemainder(req, res, next) {
+  try {
+    const { reason } = closeRemainderSchema.parse(req.body || {});
+    await closeRemainderService({ poId: req.params.id, reason, userId: req.user.id });
+    const { rows: full } = await query(`${LIST_SELECT} WHERE po.id = $1`, [req.params.id]);
+    return ok(res, shapePO(full[0], canSeeCost(req)));
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function recordPromise(req, res, next) {
+  try {
+    const body = promiseSchema.parse(req.body || {});
+    await recordSupplierPromise({ poId: req.params.id, promisedDate: body.promisedDate, note: body.note || null, userId: req.user.id });
+    const { rows: full } = await query(`${LIST_SELECT} WHERE po.id = $1`, [req.params.id]);
+    return ok(res, shapePO(full[0], canSeeCost(req)));
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  closeRemainder,
+  recordPromise,
   list,
   getOne,
   create,

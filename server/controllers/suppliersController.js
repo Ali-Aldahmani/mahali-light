@@ -178,10 +178,12 @@ async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body || {});
     const { rows } = await query(
+      // set_config tells the lead-time history trigger who made the change.
       `INSERT INTO suppliers
          (name, contact_person, phone, email, address, payment_terms,
           default_lead_time_days, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9
+         FROM (SELECT set_config('app.user_id', $10, true)) cfg
        RETURNING id`,
       [
         body.name,
@@ -193,6 +195,7 @@ async function create(req, res, next) {
         body.defaultLeadTimeDays ?? null,
         body.notes || null,
         req.user.id,
+        String(req.user.id),
       ],
     );
     const id = rows[0].id;
@@ -236,6 +239,7 @@ async function update(req, res, next) {
               notes = $8,
               is_active = COALESCE($9, is_active),
               updated_at = NOW()
+         FROM (SELECT set_config('app.user_id', $11, true)) cfg
         WHERE id = $10`,
       [
         body.name,
@@ -248,6 +252,7 @@ async function update(req, res, next) {
         body.notes || null,
         body.isActive,
         id,
+        String(req.user.id),
       ],
     );
 

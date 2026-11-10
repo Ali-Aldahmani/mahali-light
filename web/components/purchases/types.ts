@@ -15,8 +15,29 @@ export interface POItem {
   quantity: number | string;
   quantityReceived?: number;
   quantityRemaining?: number;
+  // Closed as never delivered.
+  quantityCancelled?: number;
   costPricePerUnit: number | string;
   totalCost?: number;
+}
+
+export interface POPromise {
+  id: string;
+  promisedDate: string;
+  source: 'store_estimate' | 'supplier';
+  recordedAt: string;
+  recordedBy?: string | null;
+  note?: string | null;
+}
+
+export interface POReceipt {
+  id: string;
+  deliveredAt: string;
+  deliveredAtSource: 'entered' | 'defaulted' | 'backfilled';
+  recordedAt: string;
+  recordedBy?: string | null;
+  deliveryNote?: string | null;
+  lines: { itemId: string | null; variantId: string | null; quantity: number }[];
 }
 
 export interface PurchaseOrder {
@@ -28,8 +49,15 @@ export interface PurchaseOrder {
   supplierName?: string;
   orderDate: string;
   expectedDate?: string | null;
+  // The supplier's first promised date (never changes) and their latest.
+  originalPromisedDate?: string | null;
+  promisedDate?: string | null;
   dueDate?: string | null;
   receivedDate?: string | null;
+  shortClosedAt?: string | null;
+  shortCloseReason?: string | null;
+  promises?: POPromise[];
+  receipts?: POReceipt[];
   taxAmount?: number;
   subtotal?: number;
   totalCost?: number;

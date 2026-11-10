@@ -93,7 +93,15 @@ export default function POItemsTable({
             sortable: false,
             render: (r) => (
               <div className="flex items-center justify-end gap-2">
-                <span>{formatQty(r.quantityReceived || 0)}</span>
+                <span>
+                  {formatQty(r.quantityReceived || 0)}
+                  {/* Closed as never delivered (remainder closed on the order). */}
+                  {Number(r.quantityCancelled || 0) > 0 && (
+                    <span className="block text-[11px] text-ink-muted">
+                      {formatQty(r.quantityCancelled)} cancelled
+                    </span>
+                  )}
+                </span>
                 {showProgress && (
                   <ProgressBar
                     value={
@@ -143,7 +151,10 @@ export default function POItemsTable({
               formatCurrency(
                 editable
                   ? Number(r.quantity || 0) * Number(r.costPricePerUnit || 0)
-                  : r.totalCost,
+                  // A cancelled remainder isn't part of the order any more.
+                  : Number(r.quantityCancelled || 0) > 0
+                    ? (Number(r.quantity) - Number(r.quantityCancelled)) * Number(r.costPricePerUnit || 0)
+                    : r.totalCost,
               ),
           },
         ] as TableColumn[])

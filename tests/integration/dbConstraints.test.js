@@ -53,7 +53,7 @@ describe.skipIf(!enabled)('database constraints on real PostgreSQL', () => {
       `INSERT INTO purchase_orders (po_number, supplier_id) VALUES ($1, $2) RETURNING id`, [`PO-${randomUUID()}`, s.id]);
     await expect(db.query(
       `INSERT INTO purchase_order_items (purchase_order_id, product_id, variant_id, quantity, quantity_received, cost_price_per_unit, total_cost)
-       VALUES ($1, $2, $3, 2, 3, 4, 8)`, [po.id, p.id, v.id])).rejects.toThrow(/chk_po_item_received_range/);
+       VALUES ($1, $2, $3, 2, 3, 4, 8)`, [po.id, p.id, v.id])).rejects.toThrow(/chk_po_item_(received|cancelled)_range/);
   });
 
   it('refuses an unbalanced journal entry at commit', async () => {
