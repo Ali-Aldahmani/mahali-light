@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import CostBatchesTable from '@/components/inventory/CostBatchesTable';
+import ProductLifecycleTab from '@/components/products/ProductLifecycleTab';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -15,6 +16,7 @@ import {
   ShieldAlert,
   Trash2,
   Warehouse,
+  Activity,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import AuditLogButton from '@/components/audit/AuditLogButton';
@@ -167,6 +169,7 @@ function ProductDetailPageContent() {
       } as any);
     }
     items.push({ value: 'stock', label: 'Stock', icon: <Warehouse size={14} /> });
+    items.push({ value: 'lifecycle', label: 'Lifecycle', icon: <Activity size={14} /> });
     items.push({ value: 'pricing', label: 'Pricing', icon: <ShieldAlert size={14} /> });
     items.push({ value: 'history', label: 'History', icon: <HistoryIcon size={14} /> });
     return items;
@@ -342,6 +345,9 @@ function ProductDetailPageContent() {
         />
       )}
 
+      {tab === 'lifecycle' && product?.id && (
+        <ProductLifecycleTab productId={product.id} unitLabel={product.unitLabel} />
+      )}
       {tab === 'pricing' && (
         <PricingTab productId={product.id} canManage={canManagePricingRestrictions} />
       )}

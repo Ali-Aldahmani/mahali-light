@@ -14,7 +14,7 @@ describe('cost batch choice on cart lines', () => {
   it('sends the chosen batches with the line, and nothing when none were chosen', () => {
     expect(buildInvoiceItems(usePosStore.getState().cart)[0]).not.toHaveProperty('batchSelection');
     usePosStore.getState().setBatchSelection('v1', [{ batchId: 'b1', quantity: 2 }, { batchId: 'b2', quantity: 1 }]);
-    expect(buildInvoiceItems(usePosStore.getState().cart)[0].batchSelection)
+    expect((buildInvoiceItems(usePosStore.getState().cart)[0] as any).batchSelection)
       .toEqual([{ batchId: 'b1', quantity: 2 }, { batchId: 'b2', quantity: 1 }]);
   });
 
