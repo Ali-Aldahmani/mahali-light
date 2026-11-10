@@ -25,6 +25,13 @@ router.put('/:id', requirePermission('product.edit'), ctrl.update);
 router.delete('/:id', requirePermission('product.delete'), ctrl.remove);
 
 router.get('/:id/history', requirePermission('product.view'), ctrl.history);
+// Product lifecycle: receipts, sales with batch allocations, aging, timeline.
+// Cost, revenue and supplier fields are redacted per permission in the controller.
+const lifecycle = require('../controllers/productLifecycleController');
+router.get('/:id/lifecycle', requirePermission('product.view'), lifecycle.overview);
+router.get('/:id/lifecycle/receipts', requirePermission('product.view'), lifecycle.receipts);
+router.get('/:id/lifecycle/sales', requirePermission('product.view'), lifecycle.sales);
+router.get('/:id/lifecycle/timeline', requirePermission('product.view'), lifecycle.timeline);
 router.post(
   '/:id/image',
   requirePermission('product.edit'),

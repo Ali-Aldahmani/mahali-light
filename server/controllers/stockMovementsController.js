@@ -99,13 +99,21 @@ async function list(req, res, next) {
       params.push(req.query.referenceType);
       where.push(`m.reference_type = $${params.length}`);
     }
+    // A plain date covers that whole day in the store's time zone, like the
+    // reports (::date of a timestamptz uses the session zone). Comparing with
+    // <= 'YYYY-MM-DD' stopped at midnight and dropped the end day itself.
+    const dateOnly = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v));
     if (req.query.dateFrom) {
       params.push(req.query.dateFrom);
-      where.push(`m.timestamp >= $${params.length}`);
+      where.push(dateOnly(req.query.dateFrom)
+        ? `m.timestamp::date >= $${params.length}::date`
+        : `m.timestamp >= $${params.length}`);
     }
     if (req.query.dateTo) {
       params.push(req.query.dateTo);
-      where.push(`m.timestamp <= $${params.length}`);
+      where.push(dateOnly(req.query.dateTo)
+        ? `m.timestamp::date <= $${params.length}::date`
+        : `m.timestamp <= $${params.length}`);
     }
     if (req.query.search) {
       params.push(`%${req.query.search}%`);

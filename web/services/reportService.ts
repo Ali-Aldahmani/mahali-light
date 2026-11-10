@@ -28,6 +28,7 @@ export const REPORT_CATEGORIES = [
       { type: 'balance_sheet', label: 'Balance Sheet' },
       { type: 'cash_flow', label: 'Cash Flow' },
       { type: 'vat', label: 'VAT Report' },
+      { type: 'inventory_reconciliation', label: 'Inventory Reconciliation' },
     ],
   },
   {
@@ -39,6 +40,8 @@ export const REPORT_CATEGORIES = [
       { type: 'sales_summary', label: 'Sales Summary' },
       { type: 'sales_by_period', label: 'Sales Over Time' },
       { type: 'sales_by_product', label: 'Sales by Product' },
+      { type: 'cost_group_profitability', label: 'Profit by Cost Group' },
+      { type: 'receipt_profitability', label: 'Profit by Receipt' },
       { type: 'sales_by_category', label: 'Sales by Category' },
       { type: 'sales_by_employee', label: 'Sales by Employee' },
       { type: 'sales_by_payment_method', label: 'Payment Method Split' },
@@ -57,6 +60,9 @@ export const REPORT_CATEGORIES = [
       { type: 'low_stock', label: 'Low Stock' },
       { type: 'dead_stock', label: 'Dead Stock' },
       { type: 'inventory_stock_counts', label: 'Stock Counts' },
+      { type: 'inventory_aging', label: 'Inventory Aging' },
+      { type: 'slow_moving', label: 'Fast & Slow Movers' },
+      { type: 'inventory_turnover', label: 'Inventory Turnover' },
     ],
   },
   {
@@ -70,6 +76,7 @@ export const REPORT_CATEGORIES = [
       { type: 'supplier_purchases', label: 'Purchase History' },
       { type: 'supplier_payments', label: 'Payments' },
       { type: 'supplier_returns', label: 'Returns' },
+      { type: 'supplier_profitability', label: 'Profit by Supplier' },
     ],
   },
   {

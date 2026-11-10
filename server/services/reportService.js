@@ -3,6 +3,29 @@ const { storeDate, todayStoreDate, assertReportRange } = require('../utils/dates
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const financialReportService = require('./financialReportService');
 const { getProductProfit } = require('./productProfitService');
+const lifecycleReports = require('./lifecycleReportService');
+
+// Product lifecycle reports (lifecycleReportService). Periods use the same
+// parseDateRange as every report; the dead-stock window is the store setting.
+async function lifecycleParams(params) {
+  const { startDate, endDate } = parseDateRange(params);
+  const { rows: [s] } = await query(`SELECT dead_stock_days FROM app_settings ORDER BY updated_at DESC LIMIT 1`);
+  return {
+    startDate, endDate,
+    label: rangeLabel({ startDate, endDate }),
+    deadStockDays: Number(params.days) || Number(s?.dead_stock_days) || 30,
+  };
+}
+const inventoryAgingReport = async () => lifecycleReports.inventoryAging({ label: `As of ${todayIso()}` });
+const slowMovingReport = async (params) => lifecycleReports.slowMoving(await lifecycleParams(params));
+const inventoryTurnoverReport = async (params) => lifecycleReports.inventoryTurnover(await lifecycleParams(params));
+const costGroupProfitReport = async (params) => lifecycleReports.costGroupProfitability(await lifecycleParams(params));
+const receiptProfitReport = async (params) =>
+  lifecycleReports.costGroupProfitability({ ...(await lifecycleParams(params)), level: 'receipt' });
+const supplierProfitReport = async (params) => lifecycleReports.supplierProfitability(await lifecycleParams(params));
+const reconciliationReport = async () => lifecycleReports.valuationReconciliation({ label: `As of ${todayIso()}` });
+const PROFIT_COST_FIELDS = ['unit_cost', 'book_cogs', 'gross_profit', 'margin', 'physical_cost',
+  'physical_gross_profit', 'card_fees', 'contribution', 'purchase_cost'];
 const errorLogService = require('./errorLogService');
 
 // =======================================================================
@@ -2557,6 +2580,16 @@ const REGISTRY = {
   low_stock: { fn: lowStock, permission: 'report.inventory' },
   dead_stock: { fn: deadStock, permission: 'report.inventory', costFields: ['cost_value'] },
   inventory_stock_counts: { fn: stockCounts, permission: 'report.inventory' },
+  inventory_aging: { fn: inventoryAgingReport, permission: 'report.inventory', costFields: ['physical_value', 'book_value'] },
+  slow_moving: { fn: slowMovingReport, permission: 'report.inventory' },
+  inventory_turnover: {
+    fn: inventoryTurnoverReport,
+    permission: 'report.inventory',
+    costFields: ['opening_value', 'closing_value', 'average_value', 'net_cogs', 'turnover'],
+  },
+  inventory_reconciliation: { fn: reconciliationReport, permission: 'report.financial' },
+  cost_group_profitability: { fn: costGroupProfitReport, permission: 'report.sales', costFields: PROFIT_COST_FIELDS },
+  receipt_profitability: { fn: receiptProfitReport, permission: 'report.sales', costFields: PROFIT_COST_FIELDS },
 
   // Suppliers
   supplier_summary: { fn: supplierSummary, permission: 'report.suppliers' },
@@ -2564,6 +2597,7 @@ const REGISTRY = {
   supplier_purchases: { fn: supplierPurchases, permission: 'report.suppliers' },
   supplier_payments: { fn: supplierPaymentsReport, permission: 'report.suppliers' },
   supplier_returns: { fn: supplierReturns, permission: 'report.suppliers' },
+  supplier_profitability: { fn: supplierProfitReport, permission: 'report.suppliers', costFields: PROFIT_COST_FIELDS },
 
   // Customers
   customer_summary: { fn: customerSummary, permission: 'report.customers' },
