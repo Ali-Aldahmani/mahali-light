@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import VatIncludedField from './VatIncludedField';
 import SlideOver from '../ui/SlideOver';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -27,6 +28,7 @@ export default function AddExpenseSlideOver({ open, onClose, onSaved }) {
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [vatAmount, setVatAmount] = useState('');
   const [expenseDate, setExpenseDate] = useState(todayIso());
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [bankAccountId, setBankAccountId] = useState('');
@@ -62,6 +64,7 @@ export default function AddExpenseSlideOver({ open, onClose, onSaved }) {
     setCategoryId('');
     setDescription('');
     setAmount('');
+    setVatAmount('');
     setExpenseDate(todayIso());
     setPaymentMethod('cash');
     setBankAccountId('');
@@ -90,6 +93,7 @@ export default function AddExpenseSlideOver({ open, onClose, onSaved }) {
         categoryId: categoryId || null,
         description: description.trim(),
         amount: Number(amount),
+        vatAmount: vatAmount ? Number(vatAmount) : null,
         expenseDate,
         paymentMethod,
         bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
@@ -151,6 +155,7 @@ export default function AddExpenseSlideOver({ open, onClose, onSaved }) {
           onChange={(e) => setAmount(e.target.value)}
           required
         />
+        <VatIncludedField amount={amount} value={vatAmount} onChange={setVatAmount} />
         <DateField label="Date" value={expenseDate} onChange={setExpenseDate} />
         <Select
           label="Payment method"

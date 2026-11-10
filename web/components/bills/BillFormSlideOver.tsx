@@ -55,6 +55,7 @@ export default function BillFormSlideOver({ open, onClose, bill = null, onSaved 
   const [bankAccountId, setBankAccountId] = useState('');
   const [autoRecurring, setAutoRecurring] = useState(true);
   const [notes, setNotes] = useState('');
+  const [vatRate, setVatRate] = useState('');
   const [categories, setCategories] = useState([]);
   const [banks, setBanks] = useState([]);
   const createKey = useRequestKey(open);
@@ -97,6 +98,7 @@ export default function BillFormSlideOver({ open, onClose, bill = null, onSaved 
       setBankAccountId(bill.bankAccountId || '');
       setAutoRecurring(bill.autoRecurring !== false);
       setNotes(bill.notes || '');
+      setVatRate(bill.vatRate ? String(bill.vatRate) : '');
       setFirstDueTouched(true);
     } else {
       const t = todayIso();
@@ -114,6 +116,7 @@ export default function BillFormSlideOver({ open, onClose, bill = null, onSaved 
       setBankAccountId('');
       setAutoRecurring(true);
       setNotes('');
+      setVatRate('');
     }
     setError(null);
   }, [open, bill]);
@@ -153,6 +156,7 @@ export default function BillFormSlideOver({ open, onClose, bill = null, onSaved 
         paymentMethod,
         bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
         autoRecurring,
+        vatRate: vatRate === '' ? 0 : Number(vatRate),
         notes: notes.trim() || null,
       };
       const saved = isEdit
@@ -254,6 +258,16 @@ export default function BillFormSlideOver({ open, onClose, bill = null, onSaved 
           />
         </div>
 
+        <Input
+          label="VAT rate on the bill (%)"
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          value={vatRate}
+          onChange={(e: any) => setVatRate(e.target.value)}
+          placeholder="0 if the supplier charges no VAT"
+        />
         <Input
           label="Reminder days before"
           type="number"

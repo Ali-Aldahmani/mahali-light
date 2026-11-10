@@ -21,6 +21,8 @@ function isReportVisible(reportType: string, hasPermission: (p: string) => boole
       hasPermission('report.employee_performance_all')
     );
   }
+  // Salaries: the server requires payroll.view for this report.
+  if (reportType === 'payroll') return hasPermission('payroll.view');
   return null;
 }
 

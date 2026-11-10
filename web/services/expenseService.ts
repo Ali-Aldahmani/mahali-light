@@ -40,6 +40,7 @@ export async function createExpense({
   notes,
   receipt,
   requestKey,
+  vatAmount,
 }: any) {
   const fd = new FormData();
   if (categoryId) fd.append('categoryId', categoryId);
@@ -49,6 +50,7 @@ export async function createExpense({
   fd.append('paymentMethod', paymentMethod);
   if (bankAccountId) fd.append('bankAccountId', bankAccountId);
   if (notes) fd.append('notes', notes);
+  if (vatAmount) fd.append('vatAmount', String(vatAmount));
   if (receipt) fd.append('receipt', receipt);
   // requestKey: see lib/requestKey — a retried submit can't record the expense twice.
   const res = await http.post('/expenses', fd, {

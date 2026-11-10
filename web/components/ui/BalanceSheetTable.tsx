@@ -1,12 +1,14 @@
 import { cn } from '@/lib/utils/cn';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 
-// Three-block balance sheet display. Hard-fails if assets ≠ liabilities +
-// equity by more than a few fils — surfaces a visible warning to the user.
+// Balance sheet from every ledger account. Equity is the equity accounts plus
+// earnings not yet closed to them, never assets minus liabilities, so an
+// imbalance in the books shows here instead of being absorbed.
 export default function BalanceSheetTable({ data, className = '' }) {
   if (!data) return null;
-  const liabPlusEquity = (data.liabilities.total || 0) + (data.equity.netEquity || 0);
-  const balanced = Math.abs((data.assets.total || 0) - liabPlusEquity) < 0.01;
+  const liabPlusEquity = (data.liabilities.total || 0) + (data.equity.total ?? data.equity.netEquity ?? 0);
+  const balanced = data.balanced ?? Math.abs((data.assets.total || 0) - liabPlusEquity) < 0.01;
+  const lines = (list = []) => list.map((l) => <Row key={l.code} label={`${l.code} · ${l.name}`} value={l.amount} indent />);
 
   function Row({ label, value, indent = false, bold = false }) {
     return (
@@ -50,21 +52,34 @@ export default function BalanceSheetTable({ data, className = '' }) {
       <table className="w-full">
         <tbody>
           <Section title="Assets" />
-          <Row label="Cash in Drawer" value={data.assets.cash} indent />
-          {data.assets.banks.map((b) => (
-            <Row key={b.id} label={`Bank — ${b.label}`} value={b.balance} indent />
-          ))}
-          <Row label="Accounts Receivable" value={data.assets.receivables} indent />
-          <Row label="Inventory Value" value={data.assets.inventory} indent />
+          {lines(data.assets.lines)}
           <Row label="Total Assets" value={data.assets.total} bold />
 
           <Section title="Liabilities" />
-          <Row label="Accounts Payable" value={data.liabilities.payables} indent />
-          <Row label="VAT Payable" value={data.liabilities.vatPayable} indent />
+          {lines(data.liabilities.lines)}
           <Row label="Total Liabilities" value={data.liabilities.total} bold />
 
           <Section title="Equity" />
-          <Row label="Net Equity" value={data.equity.netEquity} bold />
+          {lines(data.equity.lines)}
+          {data.equity.priorEarnings != null && (
+            <Row label="Retained earnings (earlier years)" value={data.equity.priorEarnings} indent />
+          )}
+          {data.equity.currentYearEarnings != null && (
+            <Row label="Profit this fiscal year" value={data.equity.currentYearEarnings} indent />
+          )}
+          <Row label="Total Equity" value={data.equity.total ?? data.equity.netEquity} bold />
+          <Row label="Liabilities + Equity" value={liabPlusEquity} bold />
+          {!balanced && data.difference != null && (
+            <Row label="Difference (books out of balance)" value={data.difference} bold />
+          )}
+          {data.assets.banks?.length > 0 && (
+            <>
+              <Section title="Bank accounts today (for reference)" />
+              {data.assets.banks.map((b) => (
+                <Row key={b.id} label={b.label} value={b.balance} indent />
+              ))}
+            </>
+          )}
         </tbody>
       </table>
     </div>

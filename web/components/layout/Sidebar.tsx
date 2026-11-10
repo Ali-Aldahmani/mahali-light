@@ -21,6 +21,7 @@ import {
   Users,
   Banknote,
   CalendarClock,
+  Wallet,
   Zap,
   LineChart,
   BarChart3,
@@ -81,6 +82,7 @@ const NAV: NavItem[] = [
   { section: 'People' },
   { to: '/team', label: 'Team', icon: UsersRound, anyPermissions: ['user.edit', 'employee.view'] },
   { to: '/attendance', label: 'Attendance', icon: CalendarClock, permission: 'attendance.view_own' },
+  { to: '/payroll', label: 'Payroll', icon: Wallet, permission: 'payroll.view' },
   { section: 'More' },
   {
     to: '/approvals',

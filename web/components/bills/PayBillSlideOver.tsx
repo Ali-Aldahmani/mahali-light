@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import VatIncludedField, { vatInside } from './VatIncludedField';
 import SlideOver from '../ui/SlideOver';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -38,6 +39,7 @@ export default function PayBillSlideOver({
   const [notes, setNotes] = useState('');
   const [receipt, setReceipt] = useState(null);
   const [banks, setBanks] = useState([]);
+  const [vatAmount, setVatAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -62,6 +64,8 @@ export default function PayBillSlideOver({
     setPaidDate(todayIso());
     setNotes(payment?.notes || '');
     setReceipt(null);
+    const dueAmount = Number(payment?.amountDue || 0);
+    setVatAmount(bill?.vatRate > 0 && dueAmount > 0 ? String(vatInside(dueAmount, Number(bill.vatRate))) : '');
     setAmount(
       isVariable
         ? ''
@@ -86,6 +90,7 @@ export default function PayBillSlideOver({
     try {
       const result = await payBillPayment(payment.id, {
         amountPaid: Number(amount),
+        vatAmount: vatAmount === '' ? 0 : Number(vatAmount),
         paymentMethod,
         bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
         paidDate,
@@ -148,6 +153,7 @@ export default function PayBillSlideOver({
           onChange={(e) => setAmount(e.target.value)}
           required
         />
+        <VatIncludedField amount={amount} value={vatAmount} onChange={setVatAmount} />
 
         <Select
           label="Payment method"

@@ -55,10 +55,11 @@ export function getUpcomingBills() {
 // Pay a bill — multipart so an optional receipt file can ride along.
 export async function payBillPayment(
   billPaymentId,
-  { amountPaid, paymentMethod, bankAccountId, paidDate, notes, receipt },
+  { amountPaid, paymentMethod, bankAccountId, paidDate, notes, receipt, vatAmount }: any,
 ) {
   const fd = new FormData();
   fd.append('amountPaid', String(amountPaid));
+  if (vatAmount != null && vatAmount !== '') fd.append('vatAmount', String(vatAmount));
   fd.append('paymentMethod', paymentMethod);
   if (bankAccountId) fd.append('bankAccountId', bankAccountId);
   if (paidDate) fd.append('paidDate', paidDate);

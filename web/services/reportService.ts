@@ -29,6 +29,7 @@ export const REPORT_CATEGORIES = [
       { type: 'cash_flow', label: 'Cash Flow' },
       { type: 'vat', label: 'VAT Report' },
       { type: 'inventory_reconciliation', label: 'Inventory Reconciliation' },
+      { type: 'trial_balance', label: 'Trial Balance' },
     ],
   },
   {
