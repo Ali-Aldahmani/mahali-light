@@ -1,6 +1,7 @@
 const { query } = require('../db/postgres');
 const { assertReportRange } = require('../utils/dates');
 const { getProductProfit } = require('./productProfitService');
+const financialReports = require('./financialReportService');
 
 // =======================================================================
 // Helpers
@@ -83,90 +84,26 @@ function percentChange(current, previous) {
 // =======================================================================
 async function getNetProfitTrends({ groupBy = 'month', startDate, endDate } = {}) {
   const range = parseDateRange({ start_date: startDate, end_date: endDate });
-  const truncMap = { day: 'day', week: 'week', month: 'month', year: 'year' };
-  const trunc = truncMap[groupBy] || 'month';
-
-  // Revenue from journal lines, on the income credit side. Falls back to
-  // invoice totals when no journal data exists (early test installs).
-  const { rows } = await query(
-    `WITH buckets AS (
-       SELECT date_trunc('${trunc}', generated_at)::date AS bucket
-         FROM generate_series($1::date, $2::date, '1 ${trunc}'::interval) AS generated_at
-     ),
-     sales AS (
-       SELECT date_trunc('${trunc}', confirmed_at)::date AS bucket,
-              COALESCE(SUM(taxable_amount),0)::float8 AS revenue,
-              COALESCE(SUM(total),0)::float8 AS gross,
-              COALESCE(SUM(quantity_cost), 0)::float8 AS cogs
-         FROM (
-           SELECT i.confirmed_at, i.taxable_amount, i.total,
-                  COALESCE(SUM(COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time)), 0) AS quantity_cost
-             FROM invoices i
-             LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
-            WHERE i.status = 'confirmed'
-              AND i.confirmed_at::date BETWEEN $1::date AND $2::date
-            GROUP BY i.id
-         ) inv
-        GROUP BY 1
-     ),
-     expenses AS (
-       SELECT date_trunc('${trunc}', d)::date AS bucket,
-              COALESCE(SUM(amount), 0)::float8 AS expenses
-         FROM (
-           SELECT bp.paid_date AS d, bp.amount_paid AS amount
-             FROM bill_payments bp
-            WHERE bp.paid_date IS NOT NULL
-              AND bp.paid_date BETWEEN $1::date AND $2::date
-           UNION ALL
-           SELECT expense_date AS d, amount FROM one_time_expenses
-            WHERE expense_date BETWEEN $1::date AND $2::date
-         ) all_exp
-        GROUP BY 1
-     ),
-     fees AS (
-       SELECT date_trunc('${trunc}', fee_date)::date AS bucket,
-              COALESCE(SUM(amount), 0)::float8 AS fees
-         FROM payment_fees
-        WHERE fee_date BETWEEN $1::date AND $2::date
-        GROUP BY 1
-     )
-     -- Bucket goes out as YYYY-MM-DD text: a DATE parsed into a JS Date lands
-     -- on local midnight, and toISOString() then reads it as the day before
-     -- in any timezone east of UTC (e.g. Asia/Dubai).
-     SELECT to_char(b.bucket, 'YYYY-MM-DD') AS bucket,
-            COALESCE(s.revenue, 0)::float8 AS revenue,
-            COALESCE(s.cogs, 0)::float8 AS cogs,
-            COALESCE(e.expenses, 0)::float8 AS expenses,
-            COALESCE(f.fees, 0)::float8 AS fees
-       FROM buckets b
-       LEFT JOIN sales s ON s.bucket = b.bucket
-       LEFT JOIN expenses e ON e.bucket = b.bucket
-       LEFT JOIN fees f ON f.bucket = b.bucket
-      ORDER BY b.bucket`,
-    [range.startDate, range.endDate],
-  );
-
+  // From the ledger, classified exactly as the P&L (financialReportService),
+  // so every profit figure agrees with it: refunds, exchanges, card fees,
+  // warranty and cash over/short all count once, where they were posted.
+  const series = await financialReports.getPLSeries({
+    startDate: range.startDate, endDate: range.endDate, groupBy,
+  });
   let prevNet = null;
-  return rows.map((r) => {
-    const revenue = money(r.revenue);
-    const cogs = money(r.cogs);
-    const expenses = money(r.expenses);
-    const fees = money(r.fees);
-    const grossProfit = money(revenue - cogs);
-    const contributionProfit = money(grossProfit - fees);
-    const netProfit = money(contributionProfit - expenses);
-    const marginPct = revenue > 0 ? Math.round((netProfit / revenue) * 1000) / 10 : 0;
-    const vsPrevPct = prevNet == null ? null : percentChange(netProfit, prevNet);
-    prevNet = netProfit;
+  return series.map((b) => {
+    const marginPct = b.revenue > 0 ? Math.round((b.netProfit / b.revenue) * 1000) / 10 : 0;
+    const vsPrevPct = prevNet == null ? null : percentChange(b.netProfit, prevNet);
+    prevNet = b.netProfit;
     return {
-      bucket: r.bucket,
-      revenue,
-      cogs,
-      gross_profit: grossProfit,
-      payment_fees: fees,
-      contribution_profit: contributionProfit,
-      expenses,
-      net_profit: netProfit,
+      bucket: b.bucket,
+      revenue: b.revenue,
+      cogs: b.cogs,
+      gross_profit: b.grossProfit,
+      payment_fees: b.paymentFees,
+      contribution_profit: b.contributionProfit,
+      expenses: b.expenses,
+      net_profit: b.netProfit,
       margin_pct: marginPct,
       vs_previous_pct: vsPrevPct,
     };
@@ -973,18 +910,26 @@ async function getKPIs(params = {}) {
   );
 
   const r = agg[0] || {};
-  const revenue = Number(r.revenue || 0) - Number(r.returned_revenue || 0);
-  const cogs = Number(r.cogs || 0) - Number(r.returned_cogs || 0);
-  const grossProfit = revenue - cogs;
-  const paymentFees = Number(r.payment_fees || 0);
-  const contributionProfit = grossProfit - paymentFees;
-  const netProfit = contributionProfit - Number(r.expenses || 0);
+  // Profit figures come from the ledger, classified as the P&L, so the
+  // dashboard always agrees with it. The operational queries above still
+  // supply counts, averages, receivables and stock figures.
+  const [pl, prevPl] = await Promise.all([
+    financialReports.getPLTotals({ startDate: range.startDate, endDate: range.endDate }),
+    financialReports.getPLTotals({ startDate: prev.startDate, endDate: prev.endDate }),
+  ]);
+  r.expenses = pl.expenses;
+  const revenue = pl.revenue;
+  const cogs = pl.cogs;
+  const grossProfit = pl.grossProfit;
+  const paymentFees = pl.paymentFees;
+  const contributionProfit = pl.contributionProfit;
+  const netProfit = pl.netProfit;
   const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const netMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
-  const prevRevenue = Number(r.prev_revenue || 0) - Number(r.prev_returned_revenue || 0);
+  const prevRevenue = prevPl.revenue;
   const turnover =
     Number(r.inventory_value || 0) > 0
-      ? Number(r.cogs || 0) / Number(r.inventory_value)
+      ? cogs / Number(r.inventory_value)
       : 0;
   const totalInvoicedGross = Number(r.gross || 0);
   // Collected % of what was invoiced *in this period* — must stay scoped to
@@ -1325,10 +1270,14 @@ async function getKpiSeries(params = {}) {
     `SELECT (SELECT COALESCE(SUM(credit_balance), 0) FROM customers WHERE credit_balance > 0)::float8 AS receivables,
             (SELECT COALESCE(SUM(balance_due), 0) FROM purchase_orders WHERE balance_due > 0 AND status <> 'cancelled')::float8 AS payables`,
   );
+  // Revenue and net profit per day from the ledger (same classification as the P&L).
+  const ledgerDays = new Map((await financialReports.getPLSeries({
+    startDate: range.startDate, endDate: rows.length ? rows[rows.length - 1].day : range.endDate, groupBy: 'day',
+  })).map((d) => [d.bucket, d]));
   return {
     days: rows.map((r) => r.day),
-    revenue: rows.map((r) => money(r.revenue)),
-    net_profit: rows.map((r) => money(r.net_profit)),
+    revenue: rows.map((r) => money(ledgerDays.get(r.day)?.revenue || 0)),
+    net_profit: rows.map((r) => money(ledgerDays.get(r.day)?.netProfit || 0)),
     receivables: rows.map((r) => money(Math.max(0, Number(now.receivables) - Number(r.ar_after)))),
     payables: rows.map((r) => money(Math.max(0, Number(now.payables) - Number(r.ap_after)))),
   };

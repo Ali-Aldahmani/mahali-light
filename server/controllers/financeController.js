@@ -51,6 +51,20 @@ async function balanceSheet(req, res, next) {
   }
 }
 
+// Every account's debits, credits and balance as of a date.
+async function trialBalance(req, res, next) {
+  try {
+    const q = z.object({
+      as_of_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }).parse(req.query || {});
+    return ok(res, await reports.getTrialBalance({ asOfDate: q.as_of_date, startDate: q.start_date || null }));
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(zodFail(err));
+    next(err);
+  }
+}
+
 async function cashFlow(req, res, next) {
   try {
     const q = z
@@ -300,6 +314,7 @@ async function closePeriod(req, res, next) {
 }
 
 module.exports = {
+  trialBalance,
   // Reports
   pl,
   balanceSheet,

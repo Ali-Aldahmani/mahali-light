@@ -9,6 +9,7 @@ router.use(requireAuth());
 // Reports.
 router.get('/pl',            requirePermission('finance.view_pl'),            ctrl.pl);
 router.get('/balance-sheet', requirePermission('finance.view_balance_sheet'), ctrl.balanceSheet);
+router.get('/trial-balance', requirePermission('finance.view_journal'), ctrl.trialBalance);
 router.get('/cash-flow',     requirePermission('finance.view_cashflow'),      ctrl.cashFlow);
 router.get('/vat',           requirePermission('finance.view_vat'),           ctrl.vat);
 router.get('/dashboard',     requirePermission('finance.view_dashboard'),     ctrl.dashboard);

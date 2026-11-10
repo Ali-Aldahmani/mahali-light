@@ -40,6 +40,13 @@ describe.skipIf(!enabled)('dashboard KPI series on real PostgreSQL', () => {
     const { rows: [d] } = await db.query(`SELECT CURRENT_DATE::text AS today, (CURRENT_DATE - 5)::text AS start, (CURRENT_DATE + 10)::text AS "end"`);
     ({ today, start, end } = d);
 
+    // KPI figures come from the ledger (classified as the P&L), so each
+    // fixture posts the entries the app itself posts for it.
+    const journal = require('../../server/services/journalService');
+    for (const daysAgo of [0, 1, 3, 5]) {
+      const { rows: [{ d: day }] } = await db.query(`SELECT (CURRENT_DATE - $1::int)::text AS d`, [daysAgo]);
+      await journal.ensurePeriodsForDate(day);
+    }
     // Two sales three days apart (taxable 100 and 250, cost 40 and 100).
     for (const [n, daysAgo, taxable, cost] of [['INV-S-1', 3, 100, 40], ['INV-S-2', 0, 250, 100]]) {
       const { rows: [inv] } = await db.query(
@@ -52,6 +59,11 @@ describe.skipIf(!enabled)('dashboard KPI series on real PostgreSQL', () => {
          VALUES ($1, 'Cable', 'C-1', 'pcs', 1, $2, $3, $2, $2)`,
         [inv.id, taxable, cost],
       );
+      const { rows: [{ d: day }] } = await db.query(`SELECT (CURRENT_DATE - $1::int)::text AS d`, [daysAgo]);
+      await db.withTransaction((c) => journal.postSaleEntry(c, {
+        invoiceId: inv.id, invoiceNumber: n, date: day, subtotal: taxable, taxAmount: 0,
+        payments: [{ method: 'cash', amount: taxable }], cogsAmount: cost, userId: null,
+      }));
     }
     // A cancelled sale never counts.
     await db.query(
@@ -60,11 +72,16 @@ describe.skipIf(!enabled)('dashboard KPI series on real PostgreSQL', () => {
     );
     // An expense paid yesterday.
     const { rows: [cat] } = await db.query(`SELECT id FROM expense_categories LIMIT 1`);
-    await db.query(
+    const { rows: [tea] } = await db.query(
       `INSERT INTO one_time_expenses (category_id, description, amount, payment_method, expense_date, paid_by)
-       VALUES ($1, 'Tea', 30, 'cash', CURRENT_DATE - 1, $2)`,
+       VALUES ($1, 'Tea', 30, 'cash', CURRENT_DATE - 1, $2) RETURNING *`,
       [cat?.id || null, u.id],
     );
+    const { rows: [{ d: yesterday }] } = await db.query(`SELECT (CURRENT_DATE - 1)::text AS d`);
+    await db.withTransaction((c) => journal.postExpenseEntry(c, {
+      expenseId: tea.id, amount: 30, method: 'cash', categoryName: 'Miscellaneous',
+      description: 'Tea', date: yesterday, userId: null,
+    }));
 
     // Receivables now: 500. The journal says 200 of it arrived today, so up to yesterday it was 300.
     await db.query(`INSERT INTO customers (name, credit_balance) VALUES ('Owes', 500)`);
@@ -72,8 +89,9 @@ describe.skipIf(!enabled)('dashboard KPI series on real PostgreSQL', () => {
       `INSERT INTO journal_entries (entry_number, date, description) VALUES ('JE-T-1', CURRENT_DATE, 'Credit sale') RETURNING id`,
     );
     const { rows: [ar] } = await db.query(`SELECT id FROM chart_of_accounts WHERE code = '1003'`);
-    // Balanced against revenue (the database refuses an unbalanced entry, migration 047).
-    const { rows: [rev] } = await db.query(`SELECT id FROM chart_of_accounts WHERE code = '4001'`);
+    // Balanced against owner equity, so it moves receivables without touching
+    // profit (the database refuses an unbalanced entry, migration 047).
+    const { rows: [rev] } = await db.query(`SELECT id FROM chart_of_accounts WHERE code = '3001'`);
     await db.query(
       `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit)
        VALUES ($1, $2, 200, 0), ($1, $3, 0, 200)`,

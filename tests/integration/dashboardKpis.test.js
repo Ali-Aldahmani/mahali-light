@@ -26,7 +26,7 @@ const require = createRequire(import.meta.url);
 const enabled = Boolean(process.env.INVOICE_TEST_PG_PORT);
 
 describe.skipIf(!enabled)('dashboard KPIs react to returns on real PostgreSQL', () => {
-  let db, analyticsService, admin;
+  let db, analyticsService, admin, journal;
   let productId, variantId, customerId, supplierId;
   const database = `kpi_regression_${randomUUID().replaceAll('-', '')}`;
   let createdDatabase = false;
@@ -46,6 +46,8 @@ describe.skipIf(!enabled)('dashboard KPIs react to returns on real PostgreSQL', 
     createdDatabase = true;
     db = require('../../server/db/postgres');
     await require('../../server/db/migrate').runMigrations();
+    journal = require('../../server/services/journalService');
+    await journal.ensurePeriodsForDate(today);
     analyticsService = require('../../server/services/analyticsService');
 
     const { rows: [cat] } = await db.query(`INSERT INTO product_categories (name) VALUES ('Cables') RETURNING id`);
@@ -84,7 +86,21 @@ describe.skipIf(!enabled)('dashboard KPIs react to returns on real PostgreSQL', 
        VALUES ($1,$2,$3,'Test Wire','SKU-KPI-1','pcs',$4,$5,$6,$7,$7)`,
       [inv.id, productId, variantId, qty, unitPrice, costPrice, taxable],
     );
+    // KPI figures come from the ledger, so the sale posts what the app posts.
+    await db.withTransaction((c) => journal.postSaleEntry(c, {
+      invoiceId: inv.id, invoiceNumber: number, date: today, subtotal: taxable, taxAmount: tax,
+      payments: [{ method: 'cash', amount: total }], cogsAmount: qty * costPrice, userId: null,
+    }));
     return inv.id;
+  }
+
+  // A customer refund as the return flow books it: revenue and VAT back out,
+  // and the goods back into stock at their cost.
+  async function bookRefund(returnOrderId, number, { amount, cost }) {
+    await db.withTransaction(async (c) => {
+      await journal.postRefundEntry(c, { returnOrderId, returnOrderNumber: number, amount, method: 'cash', date: today, taxRate: 5 });
+      await journal.postReturnedInventoryEntry(c, { returnOrderId, returnOrderNumber: number, amount: cost, date: today });
+    });
   }
 
   it('a full customer refund nets that invoice back to zero revenue/profit, not negative', async () => {
@@ -107,6 +123,7 @@ describe.skipIf(!enabled)('dashboard KPIs react to returns on real PostgreSQL', 
        VALUES ($1,$2,$3,'Test Wire',5,'pcs',100,525,'good','returned_to_stock')`,
       [ro.id, productId, variantId],
     );
+    await bookRefund(ro.id, 'RO-KPI-A', { amount: 525, cost: 300 });
 
     const after = await analyticsService.getKPIs({ start_date: today, end_date: today });
     expect(after.revenue).toBe(0);
@@ -131,6 +148,7 @@ describe.skipIf(!enabled)('dashboard KPIs react to returns on real PostgreSQL', 
        VALUES ($1,$2,$3,'Test Wire',2,'pcs',100,210,'good','returned_to_stock')`,
       [ro.id, productId, variantId],
     );
+    await bookRefund(ro.id, 'RO-KPI-B', { amount: 210, cost: 120 });
 
     const after = await analyticsService.getKPIs({ start_date: today, end_date: today });
     // Revenue should drop by exactly 200 (the tax-exclusive value of 2 units), not 210.

@@ -2499,8 +2499,47 @@ const REGISTRY = {
           vatPayable: bs.liabilities.vatPayable,
           totalLiabilities: bs.liabilities.total,
           netEquity: bs.equity.netEquity,
+          balanced: bs.balanced,
         },
+        // Every account, for the table and exports.
+        columns: [
+          { key: 'section', label: 'Section' },
+          { key: 'code', label: 'Account' },
+          { key: 'name', label: 'Name' },
+          { key: 'amount', label: 'Amount', type: 'currency', align: 'right' },
+        ],
+        rows: [
+          ...bs.assets.lines.map((l) => ({ section: 'Assets', ...l })),
+          ...bs.liabilities.lines.map((l) => ({ section: 'Liabilities', ...l })),
+          ...bs.equity.lines.map((l) => ({ section: 'Equity', ...l })),
+          { section: 'Equity', code: '', name: 'Retained earnings (earlier years)', amount: bs.equity.priorEarnings },
+          { section: 'Equity', code: '', name: 'Profit this fiscal year', amount: bs.equity.currentYearEarnings },
+        ],
         raw: bs,
+      };
+    },
+    permission: 'report.financial',
+  },
+  trial_balance: {
+    fn: async (p) => {
+      const asOf = dateOnly(p.as_of_date || p.end_date) || todayIso();
+      const tb = await financialReportService.getTrialBalance({ asOfDate: asOf });
+      return {
+        type: 'trial_balance',
+        title: 'Trial Balance',
+        period: { label: `As of ${asOf}` },
+        columns: [
+          { key: 'code', label: 'Account' },
+          { key: 'name', label: 'Name' },
+          { key: 'type', label: 'Type' },
+          { key: 'debit', label: 'Total Debits', type: 'currency', align: 'right' },
+          { key: 'credit', label: 'Total Credits', type: 'currency', align: 'right' },
+          { key: 'balanceDebit', label: 'Debit Balance', type: 'currency', align: 'right' },
+          { key: 'balanceCredit', label: 'Credit Balance', type: 'currency', align: 'right' },
+        ],
+        rows: tb.accounts,
+        totals: tb.totals,
+        summary: { balanced: tb.balanced, difference: tb.difference },
       };
     },
     permission: 'report.financial',

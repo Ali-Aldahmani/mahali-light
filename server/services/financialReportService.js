@@ -106,6 +106,70 @@ async function breakdownByAccount({ from, to, accountType, excludeCodes = [] }) 
 }
 
 // =======================================================================
+// P&L by period bucket, from the ledger
+// =======================================================================
+// The one classification every profit figure uses (the P&L below, the
+// dashboard KPIs, trends and series):
+//   revenue  = revenue accounts (credit - debit), header 4000 excluded
+//   cogs     = 5001;  card fees = 5017
+//   expenses = every other expense account (debit - credit)
+//   gross = revenue - cogs; contribution = gross - fees; net = contribution - expenses
+const PL_SQL_NET = `SUM(jl.debit - jl.credit)`;
+function classifyPL(rows) {
+  let revenue = 0; let cogs = 0; let fees = 0; let expenses = 0;
+  for (const r of rows) {
+    const n = Number(r.net) || 0;
+    if (r.type === 'revenue' && r.code !== '4000') revenue -= n;
+    else if (r.code === '5001') cogs += n;
+    else if (r.code === '5017') fees += n;
+    else if (r.type === 'expense' && r.code !== '5000') expenses += n;
+  }
+  revenue = money(revenue); cogs = money(cogs); fees = money(fees); expenses = money(expenses);
+  const grossProfit = money(revenue - cogs);
+  const contributionProfit = money(grossProfit - fees);
+  return { revenue, cogs, paymentFees: fees, grossProfit, contributionProfit, expenses, netProfit: money(contributionProfit - expenses) };
+}
+
+/** P&L totals per day/week/month/year bucket between two dates (inclusive). */
+async function getPLSeries({ startDate, endDate, groupBy = 'month' }) {
+  const trunc = { day: 'day', week: 'week', month: 'month', year: 'year' }[groupBy] || 'month';
+  const from = dateOnly(startDate);
+  const to = dateOnly(endDate);
+  const { rows } = await query(
+    `SELECT to_char(date_trunc('${trunc}', je.date)::date, 'YYYY-MM-DD') AS bucket, ca.code, ca.type,
+            ${PL_SQL_NET}::float8 AS net
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.journal_entry_id
+       JOIN chart_of_accounts ca ON ca.id = jl.account_id
+      WHERE je.date BETWEEN $1::date AND $2::date AND ca.type IN ('revenue', 'expense')
+      GROUP BY 1, 2, 3`,
+    [from, to],
+  );
+  const { rows: buckets } = await query(
+    `SELECT DISTINCT to_char(date_trunc('${trunc}', d)::date, 'YYYY-MM-DD') AS bucket
+       FROM generate_series($1::date, $2::date, '1 day'::interval) AS d ORDER BY 1`,
+    [from, to],
+  );
+  const by = new Map(buckets.map((b) => [b.bucket, []]));
+  for (const r of rows) (by.get(r.bucket) || by.set(r.bucket, []).get(r.bucket)).push(r);
+  return [...by.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([bucket, rs]) => ({ bucket, ...classifyPL(rs) }));
+}
+
+/** P&L totals for one period, by the same classification. */
+async function getPLTotals({ startDate, endDate }) {
+  const { rows } = await query(
+    `SELECT ca.code, ca.type, ${PL_SQL_NET}::float8 AS net
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.journal_entry_id
+       JOIN chart_of_accounts ca ON ca.id = jl.account_id
+      WHERE je.date BETWEEN $1::date AND $2::date AND ca.type IN ('revenue', 'expense')
+      GROUP BY 1, 2`,
+    [dateOnly(startDate), dateOnly(endDate)],
+  );
+  return classifyPL(rows);
+}
+
+// =======================================================================
 // Profit & Loss
 // =======================================================================
 async function getProfitAndLoss({ startDate, endDate, compare = false }) {
@@ -231,56 +295,133 @@ async function accountBalanceAsOf(code, asOf, normal = 'debit') {
   return money(normal === 'credit' ? -bal : bal);
 }
 
+// Every account's debit and credit totals from the ledger, up to `asOf`
+// (and from `from`, when given).
+async function accountTotals(asOf, from = null) {
+  const { rows } = await query(
+    `SELECT ca.code, ca.name, ca.type,
+            COALESCE(SUM(jl.debit), 0)::float8 AS debit,
+            COALESCE(SUM(jl.credit), 0)::float8 AS credit
+       FROM chart_of_accounts ca
+       LEFT JOIN (
+         journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+          AND je.date <= $1::date
+          AND ($2::date IS NULL OR je.date >= $2::date)
+       ) ON jl.account_id = ca.id
+      GROUP BY ca.code, ca.name, ca.type
+      ORDER BY ca.code`,
+    [asOf, from],
+  );
+  return rows.map((r) => ({ ...r, debit: money(r.debit), credit: money(r.credit) }));
+}
+
+const HEADER_CODES = new Set(['1000', '2000', '3000', '4000', '5000']);
+
+/**
+ * Trial balance: every account with activity, its debit and credit totals and
+ * its balance on the side it falls. Debits must equal credits.
+ */
+async function getTrialBalance({ asOfDate, startDate = null, includeZero = false }) {
+  const asOf = dateOnly(asOfDate) || storeDate();
+  const from = dateOnly(startDate);
+  const rows = await accountTotals(asOf, from);
+  const accounts = rows
+    .filter((r) => includeZero || r.debit !== 0 || r.credit !== 0)
+    .map((r) => {
+      const net = money(r.debit - r.credit);
+      return {
+        code: r.code, name: r.name, type: r.type,
+        debit: r.debit, credit: r.credit,
+        balanceDebit: net > 0 ? net : 0,
+        balanceCredit: net < 0 ? -net : 0,
+      };
+    });
+  const totals = {
+    debit: money(accounts.reduce((s, a) => s + a.debit, 0)),
+    credit: money(accounts.reduce((s, a) => s + a.credit, 0)),
+    balanceDebit: money(accounts.reduce((s, a) => s + a.balanceDebit, 0)),
+    balanceCredit: money(accounts.reduce((s, a) => s + a.balanceCredit, 0)),
+  };
+  const difference = money(totals.debit - totals.credit);
+  return { asOfDate: asOf, startDate: from, accounts, totals, difference, balanced: difference === 0 };
+}
+
+// The first day of the fiscal year containing `asOf`.
+async function fiscalYearStart(asOf) {
+  const { rows: [s] } = await query(`SELECT fiscal_year_start_month FROM app_settings ORDER BY updated_at DESC LIMIT 1`);
+  const startMonth = Math.min(12, Math.max(1, Number(s?.fiscal_year_start_month) || 1));
+  const [y, m] = asOf.split('-').map(Number);
+  const year = m >= startMonth ? y : y - 1;
+  return `${year}-${String(startMonth).padStart(2, '0')}-01`;
+}
+
+/**
+ * Balance sheet from every ledger account, nothing assumed: assets,
+ * liabilities, equity accounts, and the earnings not yet closed to equity
+ * (before this fiscal year, and this fiscal year to date). Assets must equal
+ * liabilities plus equity; a difference is reported, never absorbed.
+ */
 async function getBalanceSheet({ asOfDate }) {
   const asOf = dateOnly(asOfDate);
+  const yearStart = await fiscalYearStart(asOf);
+  const all = await accountTotals(asOf);
+  const thisYear = await accountTotals(asOf, yearStart);
+  const net = (r) => money(r.debit - r.credit);
+  const lines = (type, sign) => all
+    .filter((r) => r.type === type && !HEADER_CODES.has(r.code) && (r.debit !== 0 || r.credit !== 0))
+    .map((r) => ({ code: r.code, name: r.name, amount: money(sign * net(r)) }));
+  const earningsOf = (rows) => money(-rows
+    .filter((r) => r.type === 'revenue' || r.type === 'expense')
+    .reduce((s, r) => s + net(r), 0));
+  const assetLines = lines('asset', 1);
+  const liabilityLines = lines('liability', -1);
+  const equityLines = lines('equity', -1);
+  const totalEarnings = earningsOf(all);
+  const currentYearEarnings = earningsOf(thisYear);
+  const priorEarnings = money(totalEarnings - currentYearEarnings);
+  const byCode = (code, sign) => money(sign * net(all.find((r) => r.code === code) || { debit: 0, credit: 0 }));
 
-  const cashBalance = await accountBalanceAsOf('1001', asOf, 'debit');
-  const bankTotal = await accountBalanceAsOf('1002', asOf, 'debit');
-  const receivables = await accountBalanceAsOf('1003', asOf, 'debit');
-  const inventory = await accountBalanceAsOf('1004', asOf, 'debit');
-  const payables = await accountBalanceAsOf('2001', asOf, 'credit');
-  const vatPayable = await accountBalanceAsOf('2002', asOf, 'credit');
-
-  // Per-bank-account breakdown: journal entries post to the single
-  // aggregate '1002' account, not a per-account code, so there's no journal
-  // data to reconstruct each individual bank's historical balance from —
-  // only the *live* current_balance columns give a breakdown at all. This
-  // list is therefore always "as of now" even when the rest of this report
-  // is historical; it exists for display only and is NOT what bankTotal
-  // (used in totalAssets) is derived from, so the two can legitimately
-  // disagree for a past asOfDate.
+  // Per-bank breakdown is live balances only (journal posts to one 1002
+  // account), shown for reference; the totals use the ledger.
   const { rows: bankRows } = await query(
-    `SELECT id, account_name, bank_name, current_balance
-       FROM bank_accounts
-      WHERE is_active = true
-      ORDER BY account_name`,
+    `SELECT id, account_name, bank_name, current_balance FROM bank_accounts WHERE is_active = true ORDER BY account_name`,
   );
-  const banks = bankRows.map((r) => ({
-    id: r.id,
-    label: `${r.bank_name} – ${r.account_name}`,
-    balance: money(r.current_balance),
-  }));
+  const banks = bankRows.map((r) => ({ id: r.id, label: `${r.bank_name} – ${r.account_name}`, balance: money(r.current_balance) }));
 
-  const totalAssets = money(cashBalance + bankTotal + receivables + inventory);
-  const totalLiabilities = money(payables + vatPayable);
-  const netEquity = money(totalAssets - totalLiabilities);
-
+  const totalAssets = money(assetLines.reduce((s, l) => s + l.amount, 0));
+  const totalLiabilities = money(liabilityLines.reduce((s, l) => s + l.amount, 0));
+  const equityAccounts = money(equityLines.reduce((s, l) => s + l.amount, 0));
+  const totalEquity = money(equityAccounts + totalEarnings);
+  const difference = money(totalAssets - totalLiabilities - totalEquity);
   return {
     asOfDate: asOf,
+    fiscalYearStart: yearStart,
     assets: {
-      cash: cashBalance,
+      lines: assetLines,
+      cash: byCode('1001', 1),
       banks,
-      banksTotal: bankTotal,
-      receivables,
-      inventory,
+      banksTotal: byCode('1002', 1),
+      receivables: byCode('1003', 1),
+      inventory: byCode('1004', 1),
       total: totalAssets,
     },
     liabilities: {
-      payables,
-      vatPayable,
+      lines: liabilityLines,
+      payables: byCode('2001', -1),
+      vatPayable: byCode('2002', -1),
       total: totalLiabilities,
     },
-    equity: { netEquity },
+    equity: {
+      lines: equityLines,
+      priorEarnings,
+      currentYearEarnings,
+      total: totalEquity,
+      // Kept for older screens: now the real equity, not assets - liabilities.
+      netEquity: totalEquity,
+    },
+    difference,
+    balanced: difference === 0,
   };
 }
 
@@ -538,7 +679,10 @@ async function getDashboardSnapshot() {
 
 module.exports = {
   getProfitAndLoss,
+  getPLSeries,
+  getPLTotals,
   getBalanceSheet,
+  getTrialBalance,
   getCashFlowStatement,
   getVATReport,
   getDashboardSnapshot,
