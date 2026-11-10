@@ -17,6 +17,8 @@ export interface PresenceUser {
   pcIdentifier?: string;
   status?: 'online' | 'idle' | string;
   lastActivityAt?: string;
+  // Connected sessions (devices) the user has.
+  sessionCount?: number;
   [key: string]: any;
 }
 
@@ -43,12 +45,16 @@ export const usePresenceStore = create<PresenceState>()((set, get) => ({
 
   setOnlineUsers: (users) => set({ onlineUsers: users, loaded: true }),
 
+  // An update replaces the user's entry where it is, so the list doesn't
+  // jump around; a user who just came online is added.
   applyUpdate: ({ userId, entry }) => {
-    const others = get().onlineUsers.filter((u) => u.userId !== userId);
-    set({
-      onlineUsers: entry ? [{ ...entry, userId }, ...others] : others,
-      revision: get().revision + 1,
-    });
+    const list = get().onlineUsers;
+    const at = list.findIndex((u) => u.userId === userId);
+    let next;
+    if (!entry) next = list.filter((u) => u.userId !== userId);
+    else if (at === -1) next = [{ ...entry, userId }, ...list];
+    else next = list.map((u, i) => (i === at ? { ...entry, userId } : u));
+    set({ onlineUsers: next, revision: get().revision + 1 });
   },
 
   // Callers that overlap (mount, socket connect) share one request.

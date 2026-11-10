@@ -8,7 +8,13 @@ const { permissionRooms } = require('./events');
 const { isSecureHandshake } = require('../middleware/secureTransport');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
-const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
+// Idle, sign-out and stale sweeps. Each is one indexed UPDATE, so a short
+// interval is cheap and keeps the online list within 15 s of the truth.
+const IDLE_CHECK_INTERVAL_MS = 15 * 1000;
+// A connection that stops answering pings (cable pulled, Wi-Fi gone) is
+// dropped after PING_INTERVAL + PING_TIMEOUT, 20 s, not Socket.IO's 45 s.
+const PING_INTERVAL_MS = 10 * 1000;
+const PING_TIMEOUT_MS = 10 * 1000;
 // A connected screen heartbeats every 30 s (a hidden browser tab may slow to
 // once a minute), and each beat refreshes last_seen_at at least every 20 s.
 // A session not seen for this long has no live connection on any instance:
@@ -52,6 +58,8 @@ function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = 
       },
       methods: ['GET', 'POST'],
     },
+    pingInterval: PING_INTERVAL_MS,
+    pingTimeout: PING_TIMEOUT_MS,
   });
 
   const cluster = clusterAdapter();
@@ -146,14 +154,21 @@ function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = 
       socket.join(presenceService.OBSERVERS_ROOM);
     }
 
+    // serverTime lets the screen show "5m ago" against the server's clock,
+    // not its own (which may be wrong).
     socket.emit('connected', {
       userId, username, role, idleSignOutMinutes: sessionPolicy.IDLE_SIGNOUT_MINUTES,
+      serverTime: new Date().toISOString(),
     });
 
-    // A (re)connect is activity: mark the session online straight away
-    // rather than at the next heartbeat, then tell the viewers.
+    // A (re)connect is presence, not input: the session is connected again,
+    // online or idle by its last real input. A reconnect forced by a role
+    // change no longer makes everyone look busy. The screen sends a beat
+    // straight after connecting that says whether there was input.
     query(
-      `UPDATE user_sessions SET status = 'online', last_activity_at = NOW(), last_seen_at = NOW()
+      `UPDATE user_sessions
+          SET status = CASE WHEN last_activity_at < NOW() - INTERVAL '5 minutes' THEN 'idle' ELSE 'online' END,
+              last_seen_at = NOW()
         WHERE id = $1 AND logout_at IS NULL`,
       [sessionId],
     )

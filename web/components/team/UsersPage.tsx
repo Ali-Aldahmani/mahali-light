@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useServerNow } from '@/lib/utils/serverClock';
 import { useRouter } from 'next/navigation';
 import { LockOpen, LogOut, Pencil, Plus, Search, Shield, UserCog, UserX } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
@@ -22,6 +23,7 @@ import { timeAgo } from '@/lib/utils/format';
 import RowActions from '@/components/ui/RowActions';
 
 export default function UsersPage() {
+  const now = useServerNow(30000);
   const router = useRouter();
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -127,7 +129,7 @@ export default function UsersPage() {
             <OnlineBadge online={row.isOnline} />
             {row.lastActiveAt && (
               <p className="text-[11px] text-ink-muted mt-0.5">
-                {row.isOnline ? 'Active' : 'Last seen'} {timeAgo(row.lastActiveAt)}
+                {row.isOnline ? 'Active' : 'Last seen'} {timeAgo(row.lastActiveAt, now)}
               </p>
             )}
           </div>
@@ -202,7 +204,7 @@ export default function UsersPage() {
         },
       },
     ],
-    [currentUserId, router, hasPermission],
+    [currentUserId, router, hasPermission, now],
   );
 
   async function runConfirm() {

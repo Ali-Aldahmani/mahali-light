@@ -73,6 +73,7 @@ const USER_SELECT = `
            -- before its session times out (presence audit F07).
            SELECT 1 FROM user_sessions s
             WHERE s.user_id = u.id AND s.logout_at IS NULL AND s.status <> 'offline'
+              AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW())
          ) AS is_online
     FROM users u
     LEFT JOIN roles r ON r.id = u.role_id

@@ -1,4 +1,5 @@
 import { TIMEZONE } from '@/lib/config';
+import { serverNow } from './serverClock';
 
 const storeDayFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: TIMEZONE,
@@ -69,10 +70,12 @@ export function formatTime(value) {
   }).format(date);
 }
 
-export function timeAgo(value) {
+// Measured against the server's clock (serverClock.ts), so a PC with a wrong
+// clock still shows the right age. Pass `now` to re-render on a timer.
+export function timeAgo(value, now = serverNow()) {
   if (!value) return '—';
   const date = value instanceof Date ? value : new Date(value);
-  const diff = Date.now() - date.getTime();
+  const diff = now - date.getTime();
   const secs = Math.round(diff / 1000);
   if (secs < 60) return 'just now';
   const mins = Math.round(secs / 60);

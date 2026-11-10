@@ -1,13 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Users } from 'lucide-react';
 import { usePresenceStore } from '@/store/presenceStore';
 import { useAuthStore } from '@/store/authStore';
+import { useSocketStore } from '@/store/socketStore';
+import { useServerNow } from '@/lib/utils/serverClock';
 import Avatar from '../ui/Avatar';
 import { timeAgo } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 
+// Staff know each other by name; the username is shown underneath.
+const displayName = (u: { employeeName?: string | null; username?: string; [key: string]: any }) => u.employeeName || u.username || 'Unknown';
+
 export default function PresenceWidget() {
-  const onlineUsers = usePresenceStore((s) => s.onlineUsers);
+  const rawUsers = usePresenceStore((s) => s.onlineUsers);
+  const isLive = useSocketStore((s) => s.isConnected);
+  const now = useServerNow(30000);
+  // Active people first, then idle; by name within each, so the list stays put.
+  const onlineUsers = useMemo(() => [...rawUsers].sort((a, b) =>
+    (a.status === 'idle' ? 1 : 0) - (b.status === 'idle' ? 1 : 0)
+    || displayName(a).localeCompare(displayName(b))), [rawUsers]);
   const refresh = usePresenceStore((s) => s.refresh);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const [open, setOpen] = useState(false);
@@ -31,8 +42,6 @@ export default function PresenceWidget() {
 
   if (!canSeeAll) return null;
 
-  // Staff know each other by name; the username is shown underneath.
-  const displayName = (u: { employeeName?: string | null; username?: string; [key: string]: any }) => u.employeeName || u.username || 'Unknown';
 
   const visible = onlineUsers.slice(0, 5);
   const overflow = Math.max(0, onlineUsers.length - visible.length);
@@ -75,6 +84,11 @@ export default function PresenceWidget() {
               <h3 className="text-sm font-semibold text-ink">
                 Online users ({onlineUsers.length})
               </h3>
+              {!isLive && (
+                <p className="mt-1 text-xs text-warning">
+                  Not live: this screen lost its connection, so the list may be out of date. It refreshes when the connection is back.
+                </p>
+              )}
             </div>
             <div className="max-h-80 overflow-y-auto">
               {loadFailed ? (
@@ -99,6 +113,7 @@ export default function PresenceWidget() {
                       <p className="text-xs text-ink-muted truncate">
                         {u.employeeName ? `${u.username} · ` : ''}
                         {u.role || '—'} · {u.pcIdentifier}
+                        {(u.sessionCount || 1) > 1 && ` · ${u.sessionCount} devices`}
                       </p>
                     </div>
                     <span
@@ -110,7 +125,7 @@ export default function PresenceWidget() {
                       {u.status === 'idle' ? 'Idle' : 'Online'}
                       {u.lastActivityAt && (
                         <span className="block text-ink-muted">
-                          {timeAgo(u.lastActivityAt)}
+                          {timeAgo(u.lastActivityAt, now)}
                         </span>
                       )}
                     </span>

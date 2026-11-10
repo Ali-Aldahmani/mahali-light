@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { setServerTime } from '@/lib/utils/serverClock';
 import { io, Socket } from 'socket.io-client';
 import { getSocketUrl } from '@/lib/config';
 import { useAuthStore } from './authStore';
@@ -18,10 +19,19 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 // it stays connected (presence audit F08).
 let userActiveSinceBeat = true;
 let activityListening = false;
+// Sends a heartbeat now (set while a socket exists). The first input after a
+// quiet beat goes out straight away, so an idle user shows as active within
+// a second, not at the next 30 s beat.
+let beatNow: (() => void) | null = null;
+let lastBeatAt = 0;
 function listenForActivity() {
   if (activityListening || typeof window === 'undefined') return;
   activityListening = true;
-  const mark = () => { userActiveSinceBeat = true; };
+  const mark = () => {
+    const wasQuiet = !userActiveSinceBeat;
+    userActiveSinceBeat = true;
+    if (wasQuiet && beatNow && Date.now() - lastBeatAt > 5000) beatNow();
+  };
   for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
     window.addEventListener(ev, mark, { passive: true, capture: true });
   }
@@ -127,10 +137,21 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       reconnectionDelay: 1500,
     });
 
+    const sendBeat = () => {
+      if (!socket.connected) return;
+      socket.emit('heartbeat', { active: userActiveSinceBeat });
+      userActiveSinceBeat = false;
+      lastBeatAt = Date.now();
+    };
+    beatNow = sendBeat;
+
     let firstConnect = true;
     socket.on('connect', () => {
       const wasConnected = get().isConnected;
       set({ isConnected: true });
+      // Connecting is not input: say right away whether there was any, so
+      // the server shows this screen online or idle by what really happened.
+      sendBeat();
       // Presence events sent while this PC was offline are never replayed,
       // so every connect re-reads the list (presence viewers only).
       const auth = useAuthStore.getState();
@@ -175,6 +196,7 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
     });
 
     // One event per user carrying their whole current entry (or null).
+    socket.on('connected', (payload) => setServerTime(payload?.serverTime));
     socket.on('presence_update', (payload) => {
       if (payload?.userId) usePresenceStore.getState().applyUpdate(payload);
     });
@@ -570,11 +592,7 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
 
     listenForActivity();
     if (heartbeatTimer) clearInterval(heartbeatTimer);
-    heartbeatTimer = setInterval(() => {
-      if (!socket.connected) return;
-      socket.emit('heartbeat', { active: userActiveSinceBeat });
-      userActiveSinceBeat = false;
-    }, 30000);
+    heartbeatTimer = setInterval(sendBeat, 30000);
 
     set({ socket });
     return socket;
@@ -590,6 +608,7 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
     }
+    beatNow = null;
     usePresenceStore.getState().clear();
     set({ socket: null, isConnected: false });
   },

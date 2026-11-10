@@ -19,13 +19,16 @@ function canViewPresence(permissions) {
   return owned.has('*') || PRESENCE_VIEW_PERMISSIONS.some((k) => owned.has(k));
 }
 
-// One row per user: their most recently active open, connected session.
+// One row per user: their most recently active open, connected session, with
+// how many connected sessions (devices) they have. A session past its
+// maximum length is left out at once, before the sweep closes it.
 async function listPresence({ userId = null } = {}) {
   const { rows } = await query(
     `SELECT * FROM (
        SELECT DISTINCT ON (s.user_id)
               s.id AS session_id, s.user_id, s.pc_identifier, s.ip_address,
               s.login_at, s.last_activity_at, s.status,
+              COUNT(*) OVER (PARTITION BY s.user_id) AS session_count,
               u.username, r.name AS role_name,
               e.name AS employee_name
          FROM user_sessions s
@@ -34,6 +37,7 @@ async function listPresence({ userId = null } = {}) {
          LEFT JOIN employees e ON e.id = u.employee_id
         WHERE s.logout_at IS NULL
           AND s.status <> 'offline'
+          AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW())
           AND u.is_active
           AND ($1::uuid IS NULL OR s.user_id = $1)
         ORDER BY s.user_id, s.last_activity_at DESC
@@ -52,6 +56,7 @@ async function listPresence({ userId = null } = {}) {
     loginAt: r.login_at,
     lastActivityAt: r.last_activity_at,
     status: r.status,
+    sessionCount: Number(r.session_count) || 1,
   }));
 }
 

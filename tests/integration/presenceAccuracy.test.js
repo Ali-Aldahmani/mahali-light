@@ -220,6 +220,50 @@ describe.skipIf(!enabled)('presence accuracy on real PostgreSQL', () => {
     expect(me.lastActiveAt).toBeTruthy();
   });
 
+  it('P2: a reconnect is not input: an idle session reconnects as idle', async () => {
+    const u = await makeUser();
+    const token = await login(A.url, u);
+    const s = await connect(A.url, token);
+    await until(async () => (await row(token)).status === 'online');
+    s.disconnect();
+    await until(async () => (await row(token)).status === 'offline');
+    await setRow(token, `last_activity_at = NOW() - INTERVAL '7 minutes'`);
+    const before = (await row(token)).last_activity_at;
+    const again = await connect(A.url, token);
+    expect(await until(async () => (await row(token)).status === 'idle')).toBe(true);
+    expect(String((await row(token)).last_activity_at)).toBe(String(before));
+    // The screen says there was input: active at once.
+    again.emit('heartbeat', { active: true });
+    expect(await until(async () => (await row(token)).status === 'online')).toBe(true);
+    again.disconnect();
+  });
+
+  it('P2: a session past its maximum length leaves the list at once; devices are counted', async () => {
+    const u = await makeUser();
+    const t1 = await login(A.url, u, 'pc-one');
+    const t2 = await login(A.url, u, 'pc-two');
+    const s1 = await connect(A.url, t1);
+    const s2 = await connect(A.url, t2);
+    await until(async () => (await row(t1)).status === 'online' && (await row(t2)).status === 'online');
+    expect((await listed(u.id)).sessionCount).toBe(2);
+    await setRow(t1, `absolute_expires_at = NOW() - INTERVAL '1 second'`);
+    expect((await listed(u.id)).sessionCount).toBe(1);
+    await setRow(t2, `absolute_expires_at = NOW() - INTERVAL '1 second'`);
+    expect(await listed(u.id)).toBeNull();
+    s1.disconnect();
+    s2.disconnect();
+  });
+
+  it('P2: the screen is told the server time when it connects', async () => {
+    const u = await makeUser();
+    const token = await login(A.url, u);
+    const s = await connect(A.url, token);
+    expect(await until(() => s.events.some((e) => e.event === 'connected'))).toBe(true);
+    const { serverTime } = s.events.find((e) => e.event === 'connected').payload;
+    expect(Math.abs(Date.parse(serverTime) - Date.now())).toBeLessThan(5000);
+    s.disconnect();
+  });
+
   describe('several instances (SOCKET_CLUSTER=postgres)', () => {
     let B, C;
     beforeAll(async () => {
