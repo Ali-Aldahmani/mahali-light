@@ -130,10 +130,12 @@ async function login(req, res, next) {
           RETURNING id`,
         [user.id, pcIdentifier],
       );
+      // Signed in is not online: the session shows as online once its screen
+      // opens a live connection (presence audit 2026-11-10, P0).
       await client.query(
         `INSERT INTO user_sessions
            (user_id, pc_identifier, ip_address, token_hash, status, absolute_expires_at)
-         VALUES ($1,$2,$3,$4,'online',$5)`,
+         VALUES ($1,$2,$3,$4,'offline',$5)`,
         [user.id, pcIdentifier, ipAddress, hashToken(token), sessionExpiresAt],
       );
       await client.query(

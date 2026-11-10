@@ -61,9 +61,11 @@ const USER_SELECT = `
          u.role_id, r.name AS role_name,
          u.employee_id, e.name AS employee_name, e.email AS employee_email,
          (
+           -- Last Seen: the latest activity on any of the user's sessions,
+           -- open or closed, so it survives sign-out.
            SELECT MAX(s.last_activity_at)
              FROM user_sessions s
-            WHERE s.user_id = u.id AND s.logout_at IS NULL
+            WHERE s.user_id = u.id
          ) AS last_active_at,
          EXISTS (
            -- Same rule as the online list (presenceService.listPresence):

@@ -138,11 +138,14 @@ describe.skipIf(!enabled)('presence and logout on real PostgreSQL', () => {
     const token = await login(cashier);
     const tabA = await connect(token);
     const tabB = await connect(token);
+    await wait(100);
+    // Signing in publishes "not online yet"; only what follows the tabs counts.
+    const before = updatesFor(observer, cashier.id).length;
 
     tabA.disconnect();
     await wait(250);
     expect((await sessionRow(token)).status).toBe('online');
-    expect(updatesFor(observer, cashier.id).some((e) => e.payload.entry === null)).toBe(false);
+    expect(updatesFor(observer, cashier.id).slice(before).some((e) => e.payload.entry === null)).toBe(false);
 
     tabB.disconnect();
     expect(await until(async () => (await sessionRow(token)).status === 'offline')).toBe(true);

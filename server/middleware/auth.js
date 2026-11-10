@@ -161,18 +161,35 @@ function requireAuth() {
       // audit AUTH-03), or background requests would keep an unattended till
       // signed in. The app says so with X-User-Active on the first request
       // after input; screens without a live connection (the phone app)
-      // depend on it. Writes are skipped within 20 seconds of the last one.
+      // depend on it to stay signed in. Writes are skipped within 20 seconds
+      // of the last one.
+      //
+      // A request is activity, not presence: it never makes an offline
+      // session online, because only a live connection does (presence audit
+      // 2026-11-10, P0). An idle session is still connected, so input brings
+      // it back to online, and the presence viewers are told.
       const active = req.headers['x-user-active'] === '1';
+      const sessionId = sess[0].id;
+      const io = req.app && req.app.get ? req.app.get('io') : null;
       query(
-        `UPDATE user_sessions
+        `UPDATE user_sessions s
             SET last_seen_at = NOW(),
-                last_activity_at = CASE WHEN $2 THEN NOW() ELSE last_activity_at END,
-                status = CASE WHEN $2 THEN 'online' ELSE status END
-          WHERE id = $1 AND logout_at IS NULL
-            AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '20 seconds'
-                 OR ($2 AND last_activity_at < NOW() - INTERVAL '20 seconds'))`,
-        [sess[0].id, active],
-      ).catch(() => {});
+                last_activity_at = CASE WHEN $2 THEN NOW() ELSE s.last_activity_at END,
+                status = CASE WHEN $2 AND s.status = 'idle' THEN 'online' ELSE s.status END
+           FROM user_sessions prev
+          WHERE s.id = $1 AND prev.id = s.id AND s.logout_at IS NULL
+            AND (s.last_seen_at IS NULL OR s.last_seen_at < NOW() - INTERVAL '20 seconds'
+                 OR ($2 AND (s.status = 'idle' OR s.last_activity_at < NOW() - INTERVAL '20 seconds')))
+          RETURNING prev.status AS previous_status, s.status AS status`,
+        [sessionId, active],
+      )
+        .then(({ rows }) => {
+          if (rows[0] && rows[0].previous_status !== rows[0].status) {
+            return require('../services/presenceService').publishUserPresence(io, payload.sub);
+          }
+          return null;
+        })
+        .catch(() => {});
 
       next();
     } catch (err) {

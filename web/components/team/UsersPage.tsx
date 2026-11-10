@@ -127,7 +127,7 @@ export default function UsersPage() {
             <OnlineBadge online={row.isOnline} />
             {row.lastActiveAt && (
               <p className="text-[11px] text-ink-muted mt-0.5">
-                Active {timeAgo(row.lastActiveAt)}
+                {row.isOnline ? 'Active' : 'Last seen'} {timeAgo(row.lastActiveAt)}
               </p>
             )}
           </div>

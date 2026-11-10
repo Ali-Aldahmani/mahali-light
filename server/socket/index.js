@@ -9,6 +9,33 @@ const { isSecureHandshake } = require('../middleware/secureTransport');
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
+// A connected screen heartbeats every 30 s (a hidden browser tab may slow to
+// once a minute), and each beat refreshes last_seen_at at least every 20 s.
+// A session not seen for this long has no live connection on any instance:
+// its instance died, or its disconnect was missed.
+const STALE_CONNECTION_SECONDS = 150;
+
+// Several backend instances share presence through PostgreSQL
+// (SOCKET_CLUSTER=postgres): events, room membership, fetchSockets and
+// disconnectSockets then reach every instance. One instance is the default.
+function clusterAdapter() {
+  if (process.env.SOCKET_CLUSTER !== 'postgres') return null;
+  const { createAdapter } = require('@socket.io/postgres-adapter');
+  const { Pool } = require('pg');
+  const pool = new Pool({
+    host: process.env.PGHOST || 'localhost',
+    port: Number(process.env.PGPORT || 5432),
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD || 'postgres',
+    database: process.env.PGDATABASE || 'mahali_light',
+    // One connection listens; the other sends. A single sender keeps
+    // messages in order, so a user gets "you were signed out" before the
+    // instance holding their socket cuts it.
+    max: 2,
+  });
+  pool.on('error', (err) => console.error('[socket] cluster adapter pool error', err));
+  return { adapter: createAdapter(pool), pool };
+}
 
 // allowedOrigins is the same Set used by the Express CORS middleware so both
 // the HTTP and WebSocket upgrade paths enforce the same origin policy.
@@ -27,12 +54,25 @@ function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = 
     },
   });
 
+  const cluster = clusterAdapter();
+  if (cluster) {
+    io.adapter(cluster.adapter);
+    io.clusterPool = cluster.pool;
+  }
+
   // After a restart no socket is connected yet, so no session is "online"
   // until its screen reconnects (presence audit F11). Sessions stay signed
-  // in; reconnecting marks them online again.
+  // in; reconnecting marks them online again. With several instances the
+  // others' screens are still connected, so only sessions nobody has seen
+  // recently are reset; the stale-connection sweep below does the rest.
   query(
-    `UPDATE user_sessions SET status = 'offline'
-      WHERE logout_at IS NULL AND status <> 'offline'`,
+    cluster
+      ? `UPDATE user_sessions SET status = 'offline'
+          WHERE logout_at IS NULL AND status <> 'offline'
+            AND COALESCE(last_seen_at, last_activity_at) < NOW() - make_interval(secs => $1)`
+      : `UPDATE user_sessions SET status = 'offline'
+          WHERE logout_at IS NULL AND status <> 'offline'`,
+    cluster ? [STALE_CONNECTION_SECONDS] : [],
   ).catch(() => {});
 
   // Authenticate the socket via JWT in handshake.auth.token.
@@ -135,17 +175,27 @@ function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = 
     socket.on('heartbeat', async (payload) => {
       try {
         const active = payload?.active !== false;
+        // Input is written whenever the last recorded input is older than
+        // 20 s, whatever else touched the session meanwhile (a background
+        // request refreshing last_seen_at must not swallow it). A beat on a
+        // session marked offline while this socket is still up (the stale
+        // sweep, another instance's restart) brings it back.
         const { rows: live } = await query(
           `UPDATE user_sessions s
               SET last_seen_at = NOW(),
                   last_activity_at = CASE WHEN $2 THEN NOW() ELSE s.last_activity_at END,
-                  status = CASE WHEN $2 THEN 'online' ELSE s.status END
+                  status = CASE
+                    WHEN $2 THEN 'online'
+                    WHEN s.status = 'offline' THEN
+                      CASE WHEN s.last_activity_at < NOW() - INTERVAL '5 minutes' THEN 'idle' ELSE 'online' END
+                    ELSE s.status END
              FROM user_sessions prev
             WHERE s.id = $1 AND prev.id = s.id AND s.logout_at IS NULL
               AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW())
               AND (s.last_seen_at IS NULL OR s.last_seen_at < NOW() - INTERVAL '20 seconds'
-                   OR ($2 AND s.status <> 'online'))
-            RETURNING prev.status AS previous_status`,
+                   OR s.status = 'offline'
+                   OR ($2 AND (s.status <> 'online' OR s.last_activity_at < NOW() - INTERVAL '20 seconds')))
+            RETURNING prev.status AS previous_status, s.status AS status`,
           [sessionId, active],
         );
         if (!live.length) {
@@ -158,7 +208,7 @@ function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = 
           if (!open.length) socket.disconnect(true);
           return;
         }
-        if (active && live[0].previous_status !== 'online') {
+        if (live[0].previous_status !== live[0].status) {
           await presenceService.publishUserPresence(io, userId);
         }
       } catch (err) {
@@ -246,7 +296,11 @@ function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = 
             AND last_activity_at < NOW() - INTERVAL '5 minutes'
           RETURNING user_id`,
       );
-      for (const userId of new Set(rows.map((r) => r.user_id))) {
+      // No heartbeat for a while: no live connection anywhere, so offline.
+      // Catches an instance that died with its sockets, and a missed
+      // disconnect. The session stays signed in.
+      const { rows: gone } = await sweepStaleConnections();
+      for (const userId of new Set([...rows, ...gone].map((r) => r.user_id))) {
         await presenceService.publishUserPresence(io, userId);
       }
     } catch (err) {
@@ -257,4 +311,14 @@ function attachSocket(httpServer, allowedOrigins = new Set(), { requireSecure = 
   return io;
 }
 
-module.exports = { attachSocket, IDLE_THRESHOLD_MS };
+function sweepStaleConnections(seconds = STALE_CONNECTION_SECONDS) {
+  return query(
+    `UPDATE user_sessions SET status = 'offline'
+      WHERE logout_at IS NULL AND status <> 'offline'
+        AND COALESCE(last_seen_at, last_activity_at) < NOW() - make_interval(secs => $1)
+      RETURNING user_id`,
+    [seconds],
+  );
+}
+
+module.exports = { attachSocket, sweepStaleConnections, IDLE_THRESHOLD_MS, STALE_CONNECTION_SECONDS };
