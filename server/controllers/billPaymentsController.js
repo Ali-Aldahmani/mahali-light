@@ -51,6 +51,8 @@ const paySchema = z.object({
   paymentMethod: z.enum(['cash', 'bank']),
   bankAccountId: z.string().uuid().nullable().optional(),
   paidDate: businessDateSchema.optional(),
+  // The input VAT in this payment; by default from the bill's VAT rate.
+  vatAmount: z.coerce.number().min(0).optional().nullable(),
   notes: z.string().max(1000).nullable().optional(),
 });
 
@@ -76,6 +78,7 @@ async function pay(req, res, next) {
       bankAccountId: body.bankAccountId || null,
       allowOverdraft: (req.user?.permissions || []).includes('bank.overdraft'),
       paidDate: body.paidDate || null,
+      vatAmount: body.vatAmount ?? null,
       notes: body.notes || null,
       receiptAttachment: receiptRel,
       userId: req.user.id,

@@ -43,6 +43,8 @@ const createSchema = z.object({
   paymentMethod: z.enum(['cash', 'bank']).optional(),
   bankAccountId: z.string().uuid().nullable().optional(),
   autoRecurring: z.boolean().optional(),
+  // VAT rate the bill is charged at (0 = none); recoverable when paid.
+  vatRate: z.number().min(0).max(100).optional(),
   notes: z.string().max(2000).nullable().optional(),
 });
 

@@ -75,6 +75,8 @@ const EXPENSE_CATEGORY_TO_CODE = {
   Transport: '5012',
   Miscellaneous: '5014',
   'Office Supplies': '5014',
+  Salary: '5002',
+  Commission: '5002',
 };
 
 async function getExpenseAccountIdForCategory(categoryName, client) {
@@ -707,9 +709,19 @@ async function reverseSupplierPaymentEntries(client, paymentId, { date, userId }
 }
 
 // Bill payment: DR expense_account_for_category, CR cash/bank.
+// The debit side of an expense paid VAT included: the expense net of VAT,
+// and the recoverable input VAT on 2002.
+async function expenseDebitLines(client, categoryName, amount, vatAmount) {
+  const vat = money(vatAmount || 0);
+  const lines = [{ accountId: await getExpenseAccountIdForCategory(categoryName, client), debit: money(amount - vat), credit: 0 }];
+  if (vat > 0) lines.push({ accountId: await getAccountIdByCode('2002', client), debit: vat, credit: 0 });
+  return lines.filter((l) => l.debit > 0);
+}
+
 async function postBillPaymentEntry(client, {
   billPaymentId,
   amount,
+  vatAmount = 0,
   method,
   categoryName,
   billName,
@@ -718,7 +730,6 @@ async function postBillPaymentEntry(client, {
 }) {
   const amt = money(amount);
   if (amt <= 0) return null;
-  const expenseAccountId = await getExpenseAccountIdForCategory(categoryName, client);
   const creditCode = method === 'cash' ? '1001' : '1002';
   return postJournalEntryWith(client, {
     referenceType: 'bill_payment',
@@ -726,7 +737,7 @@ async function postBillPaymentEntry(client, {
     date,
     description: `Bill: ${billName || categoryName || 'expense'}`,
     lines: [
-      { accountId: expenseAccountId, debit: amt, credit: 0 },
+      ...(await expenseDebitLines(client, categoryName, amt, vatAmount)),
       { accountId: await getAccountIdByCode(creditCode, client), debit: 0, credit: amt },
     ],
     userId,
@@ -737,6 +748,7 @@ async function postBillPaymentEntry(client, {
 async function postExpenseEntry(client, {
   expenseId,
   amount,
+  vatAmount = 0,
   method,
   categoryName,
   description,
@@ -745,7 +757,6 @@ async function postExpenseEntry(client, {
 }) {
   const amt = money(amount);
   if (amt <= 0) return null;
-  const expenseAccountId = await getExpenseAccountIdForCategory(categoryName, client);
   // 'owner': paid from the owner's pocket, so owner equity, no shop account.
   const creditCode = method === 'owner' ? '3001' : method === 'cash' ? '1001' : '1002';
   return postJournalEntryWith(client, {
@@ -754,7 +765,7 @@ async function postExpenseEntry(client, {
     date,
     description: `Expense: ${description}`.slice(0, 250),
     lines: [
-      { accountId: expenseAccountId, debit: amt, credit: 0 },
+      ...(await expenseDebitLines(client, categoryName, amt, vatAmount)),
       { accountId: await getAccountIdByCode(creditCode, client), debit: 0, credit: amt },
     ],
     userId,

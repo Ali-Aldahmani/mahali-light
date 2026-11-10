@@ -5,6 +5,7 @@ const { logActivity } = require('../utils/activityLog');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
+const { resolveInputVat } = require('./inputVat');
 const notificationService = require('./notificationService');
 const { emitEvent } = require('../socket/events');
 
@@ -81,6 +82,7 @@ function shapeBill(row, extra = {}) {
     categoryType: row.category_type || null,
     vendorName: row.vendor_name,
     amount: row.amount != null ? Number(row.amount) : null,
+    vatRate: row.vat_rate != null ? Number(row.vat_rate) : 0,
     isVariableAmount: Boolean(row.is_variable_amount),
     frequency: row.frequency,
     startDate: dateOnly(row.start_date),
@@ -113,6 +115,7 @@ function shapeBillPayment(row) {
     vendorName: row.vendor_name || null,
     amountDue: row.amount_due != null ? Number(row.amount_due) : 0,
     amountPaid: row.amount_paid != null ? Number(row.amount_paid) : null,
+    vatAmount: row.vat_amount != null ? Number(row.vat_amount) : 0,
     dueDate: dateOnly(row.due_date),
     paidDate: dateOnly(row.paid_date),
     paymentMethod: row.payment_method,
@@ -186,7 +189,11 @@ async function createBill(input, userId, { requestKey = null } = {}) {
         userId || null,
       ],
     );
-    const bill = rows[0];
+    let bill = rows[0];
+    if (input.vatRate != null) {
+      ({ rows: [bill] } = await client.query(
+        `UPDATE bills SET vat_rate = $2 WHERE id = $1 RETURNING *`, [bill.id, input.vatRate]));
+    }
 
     // Create the first bill_payment row so the upcoming sweep can pick it up.
     await client.query(
@@ -293,6 +300,10 @@ async function updateBill(id, input, userId) {
         id,
       ],
     );
+
+    if (input.vatRate !== undefined && input.vatRate !== null) {
+      await client.query(`UPDATE bills SET vat_rate = $2 WHERE id = $1`, [id, input.vatRate]);
+    }
 
     // Keep the pending bill_payment in sync with the updated due date/amount.
     await client.query(
@@ -460,6 +471,7 @@ async function payBillPayment({
   paidDate = null,
   notes = null,
   receiptAttachment = null,
+  vatAmount = null,
   userId,
   io = null,
 }) {
@@ -477,7 +489,7 @@ async function payBillPayment({
   const result = await withTransaction(async (client) => {
     const { rows: payRows } = await client.query(
       `SELECT bp.*, b.name AS bill_name, b.is_variable_amount, b.status AS bill_status,
-              c.name AS category_name
+              b.vat_rate, c.name AS category_name
          FROM bill_payments bp
          JOIN bills b ON b.id = bp.bill_id
          LEFT JOIN expense_categories c ON c.id = b.category_id
@@ -520,6 +532,8 @@ async function payBillPayment({
       }
     }
     const amountDue = payment.is_variable_amount ? amt : money(payment.amount_due);
+    // Input VAT in what was paid: as given, else from the bill's VAT rate.
+    const vat = await resolveInputVat(client, { amount: amt, vatAmount, vatRate: payment.vat_rate });
 
     const { rows } = await client.query(
       `UPDATE bill_payments
@@ -532,6 +546,7 @@ async function payBillPayment({
               paid_by = $7,
               status = 'paid',
               notes = COALESCE($8, notes),
+              vat_amount = $10,
               updated_at = NOW()
         WHERE id = $9
         RETURNING *`,
@@ -545,6 +560,7 @@ async function payBillPayment({
         userId || null,
         notes,
         billPaymentId,
+        vat,
       ],
     );
 
@@ -579,6 +595,7 @@ async function payBillPayment({
     await journalService.postBillPaymentEntry(client, {
       billPaymentId,
       amount: amt,
+      vatAmount: vat,
       method: paymentMethod,
       categoryName: payment.category_name,
       billName: payment.bill_name,

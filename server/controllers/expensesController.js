@@ -51,6 +51,9 @@ const createSchema = z.object({
   paymentMethod: z.enum(['cash', 'bank']),
   bankAccountId: z.string().uuid().nullable().optional(),
   fundingSource: z.enum(['showroom', 'owner']).optional().default('showroom'),
+  // Recoverable input VAT included in amount: an amount, or a rate to work it out.
+  vatAmount: z.coerce.number().min(0).optional().nullable(),
+  vatRate: z.coerce.number().min(0).max(100).optional().nullable(),
   notes: z.string().max(1000).nullable().optional(),
 });
 

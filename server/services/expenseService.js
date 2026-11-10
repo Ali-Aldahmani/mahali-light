@@ -6,6 +6,7 @@ const { runOnce } = require('../utils/operations');
 const cashService = require('./cashService');
 const bankService = require('./bankService');
 const journalService = require('./journalService');
+const { resolveInputVat } = require('./inputVat');
 const { deleteAttachmentFile } = require('../utils/upload');
 const { emitEvent } = require('../socket/events');
 
@@ -40,6 +41,7 @@ function shapeExpense(row) {
     categoryIcon: row.category_icon || null,
     description: row.description,
     amount: Number(row.amount) || 0,
+    vatAmount: Number(row.vat_amount) || 0,
     expenseDate: dateOnly(row.expense_date),
     paymentMethod: row.payment_method,
     bankAccountId: row.bank_account_id,
@@ -64,6 +66,8 @@ async function createExpense({
   paymentMethod,
   bankAccountId = null,
   fundingSource = 'showroom',
+  vatAmount = null,
+  vatRate = null,
   allowOverdraft = false,
   notes = null,
   userId,
@@ -91,11 +95,12 @@ async function createExpense({
   }
 
   const record = async (client) => {
+    const vat = await resolveInputVat(client, { amount: amt, vatAmount, vatRate });
     const { rows } = await client.query(
       `INSERT INTO one_time_expenses
          (category_id, description, amount, expense_date,
-          payment_method, bank_account_id, paid_by, funding_source, notes)
-       VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9)
+          payment_method, bank_account_id, paid_by, funding_source, notes, vat_amount)
+       VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10)
        RETURNING *`,
       [
         categoryId || null,
@@ -107,6 +112,7 @@ async function createExpense({
         userId || null,
         fundingSource === 'owner' ? 'owner' : 'showroom',
         notes || null,
+        vat,
       ],
     );
 
@@ -154,6 +160,7 @@ async function createExpense({
     await journalService.postExpenseEntry(client, {
       expenseId: expense.id,
       amount: amt,
+      vatAmount: vat,
       method: ownerFunded ? 'owner' : paymentMethod,
       categoryName,
       description: description.trim(),

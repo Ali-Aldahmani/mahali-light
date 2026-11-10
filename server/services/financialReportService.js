@@ -606,7 +606,25 @@ async function getVATReport({ startDate, endDate }) {
     [from, to],
   );
   const netPurchases = money(inRows[0].net_purchases || 0);
-  const inputTax = money(inRows[0].input_tax || 0);
+  const inputTaxPurchases = money(inRows[0].input_tax || 0);
+
+  // Input tax on operating expenses and bills (migration 062), from the
+  // ledger, net of any reversal (reversals keep the reference type).
+  const { rows: [expRow] } = await query(
+    `SELECT COALESCE(SUM(jl.debit - jl.credit) FILTER (WHERE a.code = '2002'), 0)::float8 AS input_tax,
+            COALESCE(SUM(jl.debit - jl.credit) FILTER (WHERE a.type = 'expense'), 0)::float8 AS net_expenses
+       FROM journal_entries je
+       JOIN journal_lines jl ON jl.journal_entry_id = je.id
+       JOIN chart_of_accounts a ON a.id = jl.account_id
+      WHERE je.date BETWEEN $1::date AND $2::date
+        AND je.reference_type IN ('expense', 'bill_payment')
+        AND EXISTS (SELECT 1 FROM journal_lines x JOIN chart_of_accounts xa ON xa.id = x.account_id
+                     WHERE x.journal_entry_id = je.id AND xa.code = '2002')`,
+    [from, to],
+  );
+  const inputTaxExpenses = money(expRow.input_tax || 0);
+  const netExpensesWithVat = money(expRow.net_expenses || 0);
+  const inputTax = money(inputTaxPurchases + inputTaxExpenses);
 
   const netPayable = money(outputTax - inputTax);
 
@@ -622,6 +640,9 @@ async function getVATReport({ startDate, endDate }) {
     outputTax,
     netPurchases,
     inputTax,
+    inputTaxPurchases,
+    netExpensesWithVat,
+    inputTaxExpenses,
     netPayable,
     dueDate,
   };
