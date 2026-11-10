@@ -115,7 +115,7 @@ describe('PresenceWidget accuracy (presence audit P2)', () => {
     render(<PresenceWidget />);
     await waitFor(() => expect(usePresenceStore.getState().onlineUsers).toHaveLength(3));
     fireEvent.click(screen.getByRole('button'));
-    const names = (await screen.findAllByText(/^(amy|bob|zed)$/)).map((n) => n.textContent);
+    const names = (await screen.findAllByText(/^(amy|bob|zed)/)).map((n) => n.firstChild?.textContent);
     expect(names).toEqual(['amy', 'bob', 'zed']);
     expect(screen.getByText(/2 devices/)).toBeInTheDocument();
   });

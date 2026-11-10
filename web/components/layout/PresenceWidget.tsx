@@ -109,11 +109,16 @@ export default function PresenceWidget() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink truncate">
                         {displayName(u)}
+                        {/* Next to the name: the PC line below is cut off when long. */}
+                        {(u.sessionCount || 1) > 1 && (
+                          <span className="ml-1.5 text-[11px] font-normal text-ink-muted">
+                            · {u.sessionCount} devices
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs text-ink-muted truncate">
                         {u.employeeName ? `${u.username} · ` : ''}
                         {u.role || '—'} · {u.pcIdentifier}
-                        {(u.sessionCount || 1) > 1 && ` · ${u.sessionCount} devices`}
                       </p>
                     </div>
                     <span
