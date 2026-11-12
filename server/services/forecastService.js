@@ -58,38 +58,60 @@ async function aggregateMonthlySales({ year, month } = {}) {
     target = previousMonthBounds(new Date());
   }
 
-  // Aggregate sales for the chosen window.
+  // Aggregate sales for the chosen window (sales forecasting audit P0).
+  // An exchange hands out a replacement on its own invoice: that is not a
+  // new purchase, so it is counted apart (replacement_qty), and only what
+  // the customer paid on it counts as revenue.
   const { rows: salesRows } = await query(
-    `SELECT ii.product_id, ii.variant_id,
-            SUM(ii.quantity)::float8 AS units_sold,
-            SUM(ii.line_total)::float8 AS revenue,
-            SUM(COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time))::float8 AS cost_total,
-            SUM(ii.line_total - COALESCE(ii.cogs_value, ii.quantity * ii.cost_price_at_time))::float8 AS gross_profit,
-            COUNT(DISTINCT i.id)::int AS invoice_count,
-            AVG(ii.unit_price)::float8 AS avg_selling_price,
-            AVG(ii.cost_price_at_time)::float8 AS avg_cost_price
-       FROM invoice_items ii
-       JOIN invoices i ON i.id = ii.invoice_id
-      WHERE i.status = 'confirmed'
-        AND i.confirmed_at::date BETWEEN $1::date AND $2::date
-      GROUP BY ii.product_id, ii.variant_id`,
+    `WITH lines AS (
+       SELECT ii.*, i.id AS inv_id, i.taxable_amount,
+              EXISTS (SELECT 1 FROM return_orders ro WHERE ro.replacement_invoice_id = i.id) AS is_replacement,
+              SUM(ii.line_total) OVER (PARTITION BY i.id) AS invoice_lines_total
+         FROM invoice_items ii
+         JOIN invoices i ON i.id = ii.invoice_id
+        WHERE i.status = 'confirmed'
+          AND i.confirmed_at::date BETWEEN $1::date AND $2::date)
+     SELECT product_id, variant_id,
+            COALESCE(SUM(quantity) FILTER (WHERE NOT is_replacement), 0)::float8 AS units_sold,
+            COALESCE(SUM(quantity) FILTER (WHERE is_replacement), 0)::float8 AS replacement_qty,
+            COALESCE(SUM(CASE WHEN is_replacement
+                              THEN line_total * COALESCE(taxable_amount / NULLIF(invoice_lines_total, 0), 0)
+                              ELSE line_total END), 0)::float8 AS revenue,
+            COALESCE(SUM(COALESCE(cogs_value, quantity * cost_price_at_time)) FILTER (WHERE NOT is_replacement), 0)::float8 AS cost_total,
+            COUNT(DISTINCT inv_id) FILTER (WHERE NOT is_replacement)::int AS invoice_count,
+            AVG(unit_price) FILTER (WHERE NOT is_replacement)::float8 AS avg_selling_price,
+            AVG(cost_price_at_time) FILTER (WHERE NOT is_replacement)::float8 AS avg_cost_price
+       FROM lines
+      GROUP BY product_id, variant_id`,
     [target.startIso, target.endIso],
   );
 
-  // Aggregate refunds/returns over the same window so the row carries the
-  // *net* impact for reporting (gross sales minus returned).
+  // Customer returns, dated by the month of the sale they undo, so a month
+  // shows what its customers kept. A return with no invoice falls in the
+  // month it was made. Supplier returns are not customer demand.
   const { rows: returnRows } = await query(
     `SELECT roi.product_id, roi.variant_id,
             SUM(roi.quantity)::float8 AS qty
        FROM return_order_items roi
        JOIN return_orders ro ON ro.id = roi.return_order_id
-      WHERE ro.created_at::date BETWEEN $1::date AND $2::date
+       LEFT JOIN invoices oi ON oi.id = ro.original_invoice_id
+      WHERE ro.return_type LIKE 'customer%'
+        AND COALESCE(oi.confirmed_at, ro.created_at)::date BETWEEN $1::date AND $2::date
       GROUP BY roi.product_id, roi.variant_id`,
     [target.startIso, target.endIso],
   );
   const returnsMap = new Map(
     returnRows.map((r) => [`${r.product_id}::${r.variant_id}`, Number(r.qty)]),
   );
+  // A variant can have returns in a month without sales (a return with no invoice).
+  const seen = new Set(salesRows.map((r) => `${r.product_id}::${r.variant_id}`));
+  for (const r of returnRows) {
+    const key = `${r.product_id}::${r.variant_id}`;
+    if (!seen.has(key) && r.variant_id) {
+      salesRows.push({ product_id: r.product_id, variant_id: r.variant_id, units_sold: 0, replacement_qty: 0,
+        revenue: 0, cost_total: 0, invoice_count: 0, avg_selling_price: 0, avg_cost_price: 0 });
+    }
+  }
 
   let upserts = 0;
   await withTransaction(async (client) => {
@@ -102,11 +124,13 @@ async function aggregateMonthlySales({ year, month } = {}) {
     for (const r of salesRows) {
       const key = `${r.product_id}::${r.variant_id}`;
       const returnQty = returnsMap.get(key) || 0;
+      const netUnits = money(Number(r.units_sold) + Number(r.replacement_qty) - returnQty);
       await client.query(
         `INSERT INTO sales_history_monthly
            (product_id, variant_id, year, month, units_sold, revenue, cost_total,
-            gross_profit, return_qty, invoice_count, avg_selling_price, avg_cost_price)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            gross_profit, return_qty, invoice_count, avg_selling_price, avg_cost_price,
+            replacement_qty, net_units)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          ON CONFLICT (variant_id, year, month) DO UPDATE SET
            units_sold = EXCLUDED.units_sold,
            revenue = EXCLUDED.revenue,
@@ -115,7 +139,9 @@ async function aggregateMonthlySales({ year, month } = {}) {
            return_qty = EXCLUDED.return_qty,
            invoice_count = EXCLUDED.invoice_count,
            avg_selling_price = EXCLUDED.avg_selling_price,
-           avg_cost_price = EXCLUDED.avg_cost_price`,
+           avg_cost_price = EXCLUDED.avg_cost_price,
+           replacement_qty = EXCLUDED.replacement_qty,
+           net_units = EXCLUDED.net_units`,
         [
           r.product_id,
           r.variant_id,
@@ -124,15 +150,23 @@ async function aggregateMonthlySales({ year, month } = {}) {
           money(r.units_sold),
           money(r.revenue),
           money(r.cost_total),
-          money(r.gross_profit),
+          money(Number(r.revenue) - Number(r.cost_total)),
           money(returnQty),
           r.invoice_count,
           money(r.avg_selling_price),
           money(r.avg_cost_price),
+          money(r.replacement_qty),
+          netUnits,
         ],
       );
       upserts += 1;
     }
+    // This month is now known: a variant without a row sold nothing in it.
+    await client.query(
+      `INSERT INTO sales_history_aggregated_months (year, month) VALUES ($1, $2)
+       ON CONFLICT (year, month) DO UPDATE SET aggregated_at = NOW()`,
+      [target.year, target.month],
+    );
   });
 
   return { year: target.year, month: target.month, upserts };
@@ -141,6 +175,64 @@ async function aggregateMonthlySales({ year, month } = {}) {
 // =======================================================================
 // Reorder recommendation
 // =======================================================================
+// A variant's net units for every month from its first sale to the last
+// complete month (sales forecasting audit P0). Months that were aggregated
+// but have no row are real zeros, so slow sellers are not averaged over
+// their selling months only. Months never aggregated are left out: unknown
+// is not zero. `sinceMonths` limits the window (e.g. the last 12).
+async function netMonthlySeries(variantId, { sinceMonths = null } = {}) {
+  const { rows } = await query(
+    `WITH bounds AS (
+       SELECT MIN(make_date(year, month, 1)) AS first_month,
+              (date_trunc('month', CURRENT_DATE) - INTERVAL '1 month')::date AS last_month
+         FROM sales_history_monthly WHERE variant_id = $1),
+     grid AS (
+       SELECT generate_series(
+                CASE WHEN $2::int IS NULL THEN first_month
+                     ELSE GREATEST(first_month, (date_trunc('month', CURRENT_DATE) - make_interval(months => $2::int))::date) END,
+                last_month, INTERVAL '1 month')::date AS m
+         FROM bounds WHERE first_month IS NOT NULL)
+     SELECT EXTRACT(YEAR FROM g.m)::int AS year, EXTRACT(MONTH FROM g.m)::int AS month,
+            COALESCE(h.net_units, h.units_sold + COALESCE(h.replacement_qty, 0) - h.return_qty, 0)::float8 AS units,
+            EXTRACT(DAY FROM (g.m + INTERVAL '1 month' - INTERVAL '1 day'))::int AS days
+       FROM grid g
+       LEFT JOIN sales_history_monthly h
+              ON h.variant_id = $1 AND h.year = EXTRACT(YEAR FROM g.m) AND h.month = EXTRACT(MONTH FROM g.m)
+       LEFT JOIN sales_history_aggregated_months a
+              ON a.year = EXTRACT(YEAR FROM g.m) AND a.month = EXTRACT(MONTH FROM g.m)
+      WHERE h.id IS NOT NULL OR a.year IS NOT NULL
+      ORDER BY g.m`,
+    [variantId, sinceMonths],
+  );
+  return rows;
+}
+
+// Aggregate the months that need it: never aggregated since the first sale
+// (up to `maxBack` months), and the last `recent` months again, so returns
+// that came in later land on the month of their sale.
+async function aggregatePendingMonths({ recent = 3, maxBack = 24 } = {}) {
+  const { rows } = await query(
+    `WITH span AS (
+       SELECT GREATEST(date_trunc('month', MIN(confirmed_at))::date,
+                       (date_trunc('month', CURRENT_DATE) - make_interval(months => $2::int))::date) AS first_month,
+              (date_trunc('month', CURRENT_DATE) - INTERVAL '1 month')::date AS last_month
+         FROM invoices WHERE status = 'confirmed')
+     SELECT EXTRACT(YEAR FROM m)::int AS year, EXTRACT(MONTH FROM m)::int AS month
+       FROM span, generate_series(first_month, last_month, INTERVAL '1 month') AS m
+      WHERE first_month IS NOT NULL
+        AND (m >= (date_trunc('month', CURRENT_DATE) - make_interval(months => $1::int))
+             OR NOT EXISTS (SELECT 1 FROM sales_history_aggregated_months a
+                             WHERE a.year = EXTRACT(YEAR FROM m) AND a.month = EXTRACT(MONTH FROM m))
+             OR EXISTS (SELECT 1 FROM sales_history_monthly h
+                         WHERE h.year = EXTRACT(YEAR FROM m) AND h.month = EXTRACT(MONTH FROM m) AND h.net_units IS NULL))
+      ORDER BY m`,
+    [recent, maxBack],
+  );
+  const done = [];
+  for (const r of rows) done.push(await aggregateMonthlySales({ year: r.year, month: r.month }));
+  return { months: done.length, results: done };
+}
+
 async function calculateReorderRecommendation(variantId) {
   // Pull the variant + its supplier lead time.
   const { rows: vrows } = await query(
@@ -170,42 +262,30 @@ async function calculateReorderRecommendation(variantId) {
   const leadTimeDays = Math.max(1, Math.round(Number(v.lead_time_days) || 7));
   const safetyBufferDays = 7;
 
-  // Last 12 months from sales_history_monthly.
-  const { rows: hist } = await query(
-    `SELECT year, month, units_sold
-       FROM sales_history_monthly
-      WHERE variant_id = $1
-        AND (year, month) >= (
-          EXTRACT(YEAR FROM (CURRENT_DATE - INTERVAL '11 months'))::int,
-          EXTRACT(MONTH FROM (CURRENT_DATE - INTERVAL '11 months'))::int
-        )
-      ORDER BY year, month`,
-    [variantId],
-  );
+  // The last 12 complete months, every month counted (zeros included), in
+  // net units: what customers kept (sales forecasting audit P0).
+  const hist = (await netMonthlySeries(variantId, { sinceMonths: 12 }))
+    .map((r) => ({ ...r, units_sold: r.units }));
 
-  // No history? Calculate from raw invoices as a fallback so newly created
-  // variants still get a starting recommendation.
   let monthsCovered = hist.length;
-  let totalUnits = hist.reduce((s, r) => s + Number(r.units_sold), 0);
+  let totalUnits = hist.reduce((s, r) => s + Number(r.units), 0);
+  let daysCovered = hist.reduce((s, r) => s + Number(r.days), 0);
   if (monthsCovered === 0) {
-    const { rows: live } = await query(
-      `SELECT DATE_TRUNC('month', i.confirmed_at)::date AS bucket,
-              COALESCE(SUM(ii.quantity), 0)::float8 AS units
-         FROM invoice_items ii
-         JOIN invoices i ON i.id = ii.invoice_id
-        WHERE ii.variant_id = $1
-          AND i.status = 'confirmed'
-          AND i.confirmed_at >= NOW() - INTERVAL '12 months'
-        GROUP BY 1
-        ORDER BY 1`,
+    // No monthly history yet (a new variant): its sales so far, net of
+    // returns, over the days since it first sold (at least a week).
+    const { rows: [live] } = await query(
+      `SELECT COALESCE(SUM(quantity - quantity_returned) FILTER (WHERE NOT is_exchange_replacement), 0)
+              + COALESCE(SUM(quantity) FILTER (WHERE is_exchange_replacement), 0) AS units,
+              GREATEST(7, CURRENT_DATE - MIN(store_day) + 1) AS days
+         FROM v_sales_demand_lines
+        WHERE variant_id = $1 AND sold_at >= NOW() - INTERVAL '12 months'`,
       [variantId],
     );
-    monthsCovered = live.length;
-    totalUnits = live.reduce((s, r) => s + Number(r.units), 0);
+    totalUnits = Number(live?.units) || 0;
+    daysCovered = totalUnits > 0 ? Number(live.days) : 0;
   }
 
-  const monthlyAvg = monthsCovered > 0 ? totalUnits / monthsCovered : 0;
-  const dailyAvg = monthlyAvg / 30;
+  const dailyAvg = daysCovered > 0 ? Math.max(0, totalUnits) / daysCovered : 0;
   const reorderPoint = dailyAvg * leadTimeDays;
   const safetyStock = dailyAvg * safetyBufferDays;
   let recommendedQty = reorderPoint + safetyStock;
@@ -214,7 +294,7 @@ async function calculateReorderRecommendation(variantId) {
   const monthlyBuckets = Array.from({ length: 12 }, () => ({ total: 0, count: 0 }));
   for (const r of hist) {
     const m = Number(r.month) - 1;
-    monthlyBuckets[m].total += Number(r.units_sold);
+    monthlyBuckets[m].total += Number(r.units);
     monthlyBuckets[m].count += 1;
   }
   const monthlyMeans = monthlyBuckets.map((b) => (b.count > 0 ? b.total / b.count : 0));
@@ -311,13 +391,8 @@ async function calculateAnnualStockPlan(variantId, year) {
   if (!vrows.length) return null;
   const v = vrows[0];
 
-  const { rows: hist } = await query(
-    `SELECT year, month, units_sold
-       FROM sales_history_monthly
-      WHERE variant_id = $1
-      ORDER BY year, month`,
-    [variantId],
-  );
+  // Every month since the first sale, zeros included, in net units.
+  const hist = (await netMonthlySeries(variantId)).map((r) => ({ ...r, units_sold: r.units }));
 
   // Per-month historical average. We average across the year-month pairs
   // present so the plan reflects seasonality automatically.
@@ -575,7 +650,7 @@ async function getAnnualPlanForVariant(variantId, year) {
 // =======================================================================
 async function runAllForecasts({ aggregate = true, actor = null } = {}) {
   let aggregated = null;
-  if (aggregate) aggregated = await aggregateMonthlySales();
+  if (aggregate) aggregated = await aggregatePendingMonths();
   const year = new Date().getFullYear();
   const { rows: variants } = await query(
     `SELECT v.id FROM product_variants v
@@ -672,6 +747,8 @@ function startForecastJob() {
 
 module.exports = {
   aggregateMonthlySales,
+  aggregatePendingMonths,
+  netMonthlySeries,
   calculateReorderRecommendation,
   calculateAnnualStockPlan,
   runAllForecasts,
