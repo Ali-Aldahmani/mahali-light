@@ -1,5 +1,6 @@
 const { query } = require('../db/postgres');
 const { logActivity } = require('../utils/activityLog');
+const replenishment = require('./replenishmentService');
 
 // Run via the caller's transaction client when given (so a reorder check
 // triggered from inside an open, uncommitted transaction sees that
@@ -63,14 +64,18 @@ async function checkReorderThreshold(variantId, client) {
     return { created: false, threshold: 0 };
   }
 
-  if (current > threshold) {
+  // Stock already on order counts (purchase decision audit P0): an item with
+  // enough coming on a confirmed purchase order doesn't need another one.
+  // Same calculation as the forecast suggestions (replenishmentService):
+  // order up to threshold x multiplier, less on hand and on order.
+  const position = await replenishment.inventoryPosition(variantId, client);
+  const multiplier = await getNumericSetting('inventory.default_reorder_multiplier', 2, client);
+  const advice = replenishment.decide(position, null, { multiplier });
+  if (advice.action !== 'buy') {
     const resolved = await autoResolvePending(variantId, client);
     return { created: false, resolved: resolved };
   }
-
-  // Recommend at least (threshold * multiplier) - current_stock.
-  const multiplier = await getNumericSetting('inventory.default_reorder_multiplier', 2, client);
-  const recommended = Math.max(threshold * multiplier - current, 1);
+  const recommended = Math.max(advice.recommendedQty, 1);
 
   // Insert a new pending alert if there isn't one already. The partial
   // unique index uq_reorder_pending_variant turns this into a fast upsert.
@@ -88,9 +93,11 @@ async function checkReorderThreshold(variantId, client) {
       `UPDATE reorder_alerts
           SET current_stock = $1,
               reorder_point = $2,
-              recommended_order_qty = $3
+              recommended_order_qty = $3,
+              on_order = $5,
+              inventory_position = $6
         WHERE id = $4`,
-      [current, threshold, recommended, existing[0].id],
+      [current, threshold, recommended, existing[0].id, advice.onOrder, advice.position],
     );
     return {
       created: false,
@@ -102,10 +109,10 @@ async function checkReorderThreshold(variantId, client) {
   const { rows: insertRows } = await run(
     client,
     `INSERT INTO reorder_alerts
-       (product_id, variant_id, current_stock, reorder_point, recommended_order_qty)
-     VALUES ($1,$2,$3,$4,$5)
+       (product_id, variant_id, current_stock, reorder_point, recommended_order_qty, on_order, inventory_position)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
      RETURNING id`,
-    [v.product_id, variantId, current, threshold, recommended],
+    [v.product_id, variantId, current, threshold, recommended, advice.onOrder, advice.position],
   );
   const alertId = insertRows[0].id;
 
@@ -123,6 +130,7 @@ async function checkReorderThreshold(variantId, client) {
     variantId,
     productName: v.product_name,
     currentStock: current,
+    onOrder: advice.onOrder,
     reorderPoint: threshold,
     recommendedOrderQty: recommended,
     unitLabel: v.unit_label,

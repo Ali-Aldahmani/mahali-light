@@ -127,9 +127,14 @@ export default function AlertsTab() {
       header: 'Current stock',
       align: 'right',
       render: (r: any) => (
-        <Badge tone={r.currentStock <= 0 ? 'error' : 'warning'} size="sm" dot>
-          {formatQty(r.currentStock)} {r.unitLabel || ''}
-        </Badge>
+        <div className="flex flex-col items-end gap-0.5">
+          <Badge tone={r.currentStock <= 0 ? 'error' : 'warning'} size="sm" dot>
+            {formatQty(r.currentStock)} {r.unitLabel || ''}
+          </Badge>
+          {Number(r.onOrder) > 0 && (
+            <span className="text-[11px] text-ink-muted">+{formatQty(r.onOrder)} on order</span>
+          )}
+        </div>
       ),
     },
     {

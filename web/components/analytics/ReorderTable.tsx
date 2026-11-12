@@ -30,6 +30,7 @@ export default function ReorderTable({
           <tr>
             <th className="px-3 py-2 text-left">Product</th>
             <th className="px-3 py-2 text-right">Stock</th>
+            <th className="px-3 py-2 text-right">On order</th>
             <th className="px-3 py-2 text-right">Reorder pt.</th>
             <th className="px-3 py-2 text-right">Recommended</th>
             <th className="px-3 py-2 text-right">Lead time</th>
@@ -39,7 +40,8 @@ export default function ReorderTable({
         </thead>
         <tbody>
           {rows.map((r) => {
-            const low = Number(r.current_stock) <= Number(r.reorder_point || 0);
+            // Stock on order counts: buy only when on hand + on order is at the reorder point.
+            const low = r.action ? r.action === 'buy' : Number(r.current_stock) <= Number(r.reorder_point || 0);
             return (
               <tr key={r.id || r.variant_id} className={cn('border-t border-border', low && 'bg-error-light/40')}>
                 <td className="px-3 py-2">
@@ -58,10 +60,19 @@ export default function ReorderTable({
                 </td>
                 <td className={cn('px-3 py-2 text-right', low && 'text-error font-semibold')}>
                   {formatQty(r.current_stock)} {r.unit_label || ''}
+                  {r.expected_stockout_date && Number(r.daily_avg_sales) > 0 && (
+                    <div className="text-[10px] font-normal text-ink-muted">runs out ~{r.expected_stockout_date}</div>
+                  )}
                 </td>
+                <td className="px-3 py-2 text-right">{formatQty(r.on_order || 0)}</td>
                 <td className="px-3 py-2 text-right">{formatQty(r.reorder_point)}</td>
                 <td className="px-3 py-2 text-right font-semibold text-accent">
-                  {formatQty(r.recommended_qty)}
+                  {Number(r.recommended_qty) > 0 ? formatQty(r.recommended_qty) : (
+                    <span className="font-normal text-ink-muted">Wait</span>
+                  )}
+                  {r.basis === 'reorder_level' && (
+                    <div className="text-[10px] font-normal text-ink-muted">from the item's reorder level</div>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right text-xs text-ink-muted">
                   {r.lead_time_days} d

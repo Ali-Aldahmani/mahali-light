@@ -11,6 +11,8 @@ function shape(row) {
     productId: row.product_id,
     variantId: row.variant_id,
     currentStock: Number(row.current_stock),
+    // Still to arrive on confirmed purchase orders, counted in the advice.
+    onOrder: Number(row.on_order || 0),
     reorderPoint: Number(row.reorder_point),
     recommendedOrderQty: Number(row.recommended_order_qty),
     suggestedSupplierId: row.suggested_supplier_id,

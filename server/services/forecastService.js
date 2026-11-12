@@ -1,6 +1,7 @@
 const { query, withTransaction } = require('../db/postgres');
 const { logActivity } = require('../utils/activityLog');
 const { storeDate } = require('../utils/dates');
+const replenishment = require('./replenishmentService');
 
 // =======================================================================
 // Helpers
@@ -286,9 +287,8 @@ async function calculateReorderRecommendation(variantId) {
   }
 
   const dailyAvg = daysCovered > 0 ? Math.max(0, totalUnits) / daysCovered : 0;
-  const reorderPoint = dailyAvg * leadTimeDays;
-  const safetyStock = dailyAvg * safetyBufferDays;
-  let recommendedQty = reorderPoint + safetyStock;
+  // Levels only; the advice itself (replenishmentService.decide) also
+  // counts what is on hand and on order (purchase decision audit P0).
 
   // Peak detection across calendar months.
   const monthlyBuckets = Array.from({ length: 12 }, () => ({ total: 0, count: 0 }));
@@ -318,7 +318,16 @@ async function calculateReorderRecommendation(variantId) {
   const isPeakSeason =
     peakMonth != null && annualMean > 0 && peakMean > annualMean * 1.2 && currentMonth === peakMonth;
   const peakMultiplier = 2.0;
-  if (isPeakSeason) recommendedQty *= peakMultiplier;
+  // In the peak month demand runs faster: the levels use the faster rate.
+  const demandRate = isPeakSeason ? dailyAvg * peakMultiplier : dailyAvg;
+  const forecastReorderPoint = demandRate * (leadTimeDays + safetyBufferDays);
+  const forecastOrderUpTo = forecastReorderPoint + demandRate * replenishment.ORDER_COVER_DAYS;
+  const position = await replenishment.inventoryPosition(variantId);
+  const advice = replenishment.decide(position, {
+    dailyAvg: demandRate, reorderPoint: forecastReorderPoint, orderUpTo: forecastOrderUpTo,
+  }, { multiplier: await replenishment.reorderMultiplier() });
+  const reorderPoint = advice.reorderPoint ?? forecastReorderPoint;
+  const recommendedQty = advice.recommendedQty;
 
   const confidence = confidenceFromHistory(monthsCovered);
 
@@ -326,8 +335,10 @@ async function calculateReorderRecommendation(variantId) {
     `INSERT INTO reorder_recommendations
        (product_id, variant_id, recommended_qty, based_on_months, daily_avg_sales,
         lead_time_days, safety_buffer_days, reorder_point, peak_month,
-        is_peak_season, peak_multiplier, confidence, calculated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+        is_peak_season, peak_multiplier, confidence, calculated_at,
+        forecast_reorder_point, forecast_order_up_to, order_up_to, basis, on_hand, on_order,
+        inventory_position, action, expected_stockout_date)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),$13,$14,$15,$16,$17,$18,$19,$20,$21)
      ON CONFLICT (variant_id) DO UPDATE SET
        recommended_qty = EXCLUDED.recommended_qty,
        based_on_months = EXCLUDED.based_on_months,
@@ -340,6 +351,15 @@ async function calculateReorderRecommendation(variantId) {
        peak_multiplier = EXCLUDED.peak_multiplier,
        confidence = EXCLUDED.confidence,
        calculated_at = NOW(),
+       forecast_reorder_point = EXCLUDED.forecast_reorder_point,
+       forecast_order_up_to = EXCLUDED.forecast_order_up_to,
+       order_up_to = EXCLUDED.order_up_to,
+       basis = EXCLUDED.basis,
+       on_hand = EXCLUDED.on_hand,
+       on_order = EXCLUDED.on_order,
+       inventory_position = EXCLUDED.inventory_position,
+       action = EXCLUDED.action,
+       expected_stockout_date = EXCLUDED.expected_stockout_date,
        dismissed_at = NULL,
        dismissed_by = NULL`,
     [
@@ -355,6 +375,15 @@ async function calculateReorderRecommendation(variantId) {
       isPeakSeason,
       peakMultiplier,
       confidence,
+      money(forecastReorderPoint),
+      money(forecastOrderUpTo),
+      advice.orderUpTo,
+      advice.basis,
+      advice.onHand,
+      advice.onOrder,
+      advice.position,
+      advice.action,
+      advice.expectedStockoutDate,
     ],
   );
 
@@ -363,6 +392,13 @@ async function calculateReorderRecommendation(variantId) {
     product_id: v.product_id,
     product_name: v.product_name,
     current_stock: Number(v.stock_qty) || 0,
+    on_order: advice.onOrder,
+    inventory_position: advice.position,
+    action: advice.action,
+    basis: advice.basis,
+    order_up_to: advice.orderUpTo,
+    days_of_cover: advice.daysOfCover,
+    expected_stockout_date: advice.expectedStockoutDate,
     daily_avg_sales: Math.round(dailyAvg * 10000) / 10000,
     lead_time_days: leadTimeDays,
     safety_buffer_days: safetyBufferDays,
@@ -477,6 +513,36 @@ async function calculateAnnualStockPlan(variantId, year) {
 // =======================================================================
 // List APIs (used by the analytics UI)
 // =======================================================================
+// Advice from a stored recommendation row plus live stock (see listReorderRecommendations).
+function liveAdvice(r, multiplier) {
+  const onHand = Number(r.stock_qty) || 0;
+  const onOrder = Number(r.live_on_order) || 0;
+  const forecastRp = r.forecast_reorder_point != null ? Number(r.forecast_reorder_point) : Number(r.reorder_point) || 0;
+  const rate = Number(r.daily_avg_sales) * (r.is_peak_season ? Number(r.peak_multiplier) || 1 : 1);
+  return replenishment.decide({
+    onHand, quarantined: Number(r.quarantined) || 0, onOrder, position: onHand + onOrder,
+    reorderLevel: Number(r.reorder_level) || 0, wholeUnits: !r.sold_by || r.sold_by === 'piece',
+  }, {
+    dailyAvg: rate,
+    reorderPoint: forecastRp,
+    orderUpTo: r.forecast_order_up_to != null ? Number(r.forecast_order_up_to) : forecastRp + rate * replenishment.ORDER_COVER_DAYS,
+  }, { multiplier });
+}
+
+function adviceFields(a) {
+  return {
+    action: a.action,
+    basis: a.basis,
+    recommended_qty: a.recommendedQty,
+    reorder_point: a.reorderPoint ?? 0,
+    order_up_to: a.orderUpTo,
+    on_order: a.onOrder,
+    inventory_position: a.position,
+    days_of_cover: a.daysOfCover,
+    expected_stockout_date: a.expectedStockoutDate,
+  };
+}
+
 async function listReorderRecommendations({
   lowStockOnly = false,
   categoryId = null,
@@ -487,22 +553,28 @@ async function listReorderRecommendations({
     vals.push(categoryId);
     conds.push(`p.category_id = $${vals.length}`);
   }
-  if (lowStockOnly) {
-    conds.push('v.stock_qty <= COALESCE(rr.reorder_point, 0)');
-  }
+  // The advice is worked out now, from the stock on hand and on order at
+  // this moment, so a purchase order placed since the last calculation
+  // already counts (purchase decision audit P0).
   const { rows } = await query(
     `SELECT rr.*, v.stock_qty, p.name AS product_name, p.unit_label,
             pc.name AS category_name,
-            v.sku
+            v.sku, p.sold_by,
+            COALESCE(v.quarantine_qty, 0)::float8 AS quarantined,
+            ${replenishment.onOrderSql('v.id')}::float8 AS live_on_order,
+            COALESCE(v.reorder_threshold, p.reorder_threshold, 0)::float8 AS reorder_level
        FROM reorder_recommendations rr
        JOIN product_variants v ON v.id = rr.variant_id
        JOIN products p ON p.id = v.product_id
        LEFT JOIN product_categories pc ON pc.id = p.category_id
-      WHERE ${conds.join(' AND ')}
-      ORDER BY (v.stock_qty - rr.reorder_point) ASC, rr.calculated_at DESC`,
+      WHERE ${conds.join(' AND ')}`,
     vals,
   );
-  return rows.map((r) => ({
+  const multiplier = await replenishment.reorderMultiplier();
+  const items = rows.map((r) => ({ r, advice: liveAdvice(r, multiplier) }))
+    .filter(({ advice }) => !lowStockOnly || advice.action === 'buy')
+    .sort((a, b) => (a.advice.position - (a.advice.reorderPoint ?? 0)) - (b.advice.position - (b.advice.reorderPoint ?? 0)));
+  return items.map(({ r, advice }) => ({
     id: r.id,
     product_id: r.product_id,
     variant_id: r.variant_id,
@@ -511,8 +583,7 @@ async function listReorderRecommendations({
     category_name: r.category_name || null,
     unit_label: r.unit_label || 'pcs',
     current_stock: Number(r.stock_qty) || 0,
-    recommended_qty: Number(r.recommended_qty) || 0,
-    reorder_point: Number(r.reorder_point) || 0,
+    ...adviceFields(advice),
     daily_avg_sales: Number(r.daily_avg_sales) || 0,
     lead_time_days: r.lead_time_days,
     safety_buffer_days: r.safety_buffer_days,
@@ -540,7 +611,10 @@ async function dismissReorderRecommendation(id, userId) {
 
 async function getReorderForVariant(variantId) {
   const { rows } = await query(
-    `SELECT rr.*, v.stock_qty, p.name AS product_name, p.unit_label, v.sku
+    `SELECT rr.*, v.stock_qty, p.name AS product_name, p.unit_label, v.sku, p.sold_by,
+            COALESCE(v.quarantine_qty, 0)::float8 AS quarantined,
+            ${replenishment.onOrderSql('v.id')}::float8 AS live_on_order,
+            COALESCE(v.reorder_threshold, p.reorder_threshold, 0)::float8 AS reorder_level
        FROM reorder_recommendations rr
        JOIN product_variants v ON v.id = rr.variant_id
        JOIN products p ON p.id = v.product_id
@@ -552,13 +626,13 @@ async function getReorderForVariant(variantId) {
     return null;
   }
   const r = rows[0];
+  const advice = liveAdvice(r, await replenishment.reorderMultiplier());
   return {
     variant_id: r.variant_id,
     product_id: r.product_id,
     product_name: r.product_name,
     current_stock: Number(r.stock_qty) || 0,
-    recommended_qty: Number(r.recommended_qty),
-    reorder_point: Number(r.reorder_point),
+    ...adviceFields(advice),
     daily_avg_sales: Number(r.daily_avg_sales),
     lead_time_days: r.lead_time_days,
     safety_buffer_days: r.safety_buffer_days,

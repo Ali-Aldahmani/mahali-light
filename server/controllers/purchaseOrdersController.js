@@ -628,9 +628,22 @@ async function cancelPurchaseOrder(req, res, next, { draftOnly }) {
       });
       return { poNumber: po.po_number };
     });
+    await recheckReorderFor(id);
     return ok(res, { id, cancelled: true, poNumber: result.poNumber });
   } catch (err) {
     next(err);
+  }
+}
+
+// What is on order changed (sent, cancelled, remainder closed): low-stock
+// alerts count it, so look at this order's items again. Best effort, after commit.
+async function recheckReorderFor(poId) {
+  try {
+    const { rows } = await query(`SELECT DISTINCT variant_id FROM purchase_order_items WHERE purchase_order_id = $1`, [poId]);
+    const { checkVariants } = require('../services/reorderService');
+    await checkVariants(rows.map((r) => r.variant_id).filter(Boolean));
+  } catch (_e) {
+    // the hourly backstop re-checks every variant
   }
 }
 
@@ -673,6 +686,7 @@ async function confirm(req, res, next) {
       action: 'purchase_order.confirmed',
       performedBy: req.user.id,
     });
+    await recheckReorderFor(id);
 
     const { rows: full } = await query(`${LIST_SELECT} WHERE po.id = $1`, [id]);
     return ok(res, shapePO(full[0], includeCost));
@@ -838,6 +852,7 @@ async function closeRemainder(req, res, next) {
   try {
     const { reason } = closeRemainderSchema.parse(req.body || {});
     await closeRemainderService({ poId: req.params.id, reason, userId: req.user.id });
+    await recheckReorderFor(req.params.id);
     const { rows: full } = await query(`${LIST_SELECT} WHERE po.id = $1`, [req.params.id]);
     return ok(res, shapePO(full[0], canSeeCost(req)));
   } catch (err) {
