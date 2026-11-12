@@ -1,4 +1,4 @@
-const { query, withTransaction } = require('../db/postgres');
+const { query, withTransaction, setActor } = require('../db/postgres');
 const { todayStoreDate } = require('../utils/dates');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { assertNotOwnRequest } = require('../../shared/authzPolicy');
@@ -588,7 +588,22 @@ async function findStockShortfalls(client, items, { allowNegative = false } = {}
 // closedDrawerReason: a manager's reason for taking cash while the drawer is
 // closed (sales audit SI-06). Without it, a cash sale needs an open drawer;
 // the caller checks the cash.override_closed_drawer permission.
-async function confirmInvoice({ invoiceId, employeeId, io = null, closedDrawerReason = null }) {
+// A sale refused for short stock is a lost sale: record it (after the
+// refused transaction has rolled back), then refuse as before.
+async function confirmInvoice(args) {
+  try {
+    return await confirmInvoiceChecked(args);
+  } catch (err) {
+    if (err && err.code === ERROR_CODES.BIZ_INSUFFICIENT_STOCK && err.details?.shortfalls) {
+      await require('./lostSalesService').recordRefusedSale({
+        invoiceId: args.invoiceId, shortfalls: err.details.shortfalls, userId: args.employeeId,
+      });
+    }
+    throw err;
+  }
+}
+
+async function confirmInvoiceChecked({ invoiceId, employeeId, io = null, closedDrawerReason = null }) {
   const result = await withTransaction(async (client) => {
     const { rows: invRows } = await client.query(
       `SELECT * FROM invoices WHERE id = $1 FOR UPDATE`,
@@ -1256,6 +1271,8 @@ async function applyEditRequest({ requestId, managerId, invoiceId = null, approv
   const canOverridePrice =
     approverPermissions.includes('invoice.override_price') || approverPermissions.includes('*');
   const result = await withTransaction(async (client) => {
+    // Each line change is recorded (invoice_line_changes) with who and which request.
+    await setActor(client, managerId, { 'app.edit_request_id': requestId });
     const { rows: reqRows } = await client.query(
       `SELECT * FROM invoice_edit_requests WHERE id = $1 FOR UPDATE`,
       [requestId],

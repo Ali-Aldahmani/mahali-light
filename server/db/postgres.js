@@ -51,16 +51,29 @@ async function query(text, params) {
 
 const DEADLOCK = '40P01';
 
+// For the rest of this transaction, who is making changes (app.user_id).
+function setActor(client, userId, extra = {}) {
+  const pairs = [['app.user_id', userId], ...Object.entries(extra)];
+  return client.query(
+    `SELECT ${pairs.map((_, i) => `set_config($${i * 2 + 1}, $${i * 2 + 2}, true)`).join(', ')}`,
+    pairs.flatMap(([k, v]) => [k, v == null ? '' : String(v)]),
+  );
+}
+
 // retryOnDeadlock: when PostgreSQL aborts the transaction as a deadlock
 // victim, run the whole callback again (up to 3 attempts). Only for callbacks
 // whose effects are all inside the transaction: no sockets, files or other
 // side effects before COMMIT.
-async function withTransaction(fn, { retryOnDeadlock = false } = {}) {
+// actorId: who is making the change, for database triggers that record
+// history (price changes, edits to confirmed sales, lead times). Same as
+// setActor(client, id) at the start of the transaction.
+async function withTransaction(fn, { retryOnDeadlock = false, actorId = null } = {}) {
   const attempts = retryOnDeadlock ? 3 : 1;
   for (let attempt = 1; ; attempt += 1) {
     const client = await getPool().connect();
     try {
       await client.query('BEGIN');
+      if (actorId) await setActor(client, actorId);
       const result = await fn(client);
       await client.query('COMMIT');
       return result;
@@ -73,4 +86,4 @@ async function withTransaction(fn, { retryOnDeadlock = false } = {}) {
   }
 }
 
-module.exports = { getPool, query, withTransaction, waitForDatabase };
+module.exports = { getPool, query, withTransaction, waitForDatabase, setActor };

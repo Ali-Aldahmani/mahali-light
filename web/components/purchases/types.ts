@@ -37,7 +37,7 @@ export interface POReceipt {
   recordedAt: string;
   recordedBy?: string | null;
   deliveryNote?: string | null;
-  lines: { itemId: string | null; variantId: string | null; quantity: number }[];
+  lines: { itemId: string | null; variantId: string | null; quantity: number; expiryDate?: string | null }[];
 }
 
 export interface PurchaseOrder {

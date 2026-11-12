@@ -313,10 +313,22 @@ async function receiveItems({ poId, items, employeeId, requestKey = null, delive
           WHERE id = $2`,
         [recvQty, i.id],
       );
+      // Expiry date of these goods, when they have one (data readiness 2026-11-12).
+      let expiry = null;
+      if (i.expiryDate) {
+        expiry = String(i.expiryDate).slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry) || Number.isNaN(Date.parse(expiry))) {
+          throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'The expiry date is not a valid date.', { status: 400 });
+        }
+        if (expiry < storeDate(delivered.at)) {
+          throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+            `The expiry date for ${item.variant_id} is before the goods arrived.`, { status: 400 });
+        }
+      }
       await client.query(
-        `INSERT INTO purchase_order_receipt_lines (receipt_id, purchase_order_item_id, variant_id, quantity)
-         VALUES ($1,$2,$3,$4)`,
-        [await receiptFor(), i.id, item.variant_id, recvQty],
+        `INSERT INTO purchase_order_receipt_lines (receipt_id, purchase_order_item_id, variant_id, quantity, expiry_date)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [await receiptFor(), i.id, item.variant_id, recvQty, expiry],
       );
 
       receivedValue = money(receivedValue + recvQty * Number(item.cost_price_per_unit));
@@ -459,7 +471,7 @@ async function receiveItems({ poId, items, employeeId, requestKey = null, delive
   // be accepted again while the order still had quantity left).
   const payload = {
     poId, deliveredAt: deliveredAt || null,
-    items: items.map((it) => ({ id: it.id, quantityReceived: Number(it.quantityReceived) })),
+    items: items.map((it) => ({ id: it.id, quantityReceived: Number(it.quantityReceived), expiryDate: it.expiryDate || null })),
   };
   return withTransaction(async (client) => {
     const { result, replayed } = await runOnce(

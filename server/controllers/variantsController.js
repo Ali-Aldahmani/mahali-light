@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { query, withTransaction } = require('../db/postgres');
+const { query, withTransaction, setActor } = require('../db/postgres');
 const { ok, created } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { nonNegativeQuantitySchema } = require('../utils/quantity');
@@ -152,6 +152,7 @@ async function create(req, res, next) {
       userId: req.user.id,
       payload: { productId: id, ...body },
     }, async () => {
+      await setActor(client, req.user.id);
       const { rows: dupSku } = await client.query(
         `SELECT id FROM product_variants WHERE sku = $1`,
         [sku],
@@ -263,6 +264,7 @@ async function update(req, res, next) {
     }
 
     const newAlerts = await withTransaction(async (client) => {
+      await setActor(client, req.user.id);
       if (body.sku && body.sku !== existing[0].sku) {
         const { rows: dup } = await client.query(
           `SELECT id FROM product_variants WHERE sku = $1 AND id <> $2`,

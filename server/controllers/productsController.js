@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { query, withTransaction } = require('../db/postgres');
+const { query, withTransaction, setActor } = require('../db/postgres');
 const { ok, created, parsePagination } = require('../utils/response');
 const { AppError, ERROR_CODES } = require('../../shared/errorCodes');
 const { redact } = require('../services/auditService');
@@ -327,6 +327,7 @@ async function create(req, res, next) {
       userId: req.user.id,
       payload: body,
     }, async () => {
+      await setActor(client, req.user.id);
       const { rows } = await client.query(
         `INSERT INTO products
            (name, description, category_id, brand,
@@ -450,6 +451,7 @@ async function update(req, res, next) {
       sets.push('updated_at = NOW()');
       params.push(id);
       newAlerts = await withTransaction(async (client) => {
+      await setActor(client, req.user.id);
         await client.query(
           `UPDATE products SET ${sets.join(', ')} WHERE id = $${params.length}`,
           params,

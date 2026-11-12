@@ -105,6 +105,11 @@ export default function DeliveryHistoryCard({
                 {r.lines.reduce((s, l) => s + Number(l.quantity), 0)} units
               </span>
             </div>
+            {r.lines.some((l) => l.expiryDate) && (
+              <p className="text-xs text-ink-muted">
+                Expires {Array.from(new Set(r.lines.map((l) => l.expiryDate).filter(Boolean) as string[])).map((d) => formatDate(d)).join(', ')}
+              </p>
+            )}
             <p className="text-xs text-ink-muted">
               {r.deliveredAtSource === 'backfilled'
                 ? 'From older records: arrival time is when it was entered'

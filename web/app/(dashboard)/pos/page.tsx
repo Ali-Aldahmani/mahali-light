@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { recordLostSale } from '@/services/storeDataService';
 import {
   Banknote,
   CheckCircle2,
@@ -298,6 +299,15 @@ function POSPageContent() {
     });
   }
 
+  // A customer wanted an item that's out of stock: recorded as a lost sale,
+  // so a later forecast doesn't read the empty shelf as no demand.
+  function handleOutOfStock(variant: any) {
+    if (!variant?.variantId) return;
+    recordLostSale({ variantId: variant.variantId, source: 'till_out_of_stock' })
+      .then(() => toast.info(`${variant.productName} is out of stock. Noted that a customer wanted it.`))
+      .catch(() => toast.error(`${variant.productName} is out of stock.`));
+  }
+
   function handleProductClick(variant: any) {
     const siblings = products.filter(
       (v) => v.productId === variant.productId,
@@ -377,6 +387,7 @@ function POSPageContent() {
         activeCategoryId={activeCategoryId}
         onCategoryChange={setActiveCategoryId}
         onProductClick={handleProductClick}
+        onOutOfStock={handleOutOfStock}
         onProductContextMenu={handleProductContextMenu}
         isOffline={isOffline}
       />
@@ -491,6 +502,7 @@ function ProductBrowser({
   activeCategoryId,
   onCategoryChange,
   onProductClick,
+  onOutOfStock,
   onProductContextMenu,
   isOffline,
 }: {
@@ -502,6 +514,7 @@ function ProductBrowser({
   activeCategoryId: string | number | null;
   onCategoryChange: (id: string | number | null) => void;
   onProductClick: (variant: any) => void;
+  onOutOfStock?: (variant: any) => void;
   onProductContextMenu?: (e: any, variant: any) => void;
   isOffline: boolean;
 }) {
@@ -568,6 +581,7 @@ function ProductBrowser({
                 key={v.variantId}
                 variant={v}
                 onClick={onProductClick}
+                onOutOfStock={onOutOfStock}
                 onContextMenu={onProductContextMenu}
               />
             ))}

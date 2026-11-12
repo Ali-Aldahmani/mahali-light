@@ -103,7 +103,7 @@ describe.skipIf(!enabled)('supplier delivery history on real PostgreSQL', () => 
     expect(first.deliveryNote).toBe('DN-1182');
     expect(new Date(first.recordedAt) - new Date(first.deliveredAt)).toBeGreaterThan(25 * 3600 * 1000);
     expect(second.deliveredAtSource).toBe('defaulted');
-    expect(first.lines).toEqual([{ itemId: po.items[0].id, variantId, quantity: 4 }]);
+    expect(first.lines).toEqual([{ itemId: po.items[0].id, variantId, quantity: 4, expiryDate: null }]);
     // Complete on the day the last goods arrived.
     expect(full.status).toBe('received');
     expect(dates.storeDate(new Date(full.receivedDate))).toBe(dates.todayStoreDate());

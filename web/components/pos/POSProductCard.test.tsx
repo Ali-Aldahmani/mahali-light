@@ -137,5 +137,13 @@ describe('POSProductCard & POSItemContextMenu', () => {
     fireEvent.click(editBtn);
     expect(onQuickEdit).toHaveBeenCalledWith(outOfStockVariant);
   });
-});
 
+  it('tapping an out-of-stock item reports it (a lost sale) instead of adding it', () => {
+    const onClick = vi.fn();
+    const onOutOfStock = vi.fn();
+    render(<POSProductCard variant={outOfStockVariant} onClick={onClick} onOutOfStock={onOutOfStock} />);
+    fireEvent.click(screen.getByRole('button'));
+    expect(onClick).not.toHaveBeenCalled();
+    expect(onOutOfStock).toHaveBeenCalledWith(outOfStockVariant);
+  });
+});

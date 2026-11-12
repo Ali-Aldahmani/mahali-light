@@ -18,10 +18,13 @@ export default function POSProductCard({
   variant,
   onClick,
   onContextMenu,
+  onOutOfStock,
 }: {
   variant: any;
   onClick?: (variant: any) => void;
   onContextMenu?: (e: any, variant: any) => void;
+  // Tapping an out-of-stock item: a customer wanted it (recorded as a lost sale).
+  onOutOfStock?: (variant: any) => void;
 }) {
   const stock = Number(variant.stockQty || 0);
   const out = stock <= 0;
@@ -33,7 +36,8 @@ export default function POSProductCard({
     <button
       type="button"
       aria-disabled={out}
-      onClick={out ? undefined : () => onClick?.(variant)}
+      onClick={out ? () => onOutOfStock?.(variant) : () => onClick?.(variant)}
+      title={out && onOutOfStock ? 'Out of stock: tap to record that a customer wanted it' : undefined}
       onContextMenu={(e) => {
         if (onContextMenu) {
           e.preventDefault();

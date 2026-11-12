@@ -54,6 +54,7 @@ const attendanceRouter = require('./routes/attendance');
 const leavesRouter = require('./routes/leaves');
 const leaveBalancesRouter = require('./routes/leaveBalances');
 const holidaysRouter = require('./routes/holidays');
+const storeDataRouter = require('./routes/storeData');
 const reportsRouter = require('./routes/reports');
 const billsRouter = require('./routes/bills');
 const billPaymentsRouter = require('./routes/billPayments');
@@ -376,6 +377,8 @@ async function bootstrap() {
   app.use('/api/leaves', leavesRouter);
   app.use('/api/leave-balances', leaveBalancesRouter);
   app.use('/api/holidays', holidaysRouter);
+  // Lost sales, promotions, store calendar, opening hours.
+  app.use('/api/store-data', storeDataRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/bills', billsRouter);
   app.use('/api/bill-payments', billPaymentsRouter);

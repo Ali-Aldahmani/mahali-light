@@ -20,6 +20,8 @@ interface ReceiveRow {
   alreadyReceived: number;
   remaining: number;
   receive: number;
+  // Expiry date of these goods, if they have one (YYYY-MM-DD).
+  expiry: string;
 }
 
 interface ReceiveItemsSlideOverProps {
@@ -53,6 +55,7 @@ export default function ReceiveItemsSlideOver({
         alreadyReceived: Number(it.quantityReceived || 0),
         remaining: Number(it.quantityRemaining),
         receive: Number(it.quantityRemaining),
+        expiry: '',
       }));
   }, [po]);
 
@@ -83,7 +86,7 @@ export default function ReceiveItemsSlideOver({
   async function submit() {
     const payload = items
       .filter((it) => Number(it.receive) > 0)
-      .map((it) => ({ id: it.id, quantityReceived: Number(it.receive) }));
+      .map((it) => ({ id: it.id, quantityReceived: Number(it.receive), expiryDate: it.expiry || null }));
     if (!payload.length) {
       toast.error('Enter at least one quantity to receive.');
       return;
@@ -180,6 +183,14 @@ export default function ReceiveItemsSlideOver({
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <input
+                  type="date"
+                  value={it.expiry}
+                  aria-label={`Expiry date for ${it.productName}`}
+                  title="Expiry date (optional)"
+                  onChange={(e) => setItems((prev) => prev.map((x, i) => (i === idx ? { ...x, expiry: e.target.value } : x)))}
+                  className="w-36 h-9 rounded-input border border-border bg-surface px-2 text-xs text-ink-muted focus:border-accent focus:outline-none"
+                />
                 <input
                   type="number"
                   step="0.01"

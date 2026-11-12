@@ -53,6 +53,7 @@ const receiveSchema = z.object({
       z.object({
         id: z.string().uuid(),
         quantityReceived: quantitySchema,
+        expiryDate: z.string().max(10).optional().nullable(),
       }),
     )
     .min(1),
@@ -292,7 +293,8 @@ async function getOne(req, res, next) {
       `SELECT r.id, r.delivered_at, r.delivered_at_source, r.recorded_at, r.delivery_note,
               u.username AS recorded_by,
               COALESCE(json_agg(json_build_object('itemId', l.purchase_order_item_id, 'variantId', l.variant_id,
-                                                  'quantity', l.quantity::float8)) FILTER (WHERE l.id IS NOT NULL), '[]') AS lines
+                                                  'quantity', l.quantity::float8, 'expiryDate', l.expiry_date::text))
+                       FILTER (WHERE l.id IS NOT NULL), '[]') AS lines
          FROM purchase_order_receipts r
          LEFT JOIN purchase_order_receipt_lines l ON l.receipt_id = r.id
          LEFT JOIN users u ON u.id = r.recorded_by

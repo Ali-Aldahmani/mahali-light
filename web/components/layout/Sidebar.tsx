@@ -21,6 +21,7 @@ import {
   Users,
   Banknote,
   CalendarClock,
+  CalendarDays,
   Wallet,
   Zap,
   LineChart,
@@ -102,6 +103,7 @@ const NAV: NavItem[] = [
   { to: '/categories', label: 'Categories', icon: FolderTree, permission: 'product.view' },
   { to: '/purchase-orders', label: 'Purchase orders', icon: Truck, permission: 'supplier.view', badge: 'po' },
   { to: '/invoices/edit-requests', label: 'Edit requests', icon: FileEdit, permission: 'invoice.edit_approve', badge: 'editRequests' },
+  { to: '/store-calendar', label: 'Store calendar', icon: CalendarDays, permission: 'settings.view' },
   { to: '/settings', label: 'Settings', icon: Settings, permission: 'settings.view' },
   { to: '/admin/error-logs', label: 'Error logs', icon: AlertCircle, permission: 'errors.view_all' },
 ];
