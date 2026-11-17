@@ -1,8 +1,9 @@
-import { Percent, ShieldAlert, Trash2 } from 'lucide-react';
+import { ShieldAlert, Trash2 } from 'lucide-react';
 import CartBatchPicker from '@/components/pos/CartBatchPicker';
 import Input from '../ui/Input';
 import { formatCurrency } from '@/lib/utils/format';
 import NumberField from '../ui/number-field/NumberField';
+import AnimatedNumber from '../ui/animated-number/AnimatedNumber';
 
 // Single cart line item with qty stepper, discount toggle (% or AED), and
 // remove. Discount toggle is local — the global posStore stores either
@@ -56,6 +57,15 @@ export default function CartItem({
   const restrictionHint = restrictionParts.length ? restrictionParts.join(' · ') : null;
   const maxDiscountPercentHint = restriction?.maxDiscountPercent ?? undefined;
   const maxDiscountAmountHint = restriction?.maxDiscountAmount ?? undefined;
+  // The steppers stop at these. A discount can never exceed the line itself;
+  // a restriction lowers the cap further. maxDiscountAmountHint is a PER-UNIT
+  // cap (see restrictionHint's "/unit" label above) while the AED field holds
+  // the discount for the WHOLE line, so it is scaled by quantity.
+  const maxPercent = Math.min(100, maxDiscountPercentHint != null ? Number(maxDiscountPercentHint) : 100);
+  const maxAmount =
+    maxDiscountAmountHint != null
+      ? Math.min(lineSubtotal, round2(Number(maxDiscountAmountHint) * (Number(item.quantity) || 1)))
+      : lineSubtotal;
 
   // Compact 2-line layout — POS cart is space-constrained.
   return (
@@ -121,65 +131,45 @@ export default function CartItem({
           </span>
         </div>
         <div className="text-sm font-semibold text-ink">
-          {formatCurrency(lineTotal)}
+          <AnimatedNumber value={lineTotal} />
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <div className="flex items-center rounded-input border border-border bg-surface overflow-hidden">
-          <button
-            type="button"
-            onClick={() =>
-              onDiscountChange({ percent: Number(item.discountPercent || 0) })
-            }
-            className={[
-              'h-7 px-2 text-xs',
-              item.discountPercent || (!item.discountPercent && !item.discountAmount)
-                ? 'bg-accent-light text-accent'
-                : 'text-ink-muted',
-            ].join(' ')}
-          >
-            <Percent className="h-3 w-3" />
-          </button>
-          <input
-            type="number"
-            min={0}
-            max={maxDiscountPercentHint}
-            step="1"
-            value={item.discountPercent || ''}
-            onChange={(e) =>
-              onDiscountChange({ percent: Number(e.target.value) })
-            }
-            placeholder="0"
-            className="h-7 w-12 text-xs text-ink text-right px-1.5 bg-transparent outline-none border-l border-border"
-          />
-        </div>
+      {/* Line discount: a percent or an AED amount. Setting one clears the
+          other in posStore. Typed values keep cent precision; each − / +
+          press moves a whole unit. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <NumberField
+          size="sm"
+          hideLabel
+          label={`Discount percent for ${item.productName}`}
+          min={0}
+          max={maxPercent}
+          step={0.01}
+          buttonStep={1}
+          formatOptions={{ minimumFractionDigits: 0, maximumFractionDigits: 2 }}
+          suffix="%"
+          limitHint={(edge, limit) => (edge === 'max' ? `Max discount ${limit}%` : 'No less than 0%')}
+          value={Number(item.discountPercent) || 0}
+          onValueChange={(n) => onDiscountChange({ percent: n })}
+        />
         <span className="text-[11px] text-ink-muted">or</span>
-        <div className="flex items-center rounded-input border border-border bg-surface overflow-hidden">
-          <span className="h-7 px-2 text-xs text-ink-muted flex items-center">
-            AED
-          </span>
-          <input
-            type="number"
-            min={0}
-            // maxDiscountAmountHint is a PER-UNIT cap (see restrictionHint's
-            // "/unit" label above); this field holds the discount for the
-            // WHOLE line, so the hint must be scaled by quantity or it
-            // under-caps any multi-unit line.
-            max={
-              maxDiscountAmountHint != null
-                ? maxDiscountAmountHint * (Number(item.quantity) || 1)
-                : undefined
-            }
-            step="1"
-            value={item.discountAmount || ''}
-            onChange={(e) =>
-              onDiscountChange({ amount: Number(e.target.value) })
-            }
-            placeholder="0.00"
-            className="h-7 w-16 text-xs text-ink text-right px-1.5 bg-transparent outline-none border-l border-border"
-          />
-        </div>
+        <NumberField
+          size="sm"
+          width={164}
+          hideLabel
+          label={`Discount amount in AED for ${item.productName}`}
+          min={0}
+          max={maxAmount}
+          step={0.01}
+          buttonStep={1}
+          prefix={'AED '}
+          limitHint={(edge, limit) =>
+            edge === 'max' ? `Max discount AED ${limit.toFixed(2)}` : 'No less than AED 0.00'
+          }
+          value={Number(item.discountAmount) || 0}
+          onValueChange={(n) => onDiscountChange({ amount: n })}
+        />
       </div>
 
       {restrictionHint && (
