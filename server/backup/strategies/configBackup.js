@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
+// archiver v8 exports format classes ({ ZipArchive, ... }), not a factory.
+const { ZipArchive } = require('archiver');
 
 function configDir() {
   return path.join(process.cwd(), 'server', 'config');
@@ -14,7 +15,7 @@ async function backupConfig(outputPath, { compressionLevel = 6 } = {}) {
 
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream(outputPath);
-    const archive = archiver('zip', {
+    const archive = new ZipArchive({
       zlib: { level: Math.max(0, Math.min(9, compressionLevel)) },
     });
 
@@ -40,7 +41,9 @@ async function backupConfig(outputPath, { compressionLevel = 6 } = {}) {
         dot: false,
       });
     }
-    archive.finalize();
+    // v8's finalize() returns a promise; its errors are also emitted, so
+    // route a rejection to reject() instead of leaving it unhandled.
+    archive.finalize().catch(reject);
   });
 }
 
