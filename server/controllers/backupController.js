@@ -14,6 +14,7 @@ const backupService = require('../backup/backupService');
 const nasDestination = require('../backup/destinations/nasDestination');
 const usbDestination = require('../backup/destinations/usbDestination');
 const retention = require('../backup/retention/retentionManager');
+const folderBrowser = require('../backup/folderBrowser');
 
 function zodFail(err) {
   return new AppError(
@@ -451,6 +452,56 @@ async function usbDrives(req, res, next) {
 }
 
 // =======================================================================
+// Folder picker for the Local path (folders on the server machine)
+// =======================================================================
+// Same rule as saving a new location: only an Admin can look around the
+// server's disk or create folders on it.
+function requireAdminForPaths(req) {
+  if (!isAdminActor(req.user)) {
+    throw new AppError(ERROR_CODES.AUTH_NO_PERMISSION, 'Only an Admin can choose backup locations.', { status: 403 });
+  }
+}
+
+// folderBrowser throws plain Errors carrying a status; give them an error code.
+function folderError(err) {
+  if (err instanceof AppError || !err.status) return err;
+  const code = err.status === 409 ? ERROR_CODES.RESOURCE_CONFLICT : ERROR_CODES.VALIDATION_FAILED;
+  return new AppError(code, err.message, { status: err.status });
+}
+
+async function browseFolders(req, res, next) {
+  try {
+    requireAdminForPaths(req);
+    const requested = typeof req.query.path === 'string' ? req.query.path.slice(0, 500) : '';
+    ok(res, await folderBrowser.browse(requested));
+  } catch (err) {
+    next(folderError(err));
+  }
+}
+
+const createFolderSchema = z.object({
+  parent: z.string().min(1).max(500),
+  name: z.string().min(1).max(255),
+});
+
+async function createFolder(req, res, next) {
+  try {
+    requireAdminForPaths(req);
+    const body = createFolderSchema.parse(req.body || {});
+    const result = await folderBrowser.createFolder(body.parent, body.name);
+    await logActivity({
+      entityType: 'backup',
+      action: 'backup.folder_created',
+      performedBy: req.user.id,
+      newValue: { path: result.path },
+    });
+    ok(res, result);
+  } catch (err) {
+    next(err.errors ? zodFail(err) : folderError(err));
+  }
+}
+
+// =======================================================================
 // Download (only if local file is still present)
 // =======================================================================
 async function downloadJob(req, res, next) {
@@ -517,6 +568,8 @@ module.exports = {
   destinations,
   testNas,
   usbDrives,
+  browseFolders,
+  createFolder,
   downloadJob,
   maintenanceStatus,
   runRetentionCleanup,
