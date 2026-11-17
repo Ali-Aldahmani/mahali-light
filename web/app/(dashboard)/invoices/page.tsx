@@ -10,6 +10,11 @@ import {
   TrendingUp,
   Calendar,
   ShoppingCart,
+  Download,
+  FileText,
+  FileSpreadsheet,
+  Sheet,
+  Loader2,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
@@ -25,13 +30,20 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useAuthStore } from '@/store/authStore';
 import { useInvoiceStore } from '@/store/invoiceStore';
 import { onInvoiceEvent } from '@/store/socketStore';
-import { listInvoices } from '@/services/invoiceService';
+import {
+  exportInvoices,
+  listInvoices,
+  type InvoiceExportFormat,
+} from '@/services/invoiceService';
+import DropdownMenu from '@/components/ui/dropdown-menu';
+import { toast } from '@/store/toastStore';
 import { formatCurrency, formatDateTime } from '@/lib/utils/format';
 import RowActions from '@/components/ui/RowActions';
 import { useInvoiceActions } from '@/components/invoices/useInvoiceActions';
 import AvatarGroup from '@/components/ui/avatar-group/AvatarGroup';
 import DateRangeField from '@/components/ui/DateRangeField';
 import CustomerHoverName from '@/components/customers/CustomerHoverName';
+import TriStateCheckbox from '@/components/ui/TriStateCheckbox';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -123,8 +135,97 @@ function InvoicesPageContent() {
 
   const summary = meta?.totals;
 
+  // Selection. `selectedIds` holds invoices ticked one by one (kept across
+  // pages); `allMatching` means every invoice matching the current filters,
+  // including the ones on pages that are not loaded.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [allMatching, setAllMatching] = useState(false);
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+    setAllMatching(false);
+  }
+
+  // A selection made under one set of filters does not carry to another.
+  useEffect(() => {
+    clearSelection();
+  }, [debouncedSearch, status, paymentStatus, dateFrom, dateTo]);
+
+  const total = meta?.total || 0;
+  const pageSelectedCount = allMatching
+    ? rows.length
+    : rows.filter((r) => selectedIds.has(r.id)).length;
+  const pageState: 'all' | 'some' | 'none' =
+    rows.length > 0 && pageSelectedCount === rows.length
+      ? 'all'
+      : pageSelectedCount > 0
+        ? 'some'
+        : 'none';
+  const selectedCount = allMatching ? total : selectedIds.size;
+
+  function toggleRow(id: string) {
+    // Unticking one invoice out of "all matching" leaves the rest of this
+    // page selected; the unloaded pages can no longer be counted on.
+    const base = allMatching ? new Set<string>(rows.map((r) => r.id)) : new Set(selectedIds);
+    if (base.has(id)) base.delete(id);
+    else base.add(id);
+    setAllMatching(false);
+    setSelectedIds(base);
+  }
+
+  function togglePage() {
+    if (allMatching) {
+      clearSelection();
+      return;
+    }
+    const next = new Set(selectedIds);
+    if (pageState === 'all') rows.forEach((r) => next.delete(r.id));
+    else rows.forEach((r) => next.add(r.id));
+    setSelectedIds(next);
+  }
+
+  const canDownload = permissions.includes('invoice.download');
+  const [downloading, setDownloading] = useState(false);
+
+  async function download(format: InvoiceExportFormat) {
+    setDownloading(true);
+    try {
+      const res = await exportInvoices(
+        format,
+        allMatching
+          ? { filters: { search: debouncedSearch, status, paymentStatus, dateFrom, dateTo } }
+          : { ids: [...selectedIds] },
+      );
+      toast.success(`Downloaded ${res.filename}.`);
+    } catch (err: any) {
+      toast.error(err?.message || 'Download failed.');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   const columns = useMemo<TableColumn[]>(
     () => [
+      {
+        key: 'select',
+        header: (
+          <TriStateCheckbox
+            checked={pageState === 'all'}
+            indeterminate={pageState === 'some'}
+            onChange={togglePage}
+            aria-label="Select all invoices on this page"
+          />
+        ),
+        sortable: false,
+        width: 38,
+        render: (r: any) => (
+          <TriStateCheckbox
+            checked={allMatching || selectedIds.has(r.id)}
+            onChange={() => toggleRow(r.id)}
+            aria-label={`Select ${r.invoiceNumber}`}
+          />
+        ),
+      },
       {
         key: 'invoiceNumber',
         header: 'Invoice',
@@ -238,7 +339,8 @@ function InvoicesPageContent() {
         ),
       },
     ],
-    [router, permissions],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [router, permissions, rows, selectedIds, allMatching],
   );
 
   return (
@@ -328,6 +430,46 @@ function InvoicesPageContent() {
           }}
         />
       </div>
+
+      {selectedCount > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-accent/30 bg-accent-light px-4 py-2.5">
+          {canDownload && (
+            <div className="order-last ml-auto">
+              <DropdownMenu
+                label={downloading ? 'Downloading…' : 'Download'}
+                icon={downloading ? <Loader2 className="animate-spin" /> : <Download />}
+                disabled={downloading}
+                items={[
+                  { label: 'PDF', icon: <FileText />, onSelect: () => void download('pdf') },
+                  { label: 'Excel', icon: <FileSpreadsheet />, onSelect: () => void download('excel') },
+                  { label: 'CSV', icon: <Sheet />, onSelect: () => void download('csv') },
+                ]}
+              />
+            </div>
+          )}
+          <span className="text-sm text-accent font-medium">
+            {allMatching
+              ? `All ${total} invoices selected`
+              : `${selectedCount} invoice${selectedCount === 1 ? '' : 's'} selected`}
+          </span>
+          {!allMatching && total > selectedIds.size && (
+            <button
+              type="button"
+              onClick={() => setAllMatching(true)}
+              className="text-xs text-accent hover:text-ink underline"
+            >
+              Select all {total} invoices
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="text-xs text-ink-muted hover:text-ink underline"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
 
       <Table
         columns={columns}

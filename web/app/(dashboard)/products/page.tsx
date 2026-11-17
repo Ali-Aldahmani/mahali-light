@@ -44,6 +44,7 @@ import ProductColumnsConfig, {
   useProductColumns,
 } from '@/components/products/ProductColumnsConfig';
 import { highlightText } from '@/lib/utils/highlight';
+import TriStateCheckbox from '@/components/ui/TriStateCheckbox';
 
 const SOLD_BY_OPTIONS = [
   { value: '', label: 'All units' },
@@ -65,35 +66,6 @@ const STATUS_FILTER = [
   { value: 'false', label: 'Inactive only' },
   { value: 'all', label: 'All statuses' },
 ];
-
-function TriStateCheckbox({
-  checked,
-  indeterminate = false,
-  onChange,
-  'aria-label': ariaLabel,
-}: {
-  checked: boolean;
-  indeterminate?: boolean;
-  onChange: () => void;
-  'aria-label'?: string;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (ref.current) ref.current.indeterminate = Boolean(indeterminate);
-  }, [indeterminate]);
-
-  return (
-    <input
-      ref={ref}
-      type="checkbox"
-      checked={checked}
-      onChange={onChange}
-      onClick={(e) => e.stopPropagation()}
-      aria-label={ariaLabel}
-      className="rounded border-border text-accent focus:ring-accent"
-    />
-  );
-}
 
 function ProductsPageContent() {
   const router = useRouter();

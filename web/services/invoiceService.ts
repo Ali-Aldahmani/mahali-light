@@ -5,6 +5,8 @@ import {
   apiPut,
   apiDelete,
 } from './http';
+import { getApiBase } from '@/lib/config';
+import { useAuthStore } from '@/store/authStore';
 import {
   invoiceDetailSchema,
   invoiceConfirmSchema,
@@ -102,4 +104,64 @@ export async function getInvoicePayments(id): Promise<InvoicePayment[]> {
 
 export function nextInvoiceNumber(pcIdentifier) {
   return apiGet(`/invoices/next-number?${toParams({ pcIdentifier })}`);
+}
+
+export type InvoiceExportFormat = 'pdf' | 'excel' | 'csv';
+export type InvoiceExportFilters = {
+  search?: string;
+  status?: string;
+  paymentStatus?: string;
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+// Download the chosen invoices: PDF (one file, or a zip of several),
+// Excel or CSV. Pass `ids` for invoices ticked one by one, or `filters` for
+// every invoice matching the list's filters.
+export async function exportInvoices(
+  format: InvoiceExportFormat,
+  selection: { ids: string[] } | { filters: InvoiceExportFilters },
+): Promise<{ filename: string }> {
+  const token = useAuthStore.getState().token;
+  const body =
+    'ids' in selection
+      ? { format, ids: selection.ids }
+      : {
+          format,
+          // Empty filters mean "no filter", not "match the empty string".
+          filters: Object.fromEntries(
+            Object.entries(selection.filters).filter(([, v]) => v),
+          ),
+        };
+  const res = await fetch(`${getApiBase()}/invoices/export`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text;
+    try {
+      message = JSON.parse(text)?.error?.message || text;
+    } catch {
+      // Not JSON; use the text as is.
+    }
+    throw new Error(message || `Download failed (${res.status})`);
+  }
+  const cd = res.headers.get('Content-Disposition') || '';
+  const filename =
+    /filename="?([^"]+)"?/i.exec(cd)?.[1] || `invoices.${format === 'excel' ? 'xlsx' : format}`;
+  const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 60_000);
+  return { filename };
 }

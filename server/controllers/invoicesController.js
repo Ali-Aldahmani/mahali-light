@@ -223,48 +223,55 @@ const INVOICE_SELECT = `
 
 // -- list -----------------------------------------------------------------
 
+// The invoice list's filters, shared with the bulk export so "all matching
+// invoices" there means exactly what the list shows.
+function buildListFilters(q = {}) {
+  const where = [];
+  const params = [];
+
+  if (q.search) {
+    params.push(`%${q.search}%`);
+    const i = params.length;
+    where.push(
+      `(i.invoice_number ILIKE $${i} OR c.name ILIKE $${i} OR c.phone ILIKE $${i}
+        OR i.customer_snapshot->>'name' ILIKE $${i} OR i.customer_snapshot->>'phone' ILIKE $${i})`,
+    );
+  }
+  if (q.status) {
+    params.push(q.status);
+    where.push(`i.status = $${params.length}`);
+  }
+  if (q.paymentStatus) {
+    params.push(q.paymentStatus);
+    where.push(`i.payment_status = $${params.length}`);
+  }
+  if (q.customerId) {
+    params.push(q.customerId);
+    where.push(`i.customer_id = $${params.length}`);
+  }
+  if (q.createdBy) {
+    params.push(q.createdBy);
+    where.push(`i.created_by = $${params.length}`);
+  }
+  if (q.pcIdentifier) {
+    params.push(q.pcIdentifier);
+    where.push(`i.pc_identifier = $${params.length}`);
+  }
+  if (q.dateFrom) {
+    params.push(q.dateFrom);
+    where.push(`i.created_at >= $${params.length}`);
+  }
+  if (q.dateTo) {
+    params.push(q.dateTo);
+    where.push(`i.created_at < ($${params.length}::date + interval '1 day')`);
+  }
+  return { where, params };
+}
+
 async function list(req, res, next) {
   try {
     const { page, limit, offset } = parsePagination(req, { defaultLimit: 25 });
-    const where = [];
-    const params = [];
-
-    if (req.query.search) {
-      params.push(`%${req.query.search}%`);
-      const i = params.length;
-      where.push(
-        `(i.invoice_number ILIKE $${i} OR c.name ILIKE $${i} OR c.phone ILIKE $${i}
-          OR i.customer_snapshot->>'name' ILIKE $${i} OR i.customer_snapshot->>'phone' ILIKE $${i})`,
-      );
-    }
-    if (req.query.status) {
-      params.push(req.query.status);
-      where.push(`i.status = $${params.length}`);
-    }
-    if (req.query.paymentStatus) {
-      params.push(req.query.paymentStatus);
-      where.push(`i.payment_status = $${params.length}`);
-    }
-    if (req.query.customerId) {
-      params.push(req.query.customerId);
-      where.push(`i.customer_id = $${params.length}`);
-    }
-    if (req.query.createdBy) {
-      params.push(req.query.createdBy);
-      where.push(`i.created_by = $${params.length}`);
-    }
-    if (req.query.pcIdentifier) {
-      params.push(req.query.pcIdentifier);
-      where.push(`i.pc_identifier = $${params.length}`);
-    }
-    if (req.query.dateFrom) {
-      params.push(req.query.dateFrom);
-      where.push(`i.created_at >= $${params.length}`);
-    }
-    if (req.query.dateTo) {
-      params.push(req.query.dateTo);
-      where.push(`i.created_at < ($${params.length}::date + interval '1 day')`);
-    }
+    const { where, params } = buildListFilters(req.query);
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const { rows: countRows } = await query(
@@ -855,6 +862,9 @@ async function takeOver(req, res, next) {
 module.exports = {
   checkoutStatus,
   list,
+  buildListFilters,
+  INVOICE_SELECT,
+  shapeInvoice,
   getOne,
   create,
   updateItems,

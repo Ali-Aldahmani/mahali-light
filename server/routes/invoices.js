@@ -3,6 +3,7 @@ const invoices = require('../controllers/invoicesController');
 const payments = require('../controllers/invoicePaymentsController');
 const editRequests = require('../controllers/invoiceEditRequestsController');
 const pdf = require('../controllers/pdfController');
+const invoiceExport = require('../controllers/invoiceExportController');
 const { requireAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 
@@ -15,6 +16,13 @@ router.get('/checkout/:checkoutId', requirePermission('invoice.create'), invoice
 
 router.get('/', requirePermission('invoice.view'), invoices.list);
 router.post('/', requirePermission('invoice.create'), invoices.create);
+// Bulk download of selected invoices (PDF zip, Excel, CSV). Before '/:id'.
+router.post(
+  '/export',
+  requirePermission('invoice.view'),
+  requirePermission('invoice.download'),
+  invoiceExport.exportInvoices,
+);
 
 router.get('/:id', requirePermission('invoice.view'), invoices.getOne);
 router.put('/:id/items', requirePermission('invoice.create'), invoices.updateItems);
