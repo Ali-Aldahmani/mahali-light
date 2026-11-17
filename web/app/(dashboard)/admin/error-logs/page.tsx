@@ -16,6 +16,7 @@ import { formatDateTime, storeDate } from '@/lib/utils/format';
 import { toast } from '@/store/toastStore';
 import Select from '@/components/ui/Select';
 import Skeleton from '@/components/ui/skeleton';
+import Pagination from '@/components/ui/pagination/Pagination';
 
 const SEV_TONE: Record<string, string> = {
   critical: 'error',
@@ -24,6 +25,9 @@ const SEV_TONE: Record<string, string> = {
   info: 'muted',
 };
 
+// The server caps a page at 50 rows and defaults to 5.
+const PAGE_SIZES = [5, 25, 50];
+
 function ErrorLogsAdminPageInner() {
   const [rows, setRows] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
@@ -31,6 +35,9 @@ function ErrorLogsAdminPageInner() {
   const [loading, setLoading] = useState(true);
   const [severity, setSeverity] = useState('');
   const [resolved, setResolved] = useState('false');
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,9 +45,19 @@ function ErrorLogsAdminPageInner() {
       const res = await listErrorLogs({
         severity: severity || undefined,
         resolved,
-        limit: 80,
+        limit: pageSize,
+        page,
       });
+      const nextTotal = Number(res.meta?.pagination?.total) || 0;
+      const lastPage = Math.max(1, Math.ceil(nextTotal / pageSize));
+      // Resolving or cleaning up the last rows of the last page leaves it
+      // empty: step back to the new last page instead of showing nothing.
+      if (page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
       setRows(res.data || []);
+      setTotal(nextTotal);
       setSummary(res.meta?.summary);
       setEscalations(res.meta?.escalations || []);
     } catch (err: any) {
@@ -48,11 +65,13 @@ function ErrorLogsAdminPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [severity, resolved]);
+  }, [severity, resolved, pageSize, page]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   const resolve = async (id: string) => {
     const note = window.prompt('Resolution note (optional):');
@@ -139,7 +158,10 @@ function ErrorLogsAdminPageInner() {
         <Select
           containerClassName="w-44"
           value={severity}
-          onChange={(v) => setSeverity(v)}
+          onChange={(v) => {
+            setSeverity(v);
+            setPage(1);
+          }}
           options={[
             { value: '', label: 'All severities' },
             { value: 'critical', label: 'Critical' },
@@ -151,12 +173,24 @@ function ErrorLogsAdminPageInner() {
         <Select
           containerClassName="w-40"
           value={resolved}
-          onChange={(v) => setResolved(v)}
+          onChange={(v) => {
+            setResolved(v);
+            setPage(1);
+          }}
           options={[
             { value: 'false', label: 'Unresolved' },
             { value: 'true', label: 'Resolved' },
             { value: '', label: 'All' },
           ]}
+        />
+        <Select
+          containerClassName="w-36"
+          value={pageSize}
+          onChange={(v) => {
+            setPageSize(Number(v));
+            setPage(1);
+          }}
+          options={PAGE_SIZES.map((n) => ({ value: n, label: `${n} per page` }))}
         />
       </div>
 
@@ -177,6 +211,13 @@ function ErrorLogsAdminPageInner() {
               <tr>
                 <td colSpan={6} className="px-3 py-4">
                   <Skeleton lines={5} label="Loading error logs" />
+                </td>
+              </tr>
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-3 py-6 text-center text-ink-muted">
+                  No error logs match these filters.
                 </td>
               </tr>
             )}
@@ -210,6 +251,20 @@ function ErrorLogsAdminPageInner() {
           </tbody>
         </table>
       </div>
+
+      {total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-ink-muted">
+            Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+          </p>
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            onPageChange={(p) => setPage(Math.min(Math.max(1, p), pageCount))}
+            label="Error log pages"
+          />
+        </div>
+      )}
     </div>
   );
 }

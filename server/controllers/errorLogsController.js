@@ -5,9 +5,17 @@ const errorLogService = require('../services/errorLogService');
 const { getRecentEscalations } = require('../services/escalationService');
 const { logActivity } = require('../utils/activityLog');
 
+// The Error logs page shows 5, 25 or 50 rows a page. Exports and the summary
+// cards have their own queries, so the list never has to load every row.
+const LIST_DEFAULT_LIMIT = 5;
+const LIST_MAX_LIMIT = 50;
+
 async function list(req, res, next) {
   try {
-    const { page, limit, offset } = parsePagination(req, { defaultLimit: 50 });
+    const { page, limit, offset } = parsePagination(req, {
+      defaultLimit: LIST_DEFAULT_LIMIT,
+      maxLimit: LIST_MAX_LIMIT,
+    });
     const result = await errorLogService.listErrors({
       page,
       limit,
@@ -20,7 +28,12 @@ async function list(req, res, next) {
       to: req.query.to || null,
     });
     ok(res, result.rows, {
-      pagination: { page, limit, total: result.total },
+      pagination: {
+        page,
+        limit,
+        total: result.total,
+        pages: Math.ceil(result.total / limit),
+      },
       summary: await errorLogService.getSummary(),
       escalations: await getRecentEscalations(),
     });

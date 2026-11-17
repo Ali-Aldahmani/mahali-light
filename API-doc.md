@@ -17578,7 +17578,7 @@ List error logs.
 | Name | Parsing / default |
 | --- | --- |
 | page | `number, minimum 1, default 1` |
-| limit | `number; { defaultLimit: 50 }` |
+| limit | `number, 1-50, default 5` (values above 50 are clamped to 50) |
 | code | Optional raw query string; used directly in filtering. No field schema. |
 | severity | Optional raw query string; used directly in filtering. No field schema. |
 | resolved | Optional raw query string; used directly in filtering. No field schema. |
@@ -17597,7 +17597,7 @@ List error logs.
 }
 ```
 
-**Response contract:** HTTP 200: `data = result.rows`; `meta = { pagination: { page, limit, total: result.total }, summary: await errorLogService.getSummary(), escalations: await getRecentEscalations(), }`. Field construction, nested item projections, raw-row selections, and conditional fields are given in [the response projection reference](#projection-server-controllers-errorlogscontroller-js-list).
+**Response contract:** HTTP 200: `data = result.rows`; `meta = { pagination: { page, limit, total: result.total, pages }, summary: await errorLogService.getSummary(), escalations: await getRecentEscalations(), }`. Field construction, nested item projections, raw-row selections, and conditional fields are given in [the response projection reference](#projection-server-controllers-errorlogscontroller-js-list).
 
 **Errors and restrictions:** common errors apply. No additional explicit business rejection is defined in the traced handler. Empty list responses do not imply a parent-existence check.
 
