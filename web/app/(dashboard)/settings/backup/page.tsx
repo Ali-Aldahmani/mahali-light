@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, Database, Server, ShieldCheck, Trash2, History,
+  Activity, Database, Server, ShieldCheck, Trash2, History, FolderOpen,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
@@ -15,6 +15,7 @@ import BackupStatusCard from '@/components/backup/BackupStatusCard';
 import BackupJobRow from '@/components/backup/BackupJobRow';
 import RetentionSlider from '@/components/backup/RetentionSlider';
 import RestoreConfirmModal from '@/components/backup/RestoreConfirmModal';
+import ServerFolderPicker from '@/components/backup/ServerFolderPicker';
 import { downloadBackup } from '@/services/backupService';
 import { toast } from '@/store/toastStore';
 import Skeleton from '@/components/ui/skeleton';
@@ -254,6 +255,7 @@ function BackupSettingsPageInner() {
           draft={draft}
           setDraft={setDraft}
           canConfigure={canConfigure}
+          isAdmin={role === 'Admin'}
           usbDrives={usbDrives}
           nasTesting={nasTesting}
           onTestNas={async () => {
@@ -311,6 +313,7 @@ function SettingsForm({
   draft,
   setDraft,
   canConfigure,
+  isAdmin,
   usbDrives,
   nasTesting,
   onTestNas,
@@ -319,12 +322,16 @@ function SettingsForm({
   draft: Record<string, any>;
   setDraft: (updater: (d: any) => any) => void;
   canConfigure: boolean;
+  isAdmin: boolean;
   usbDrives: any[];
   nasTesting: boolean;
   onTestNas: () => void;
   onRetentionCleanup: () => void;
 }) {
   const set = (patch: Record<string, any>) => setDraft((d: any) => ({ ...d, ...patch }));
+  const [pickingFolder, setPickingFolder] = useState(false);
+  // Only an Admin can change backup locations (the server enforces it too).
+  const canChoosePath = canConfigure && isAdmin;
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -367,12 +374,38 @@ function SettingsForm({
           helper="Stores backups on the server PC."
           disabled={!canConfigure}
         />
-        <Input
-          label="Local path"
-          value={draft.local_path || ''}
-          onChange={(e: any) => set({ local_path: e.target.value })}
-          disabled={!canConfigure}
-          hint="Absolute or relative path. Default ./backups."
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="backup-local-path" className="text-sm font-medium text-ink">Local path</label>
+          <div className="flex gap-2">
+            <Input
+              id="backup-local-path"
+              value={draft.local_path || ''}
+              onChange={(e: any) => set({ local_path: e.target.value })}
+              disabled={!canChoosePath}
+              placeholder="./backups"
+              containerClassName="flex-1 min-w-0"
+            />
+            <Button
+              variant="secondary"
+              leftIcon={<FolderOpen size={15} />}
+              onClick={() => setPickingFolder(true)}
+              disabled={!canChoosePath}
+            >
+              Browse…
+            </Button>
+          </div>
+          <p className="text-xs text-ink-muted">
+            Click Browse to pick a folder on the server, or type the full path. Default ./backups.
+          </p>
+        </div>
+        <ServerFolderPicker
+          open={pickingFolder}
+          initialPath={draft.local_path || ''}
+          onCancel={() => setPickingFolder(false)}
+          onSelect={(p) => {
+            set({ local_path: p });
+            setPickingFolder(false);
+          }}
         />
 
         <div className="mt-4">

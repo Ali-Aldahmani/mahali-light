@@ -16,6 +16,9 @@ router.get('/jobs/:id/download', requirePermission('backup.download'), ctrl.down
 router.get('/disk-usage', requirePermission('backup.view'), ctrl.diskUsage);
 router.get('/destinations', requirePermission('backup.view'), ctrl.destinations);
 router.get('/usb-drives', requirePermission('backup.view'), ctrl.usbDrives);
+// Folder picker for the Local path. The handlers also require an Admin.
+router.get('/folders', requirePermission('backup.configure'), ctrl.browseFolders);
+router.post('/folders', requirePermission('backup.configure'), ctrl.createFolder);
 
 // Settings
 router.get('/settings', requirePermission('backup.view'), ctrl.getSettings);

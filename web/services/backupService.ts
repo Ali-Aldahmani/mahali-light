@@ -82,3 +82,21 @@ export async function downloadBackup(jobId, jobNumber, localFilePath?: string | 
   window.URL.revokeObjectURL(link.href);
   return { success: true };
 }
+
+// Folder picker for the Local path: folders on the server machine, since
+// that is where backups are written. Admin only.
+export interface ServerFolderListing {
+  path: string;
+  parent: string | null;
+  folders: { name: string; path: string }[];
+  truncated: boolean;
+  writable: boolean;
+  roots: { name: string; path: string }[];
+  sep: string;
+}
+export function browseServerFolders(path?: string): Promise<ServerFolderListing> {
+  return apiGet(`/backup/folders${qs({ path })}`);
+}
+export function createServerFolder(parent: string, name: string): Promise<ServerFolderListing> {
+  return apiPost(`/backup/folders`, { parent, name });
+}
