@@ -14,6 +14,8 @@ import {
   X,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import NumberField from '@/components/ui/number-field/NumberField';
+import AnimatedNumber from '@/components/ui/animated-number/AnimatedNumber';
 import Input from '@/components/ui/Input';
 import CustomerSelect from '@/components/ui/CustomerSelect';
 import InvoiceTotalsBlock from '@/components/ui/InvoiceTotalsBlock';
@@ -777,15 +779,28 @@ function CartPanel({
       <div className="border-t border-border px-4 py-3 space-y-3">
         <div className="flex items-center gap-2">
           <span className="text-xs text-ink-muted">Invoice discount (AED)</span>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={invoiceDiscount || ''}
-            onChange={(e) => onInvoiceDiscountChange(e.target.value)}
-            placeholder="0.00"
-            className="ml-auto h-7 w-24 text-xs text-ink text-right px-2 rounded-input border border-border bg-surface outline-none"
-          />
+          <div className="ml-auto">
+            {/* Stops at the lines' total after their own discounts, the same
+                cap posStore.setInvoiceDiscount and the server apply. */}
+            <NumberField
+              size="sm"
+              width={148}
+              hideLabel
+              label="Invoice discount in AED"
+              min={0}
+              max={Math.max(
+                0,
+                Math.round(((Number(totals.subtotal) || 0) - (Number(totals.itemDiscount) || 0)) * 100) / 100,
+              )}
+              step={0.01}
+              buttonStep={1}
+              limitHint={(edge, limit) =>
+                edge === 'max' ? `Max discount AED ${limit.toFixed(2)}` : 'No less than AED 0.00'
+              }
+              value={Number(invoiceDiscount) || 0}
+              onValueChange={(n) => onInvoiceDiscountChange(n)}
+            />
+          </div>
         </div>
         <InvoiceTotalsBlock
           subtotal={totals.subtotal}
@@ -795,6 +810,7 @@ function CartPanel({
           tax={totals.tax}
           total={totals.total}
           size="md"
+          animated
         />
         <Button
           className="w-full"
@@ -803,7 +819,9 @@ function CartPanel({
           disabled={cart.length === 0}
           leftIcon={<Banknote className="h-4 w-4" />}
         >
-          Confirm &amp; Pay · {formatCurrency(totals.total)}
+          <span className="whitespace-pre">
+            Confirm &amp; Pay · <AnimatedNumber value={Number(totals.total) || 0} />
+          </span>
         </Button>
       </div>
     </div>
