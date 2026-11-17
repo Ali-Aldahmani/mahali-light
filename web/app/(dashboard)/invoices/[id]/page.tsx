@@ -74,7 +74,11 @@ function InvoiceDetailPageContent() {
   const [payOpen, setPayOpen] = useState(false);
   const [warranties, setWarranties] = useState<any[]>([]);
   // Header actions (preview, print, PDF, request edit, cancel) - shared with the Invoices list.
-  const invoiceActions = useInvoiceActions({ onChanged: () => load() });
+  const invoiceActions = useInvoiceActions({
+    onChanged: () => load(),
+    // This page's invoice is gone; go back to the list.
+    onDeleted: () => router.push('/invoices'),
+  });
 
   async function loadWarranties() {
     try {

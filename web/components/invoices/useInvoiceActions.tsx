@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { ArrowUpRight, Download, Eye, Printer, ReceiptText, Send, X } from 'lucide-react';
+import { ArrowUpRight, Download, Eye, Printer, ReceiptText, Send, Trash2, X } from 'lucide-react';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PrintPreviewModal from '@/components/ui/PrintPreviewModal';
 import type { RowAction } from '@/components/ui/RowActions';
 import EditRequestSlideOver from '@/components/invoices/EditRequestSlideOver';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/store/toastStore';
-import { cancelInvoice, getInvoice } from '@/services/invoiceService';
+import { cancelInvoice, deleteInvoice, getInvoice } from '@/services/invoiceService';
 import { downloadDocumentPdf, printInvoiceDocument } from '@/lib/invoices/invoiceDocuments';
 
 /** The invoice fields the actions need: a list row or a full invoice both fit. */
@@ -29,12 +29,20 @@ export interface InvoiceActionTarget {
  *   <RowActions actions={invoiceActions.actionsFor(row, { withOpen: true })} />
  *   {invoiceActions.dialogs}
  */
-export function useInvoiceActions({ onChanged }: { onChanged?: () => void } = {}) {
+export function useInvoiceActions({
+  onChanged,
+  onDeleted,
+}: {
+  onChanged?: () => void;
+  /** After a delete; defaults to onChanged. The invoice page leaves itself. */
+  onDeleted?: (inv: InvoiceActionTarget) => void;
+} = {}) {
   const permissions: string[] = useAuthStore((s: any) => s.permissions) || [];
   const can = (p: string) => permissions.includes(p);
 
   const [previewing, setPreviewing] = useState<InvoiceActionTarget | null>(null);
   const [cancelling, setCancelling] = useState<InvoiceActionTarget | null>(null);
+  const [deleting, setDeleting] = useState<InvoiceActionTarget | null>(null);
   const [editing, setEditing] = useState<{ invoice: any; items: any[] } | null>(null);
 
   // The edit form needs the invoice's items, which list rows don't carry.
@@ -95,6 +103,16 @@ export function useInvoiceActions({ onChanged }: { onChanged?: () => void } = {}
         hidden: inv.status === 'cancelled' || !can('invoice.cancel'),
         onClick: () => setCancelling(inv),
       },
+      {
+        id: 'delete',
+        label: 'Delete invoice',
+        icon: <Trash2 />,
+        tone: 'danger',
+        // Admin and Manager. The server refuses a sale with a return, a
+        // claimed warranty, or one that replaced another sale.
+        hidden: !!inv.hasReturn || !can('invoice.delete'),
+        onClick: () => setDeleting(inv),
+      },
     ];
   }
 
@@ -127,6 +145,32 @@ export function useInvoiceActions({ onChanged }: { onChanged?: () => void } = {}
         confirmLabel="Cancel invoice"
         variant="danger"
         reasonLabel={cancelling?.status === 'confirmed' ? 'Reason for cancelling' : undefined}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={async (reason?: string) => {
+          if (!deleting) return;
+          try {
+            await deleteInvoice(deleting.id, reason || '');
+            toast.success(`Invoice ${deleting.invoiceNumber || ''} deleted.`);
+            setDeleting(null);
+            if (onDeleted) onDeleted(deleting);
+            else onChanged?.();
+          } catch (err: any) {
+            toast.error(err?.message || 'Could not delete invoice.');
+          }
+        }}
+        title={`Delete ${deleting?.invoiceNumber || 'this invoice'}?`}
+        description={
+          deleting?.status === 'confirmed'
+            ? 'The sale is undone first: stock goes back, money is refunded from the drawer or bank, and any credit is reversed. Then the invoice is removed for good. This cannot be undone.'
+            : 'The invoice is removed for good. This cannot be undone.'
+        }
+        confirmLabel="Delete invoice"
+        variant="danger"
+        reasonLabel="Reason for deleting"
       />
 
       <EditRequestSlideOver

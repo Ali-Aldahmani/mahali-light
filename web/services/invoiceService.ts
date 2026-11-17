@@ -81,6 +81,31 @@ export async function confirmInvoice(id, closedDrawerReason?: string | null): Pr
   return validateMoneyResponse(invoiceConfirmSchema, data, `POST /invoices/${id}/confirm`);
 }
 
+export type DeletedInvoice = { id: string; invoiceNumber: string; status: string };
+
+// Remove an invoice for good (Admin/Manager). A confirmed sale is reversed
+// first, as Cancel does.
+export async function deleteInvoice(id: string, reason: string): Promise<DeletedInvoice[]> {
+  const data = await apiDelete(`/invoices/${id}`, { data: { reason } });
+  return data?.deleted || [];
+}
+
+// Delete the invoices selected on the list: all of them or none.
+export async function bulkDeleteInvoices(
+  selection: { ids: string[] } | { filters: InvoiceExportFilters },
+  reason: string,
+): Promise<DeletedInvoice[]> {
+  const body =
+    'ids' in selection
+      ? { ids: selection.ids, reason }
+      : {
+          filters: Object.fromEntries(Object.entries(selection.filters).filter(([, v]) => v)),
+          reason,
+        };
+  const data = await apiPost(`/invoices/bulk-delete`, body);
+  return data?.deleted || [];
+}
+
 export async function cancelInvoice(id, reason): Promise<InvoiceSummary> {
   const data = await apiPost(`/invoices/${id}/cancel`, { reason });
   return validateMoneyResponse(invoiceSummarySchema, data, `POST /invoices/${id}/cancel`);

@@ -13,6 +13,8 @@ const {
   resolveInvoiceTaxRate,
   confirmInvoice,
   cancelInvoice,
+  deleteInvoices,
+  MAX_DELETE,
   computeLineFigures,
 } = require('../services/invoiceService');
 
@@ -765,6 +767,76 @@ async function cancel(req, res, next) {
   }
 }
 
+// -- delete ---------------------------------------------------------------
+
+const deleteBodySchema = z
+  .object({
+    reason: z.string().max(500).optional(),
+    // Invoices ticked one by one…
+    ids: z.array(z.string().uuid()).min(1).max(1000).optional(),
+    // …or every invoice matching the list's filters ("select all").
+    filters: z
+      .object({
+        search: z.string().max(200).optional(),
+        status: z.string().max(30).optional(),
+        paymentStatus: z.string().max(30).optional(),
+        dateFrom: z.string().max(30).optional(),
+        dateTo: z.string().max(30).optional(),
+      })
+      .optional(),
+  })
+  .refine((b) => Boolean(b.ids) !== Boolean(b.filters), { message: 'Send either ids or filters.' });
+
+// DELETE /invoices/:id: one invoice.
+async function deleteOne(req, res, next) {
+  try {
+    const deleted = await deleteInvoices({
+      invoiceIds: [req.params.id],
+      employeeId: req.user.id,
+      reason: (req.body?.reason || '').toString(),
+      io: req.app.get('io'),
+    });
+    return ok(res, { deleted });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /invoices/bulk-delete: the invoices selected on the list.
+async function deleteMany(req, res, next) {
+  try {
+    const parsed = deleteBodySchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      throw new AppError(ERROR_CODES.VALIDATION_FAILED, parsed.error.issues[0]?.message, { status: 400 });
+    }
+    let ids = parsed.data.ids;
+    if (!ids) {
+      const { where, params } = buildListFilters(parsed.data.filters);
+      // One past the cap, so the service reports "too many" instead of
+      // silently deleting only the newest ones.
+      params.push(MAX_DELETE + 1);
+      const { rows } = await query(
+        `SELECT i.id FROM invoices i
+           LEFT JOIN customers c ON c.id = i.customer_id
+           ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+          ORDER BY i.created_at DESC
+          LIMIT $${params.length}`,
+        params,
+      );
+      ids = rows.map((r) => r.id);
+    }
+    const deleted = await deleteInvoices({
+      invoiceIds: ids,
+      employeeId: req.user.id,
+      reason: parsed.data.reason || '',
+      io: req.app.get('io'),
+    });
+    return ok(res, { deleted });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // -- next number preview (for offline / UI display) -----------------------
 
 async function nextNumberPreview(req, res, next) {
@@ -870,6 +942,8 @@ module.exports = {
   updateItems,
   confirm,
   cancel,
+  deleteOne,
+  deleteMany,
   takeOver,
   nextNumberPreview,
   computeLineFigures,

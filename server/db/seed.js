@@ -23,6 +23,7 @@ const ALL_PERMISSIONS = [
   ['invoice.refund', 'Refund Invoice', 'invoice'],
   ['invoice.print', 'Print Invoice', 'invoice'],
   ['invoice.download', 'Download Invoice PDF', 'invoice'],
+  ['invoice.delete', 'Delete Invoice', 'invoice'],
   ['product.view', 'View Products', 'product'],
   ['product.create', 'Create Product', 'product'],
   ['product.edit', 'Edit Product', 'product'],

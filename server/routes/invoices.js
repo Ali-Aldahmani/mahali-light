@@ -16,6 +16,7 @@ router.get('/checkout/:checkoutId', requirePermission('invoice.create'), invoice
 
 router.get('/', requirePermission('invoice.view'), invoices.list);
 router.post('/', requirePermission('invoice.create'), invoices.create);
+router.post('/bulk-delete', requirePermission('invoice.delete'), invoices.deleteMany);
 // Bulk download of selected invoices (PDF zip, Excel, CSV). Before '/:id'.
 router.post(
   '/export',
@@ -29,6 +30,9 @@ router.put('/:id/items', requirePermission('invoice.create'), invoices.updateIte
 router.post('/:id/confirm', requirePermission('invoice.create'), invoices.confirm);
 router.post('/:id/take-over', requirePermission('invoice.take_over'), invoices.takeOver);
 router.post('/:id/cancel', requirePermission('invoice.cancel'), invoices.cancel);
+// Removing invoices for good: Admin and Manager (invoice.delete). A confirmed
+// sale is reversed first, as Cancel does.
+router.delete('/:id', requirePermission('invoice.delete'), invoices.deleteOne);
 
 router.get('/:id/payments', requirePermission('invoice.view'), payments.list);
 router.post('/:id/payments', requirePermission('invoice.create'), payments.create);

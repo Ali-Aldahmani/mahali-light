@@ -14,6 +14,7 @@ beforeAll(() => {
 
 const mockListInvoices = vi.fn();
 const mockExportInvoices = vi.fn();
+const mockBulkDelete = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -22,6 +23,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/services/invoiceService', () => ({
   listInvoices: (...args: any[]) => mockListInvoices(...args),
   exportInvoices: (...args: any[]) => mockExportInvoices(...args),
+  bulkDeleteInvoices: (...args: any[]) => mockBulkDelete(...args),
 }));
 
 // The real menu opens in a Radix portal; plain buttons are enough to test
@@ -75,8 +77,9 @@ describe('InvoicesPage - selection', () => {
       meta: { page: 1, limit: 25, total: 40 },
     });
     mockExportInvoices.mockReset().mockResolvedValue({ filename: 'invoices.csv' });
+    mockBulkDelete.mockReset().mockResolvedValue([{ id: 'inv-1' }, { id: 'inv-2' }]);
     useAuthStore.setState({
-      permissions: ['invoice.view', 'invoice.download'],
+      permissions: ['invoice.view', 'invoice.download', 'invoice.delete'],
       user: {
         id: 'u1',
         username: 'admin',
@@ -169,5 +172,37 @@ describe('InvoicesPage - selection', () => {
     fireEvent.click(box('Select INV-2026-P79-00001'));
     expect(screen.getByText('1 invoice selected')).toBeInTheDocument();
     expect(screen.queryByText('CSV')).not.toBeInTheDocument();
+  });
+
+  it('bulk-deletes the ticked invoices with a reason', async () => {
+    render(<InvoicesPage />);
+    await screen.findByText('INV-2026-P79-00001');
+    fireEvent.click(box('Select INV-2026-P79-00001'));
+    fireEvent.click(box('Select INV-2026-P79-00002'));
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }));
+
+    expect(screen.getByText('Delete 2 invoices?')).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Delete 2' });
+    // A reason is required before the button works.
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/Reason for deleting/), {
+      target: { value: 'Test sales entered by mistake' },
+    });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(mockBulkDelete).toHaveBeenCalledTimes(1));
+    expect(mockBulkDelete).toHaveBeenCalledWith(
+      { ids: ['inv-1', 'inv-2'] },
+      'Test sales entered by mistake',
+    );
+    await waitFor(() => expect(screen.queryByText(/selected/)).not.toBeInTheDocument());
+  });
+
+  it('hides Delete from users without invoice.delete', async () => {
+    useAuthStore.setState({ permissions: ['invoice.view', 'invoice.download'] } as any);
+    render(<InvoicesPage />);
+    await screen.findByText('INV-2026-P79-00001');
+    fireEvent.click(box('Select INV-2026-P79-00001'));
+    expect(screen.queryByRole('button', { name: /^Delete$/ })).not.toBeInTheDocument();
   });
 });

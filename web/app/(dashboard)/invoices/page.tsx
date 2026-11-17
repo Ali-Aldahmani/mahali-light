@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   Sheet,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import Button from '@/components/ui/Button';
@@ -30,7 +31,9 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useAuthStore } from '@/store/authStore';
 import { useInvoiceStore } from '@/store/invoiceStore';
 import { onInvoiceEvent } from '@/store/socketStore';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import {
+  bulkDeleteInvoices,
   exportInvoices,
   listInvoices,
   type InvoiceExportFormat,
@@ -52,6 +55,9 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
   { value: 'refunded', label: 'Refunded' },
 ];
+// Same cap as the server's (MAX_DELETE in invoiceService).
+const MAX_BULK_DELETE = 100;
+
 const PAYMENT_OPTIONS = [
   { value: '', label: 'All payment status' },
   { value: 'unpaid', label: 'Unpaid' },
@@ -186,6 +192,32 @@ function InvoicesPageContent() {
 
   const canDownload = permissions.includes('invoice.download');
   const [downloading, setDownloading] = useState(false);
+
+  // Bulk delete: Admin and Manager (invoice.delete).
+  const canDelete = permissions.includes('invoice.delete');
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  async function bulkDelete(reason?: string) {
+    setBulkDeleting(true);
+    try {
+      const deleted = await bulkDeleteInvoices(
+        allMatching
+          ? { filters: { search: debouncedSearch, status, paymentStatus, dateFrom, dateTo } }
+          : { ids: [...selectedIds] },
+        reason || '',
+      );
+      toast.success(`Deleted ${deleted.length} invoice${deleted.length === 1 ? '' : 's'}.`);
+      setBulkDeleteOpen(false);
+      clearSelection();
+      fetchData();
+      refreshSummary?.();
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not delete the invoices.');
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
 
   async function download(format: InvoiceExportFormat) {
     setDownloading(true);
@@ -433,8 +465,19 @@ function InvoicesPageContent() {
 
       {selectedCount > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-accent/30 bg-accent-light px-4 py-2.5">
-          {canDownload && (
-            <div className="order-last ml-auto">
+          {(canDownload || canDelete) && (
+            <div className="order-last ml-auto flex items-center gap-2">
+              {canDelete && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  leftIcon={<Trash2 className="h-4 w-4" />}
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  Delete
+                </Button>
+              )}
+              {canDownload && (
               <DropdownMenu
                 label={downloading ? 'Downloading…' : 'Download'}
                 icon={downloading ? <Loader2 className="animate-spin" /> : <Download />}
@@ -445,6 +488,7 @@ function InvoicesPageContent() {
                   { label: 'CSV', icon: <Sheet />, onSelect: () => void download('csv') },
                 ]}
               />
+              )}
             </div>
           )}
           <span className="text-sm text-accent font-medium">
@@ -500,6 +544,21 @@ function InvoicesPageContent() {
       />
 
       {invoiceActions.dialogs}
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={bulkDelete}
+        title={`Delete ${selectedCount} invoice${selectedCount === 1 ? '' : 's'}?`}
+        description={
+          `Confirmed sales are undone first: stock goes back, money is refunded from the drawer or bank, and any credit is reversed. Then the invoices are removed for good. If any one of them can't be deleted, none are. This cannot be undone.` +
+          (selectedCount > MAX_BULK_DELETE ? ` You can delete up to ${MAX_BULK_DELETE} at a time.` : '')
+        }
+        confirmLabel={`Delete ${selectedCount}`}
+        variant="danger"
+        loading={bulkDeleting}
+        reasonLabel="Reason for deleting"
+      />
     </div>
   );
 }

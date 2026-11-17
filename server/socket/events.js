@@ -27,6 +27,7 @@ const EVENT_PERMISSIONS = {
   // Sales
   invoice_confirmed: 'invoice.view',
   invoice_cancelled: 'invoice.view',
+  invoice_deleted: 'invoice.view',
   invoice_pdf_pending: 'invoice.view',
   invoice_pdf_ready: 'invoice.view',
   print_receipt_requested: 'invoice.print',

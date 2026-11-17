@@ -16,6 +16,7 @@ const PERMISSIONS = {
     refund: 'invoice.refund',
     print: 'invoice.print',
     download: 'invoice.download',
+    delete: 'invoice.delete',
   },
   product: {
     view: 'product.view',
@@ -171,7 +172,7 @@ const ROLE_DEFAULTS = {
   Admin: '*', // wildcard — assign every permission key in DB
   Manager: [
     'audit.view',
-    'invoice.view', 'invoice.create', 'invoice.edit_approve', 'invoice.cancel',
+    'invoice.view', 'invoice.create', 'invoice.edit_approve', 'invoice.cancel', 'invoice.delete',
     'invoice.refund', 'invoice.print', 'invoice.download', 'invoice.custom_item',
     'product.view', 'product.create', 'product.edit', 'product.adjust_stock', 'product.view_cost',
     'supplier.view', 'supplier.create', 'supplier.edit', 'supplier.purchase_order.create', 'supplier.purchase_order.pay',

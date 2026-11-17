@@ -986,8 +986,11 @@ async function confirmInvoiceChecked({ invoiceId, employeeId, io = null, closedD
 // Cancel a confirmed (or draft) invoice. Reverses stock movements via
 // applyStockMovement('return_in') and reverses any credit charged to the
 // customer. Draft invoices have no side-effects to reverse.
-async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }) {
-  const result = await withTransaction(async (client) => {
+// Undo a sale inside the caller's transaction: stock back, money back out of
+// the drawer/bank, credit and ledger reversed, warranties voided, invoice
+// marked cancelled. Used by Cancel and by Delete (which then removes it).
+async function cancelInvoiceInTx(client, { invoiceId, employeeId, reason = null }) {
+  {
     const { rows: invRows } = await client.query(
       `SELECT * FROM invoices WHERE id = $1 FOR UPDATE`,
       [invoiceId],
@@ -1178,7 +1181,29 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
     });
 
     return { invoice, stockEmits, treasuryPostings, voidedWarranties };
-  }, { retryOnDeadlock: true });
+  }
+}
+
+// Live updates for a reversed sale: stock, drawer and bank balances.
+function emitReversalEvents(io, result, employeeId) {
+  if (!io) return;
+  for (const e of result.stockEmits) emitEvent(io, e.event, e.payload);
+  for (const posting of result.treasuryPostings) {
+    const event = posting.method === 'cash' ? 'cash_balance_updated' : 'bank_balance_updated';
+    emitEvent(io, event, {
+      bankAccountId: posting.accountId, bankName: posting.bankName,
+      newBalance: posting.balanceAfter, delta: posting.delta,
+      transactionType: 'refund', changedBy: employeeId, at: new Date().toISOString(),
+    });
+  }
+  emitCustomerChanged(io, result.invoice.customer_id, 'invoice_cancelled');
+}
+
+async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }) {
+  const result = await withTransaction(
+    (client) => cancelInvoiceInTx(client, { invoiceId, employeeId, reason }),
+    { retryOnDeadlock: true },
+  );
 
   if (io) {
     for (const e of result.stockEmits) emitEvent(io, e.event, e.payload);
@@ -1234,6 +1259,147 @@ async function cancelInvoice({ invoiceId, employeeId, reason = null, io = null }
   }
 
   return result;
+}
+
+// -- delete ----------------------------------------------------------------
+
+const MAX_DELETE = 100;
+
+// Remove invoices for good (Admin/Manager, invoice.delete). A confirmed sale is
+// first reversed exactly as Cancel does, so stock, drawer, bank, credit and
+// the ledger still add up after the invoice row is gone; the reversal records
+// stay. A draft or an already-cancelled invoice is just removed. Several
+// invoices go in one transaction: all are deleted or none.
+//
+// What the invoice was (header, lines, payments) and why it was deleted is
+// written to activity_log, since invoice_history is deleted with it.
+async function deleteInvoices({ invoiceIds, employeeId, reason, io = null }) {
+  const ids = [...new Set(invoiceIds || [])];
+  if (!ids.length) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Choose at least one invoice to delete.', { status: 400 });
+  }
+  if (ids.length > MAX_DELETE) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+      `Delete up to ${MAX_DELETE} invoices at a time (${ids.length} selected).`, { status: 400 });
+  }
+  const trimmedReason = (reason || '').trim();
+  if (trimmedReason.length < 5 || trimmedReason.length > 500) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED,
+      'Give a reason for deleting (5 to 500 characters).', { status: 400 });
+  }
+
+  const result = await withTransaction(async (client) => {
+    // Lock in a fixed order so two bulk deletes can't deadlock each other.
+    const { rows: invoices } = await client.query(
+      `SELECT * FROM invoices WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+      [ids],
+    );
+    if (invoices.length !== ids.length) {
+      throw new AppError(ERROR_CODES.RESOURCE_NOT_FOUND,
+        'Some of these invoices no longer exist. Refresh and try again.', { status: 404 });
+    }
+
+    const reversals = [];
+    const deleted = [];
+    for (const invoice of invoices) {
+      const label = invoice.invoice_number;
+      try {
+        if (invoice.has_return) {
+          throw new AppError(ERROR_CODES.BIZ_INVOICE_LOCKED,
+            'It has a recorded return.', { status: 409 });
+        }
+        await assertNoCommittedReturns(client, invoice.id);
+        await assertNotTiedToReplacement(client, invoice.id);
+      } catch (err) {
+        if (err instanceof AppError) {
+          err.message = `Cannot delete ${label}: ${err.message}`;
+        }
+        throw err;
+      }
+
+      if (invoice.status === 'confirmed') {
+        try {
+          reversals.push(await cancelInvoiceInTx(client, {
+            invoiceId: invoice.id,
+            employeeId,
+            reason: `Deleted: ${trimmedReason}`,
+          }));
+        } catch (err) {
+          if (err instanceof AppError) err.message = `Cannot delete ${label}: ${err.message}`;
+          throw err;
+        }
+      }
+
+      const { rows: items } = await client.query(
+        `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY position, id`, [invoice.id],
+      );
+      const { rows: payments } = await client.query(
+        `SELECT * FROM invoice_payments WHERE invoice_id = $1 ORDER BY timestamp, id`, [invoice.id],
+      );
+      await logActivity({
+        client,
+        entityType: 'invoice',
+        entityId: invoice.id,
+        action: 'invoice.deleted',
+        performedBy: employeeId,
+        oldValue: { invoice, items, payments, statusWhenDeleted: invoice.status },
+        notes: `${label}: ${trimmedReason}`,
+      });
+
+      await client.query(`DELETE FROM invoices WHERE id = $1`, [invoice.id]);
+      deleted.push({
+        id: invoice.id,
+        invoiceNumber: label,
+        status: invoice.status,
+        customerId: invoice.customer_id,
+        total: Number(invoice.total || 0),
+      });
+    }
+    return { deleted, reversals };
+  }, { retryOnDeadlock: true });
+
+  for (const r of result.reversals) emitReversalEvents(io, r, employeeId);
+  if (io) {
+    emitEvent(io, 'invoice_deleted', {
+      invoiceIds: result.deleted.map((d) => d.id),
+      invoiceNumbers: result.deleted.map((d) => d.invoiceNumber),
+      deletedBy: employeeId,
+      at: new Date().toISOString(),
+    });
+    for (const d of result.deleted) {
+      if (d.customerId) emitCustomerChanged(io, d.customerId, 'invoice_deleted');
+    }
+  }
+
+  // Cached PDFs of deleted invoices are no longer reachable; drop them.
+  setImmediate(() => {
+    try {
+      const dir = require('../utils/paths').ensurePdfDir('invoices');
+      for (const d of result.deleted) {
+        require('fs').rm(require('path').join(dir, `${d.id}.pdf`), { force: true }, () => {});
+      }
+    } catch (_e) { /* best-effort */ }
+  });
+
+  try {
+    const numbers = result.deleted.map((d) => d.invoiceNumber);
+    await notificationService.notifyManagersAndAdmins({
+      type: 'invoice.deleted',
+      category: 'invoice',
+      severity: 'warning',
+      title: numbers.length === 1
+        ? `Invoice deleted: ${numbers[0]}`
+        : `${numbers.length} invoices deleted`,
+      message: `${numbers.length > 1 ? `${numbers.slice(0, 10).join(', ')}${numbers.length > 10 ? '…' : ''}. ` : ''}Reason: ${trimmedReason}`,
+      referenceType: 'invoice',
+      referenceId: result.deleted[0].id,
+      actionUrl: '/invoices',
+      createdBy: employeeId,
+      skipForUserId: employeeId,
+    });
+  } catch (_e) { /* best-effort */ }
+
+  return result.deleted;
 }
 
 // Apply an approved edit request. The simplest supported shapes:
@@ -1774,6 +1940,8 @@ module.exports = {
   findStockShortfalls,
   confirmInvoice,
   cancelInvoice,
+  deleteInvoices,
+  MAX_DELETE,
   applyEditRequest,
   rejectEditRequest,
   shortenPcCode,

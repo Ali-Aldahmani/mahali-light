@@ -309,6 +309,10 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       );
     });
 
+    socket.on('invoice_deleted', (payload) => {
+      invoiceBus.emit({ ...payload, kind: 'deleted' });
+    });
+
     socket.on('edit_request_created', (payload) => {
       invoiceEditRequestBus.emit({ ...payload, kind: 'created' });
       toast.info(
