@@ -7,7 +7,7 @@ import { toast } from '@/store/toastStore';
 import { addBreadcrumb } from './breadcrumbService';
 import { takeInputForRequest } from '@/lib/auth/activity';
 
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 
 /** Progress and cancellation for multipart uploads (used by FileDropzone rows). */
 export type UploadOptions = { onProgress?: (percent: number) => void; signal?: AbortSignal };
