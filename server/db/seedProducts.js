@@ -2,7 +2,13 @@ require('dotenv').config();
 const { getPool, query, withTransaction } = require('./postgres');
 
 // Phase 2: reference data for products & categories.
-// Idempotent — safe to run on every server boot.
+//
+// Runs once per install (recorded in _seed_runs, migration 071). It used to
+// run at every server start, which added duplicate root categories each time
+// and reset the shop's own category edits, requires_serial included
+// (software engineering audit F-MIG-04). New reference data for existing
+// installs belongs in a migration.
+const SEED_NAME = 'product_reference_data';
 
 const ROOT_CATEGORIES = [
   { name: 'Lighting', description: 'All lighting products', requires_serial: false },
@@ -251,18 +257,32 @@ async function ensureCategoryAttributes() {
   });
 }
 
-async function run() {
+async function alreadySeeded() {
+  const { rows } = await query('SELECT 1 FROM _seed_runs WHERE name = $1', [SEED_NAME]);
+  return rows.length > 0;
+}
+
+// force: run again even if recorded (only `node server/db/seedProducts.js --force`).
+async function run({ force = false } = {}) {
+  if (!force && (await alreadySeeded())) {
+    console.log('[seed:products] reference data already applied - skipping.');
+    return;
+  }
   console.log('[seed:products] starting...');
   await ensureRootCategories();
   await ensureSubcategories();
   await ensureAttributes();
   await ensureAttributeValues();
   await ensureCategoryAttributes();
+  await query(
+    'INSERT INTO _seed_runs (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET ran_at = NOW()',
+    [SEED_NAME],
+  );
   console.log('[seed:products] done.');
 }
 
 if (require.main === module) {
-  run()
+  run({ force: process.argv.includes('--force') })
     .then(() => getPool().end())
     .catch((err) => {
       console.error(err);

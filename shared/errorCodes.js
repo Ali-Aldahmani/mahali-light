@@ -108,6 +108,9 @@ const ERROR_CODES = {
   DB_QUERY_FAILED: 'DB_QUERY_FAILED',
   DB_CONSTRAINT_VIOLATION: 'DB_CONSTRAINT_VIOLATION',
   DB_TRANSACTION_FAILED: 'DB_TRANSACTION_FAILED',
+  // Deadlock victim, lock wait or statement timeout: nothing was saved and
+  // the same request can be sent again.
+  DB_BUSY: 'DB_BUSY',
 
   // Files
   FILE_UPLOAD_FAILED: 'FILE_UPLOAD_FAILED',
@@ -129,6 +132,7 @@ const ERROR_CODES = {
 
   // Generic (legacy)
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
   NETWORK_ERROR: 'NETWORK_ERROR',
 };
 
@@ -419,6 +423,11 @@ const ERROR_DEFS = {
     status: 500,
     severity: 'error',
   },
+  [ERROR_CODES.DB_BUSY]: {
+    message: 'The server is busy with another change to the same records. Nothing was saved. Please try again.',
+    status: 503,
+    severity: 'warning',
+  },
   [ERROR_CODES.DB_CONSTRAINT_VIOLATION]: {
     message: 'This operation violates a data constraint.',
     status: 409,
@@ -504,6 +513,11 @@ const ERROR_DEFS = {
     message: 'Something went wrong on the server.',
     status: 500,
     severity: 'error',
+  },
+  [ERROR_CODES.RATE_LIMIT_EXCEEDED]: {
+    message: 'Too many requests. Please wait a moment and try again.',
+    status: 429,
+    severity: 'warning',
   },
   [ERROR_CODES.NETWORK_ERROR]: {
     message: 'Network unavailable. Check your connection to the server.',

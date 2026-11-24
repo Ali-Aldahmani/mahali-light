@@ -21,6 +21,7 @@ const { run: runSeedSettings } = require('./db/seedSettings');
 const { attachSocket } = require('./socket');
 const { requireSecureTransport, secureTransportRequired } = require('./middleware/secureTransport');
 const { createFilesRouter } = require('./routes/files');
+const { AppError, ERROR_CODES } = require('../shared/errorCodes');
 
 const authRouter = require('./routes/auth');
 const usersRouter = require('./routes/users');
@@ -99,7 +100,9 @@ const { startForecastJob } = require('./services/forecastService');
 const notificationService = require('./services/notificationService');
 const { startNotificationCronJobs } = require('./jobs/notificationCron');
 const { startTelegramStockAlertJob } = require('./jobs/telegramStockAlerts');
-const { startBackupScheduler } = require('./backup/scheduler');
+const { startBackupScheduler, stopBackupScheduler } = require('./backup/scheduler');
+const { createShutdown } = require('./utils/shutdown');
+const { closePool } = require('./db/postgres');
 const maintenanceMode = require('./backup/maintenanceMode');
 
 // ---------------------------------------------------------------------------
@@ -158,6 +161,9 @@ function assertBackupSecret() {
     }
   }
 }
+
+// Set once the HTTP server exists, for graceful shutdown.
+const runtime = { server: null, io: null };
 
 async function bootstrap() {
   assertJwtSecret();
@@ -236,6 +242,24 @@ async function bootstrap() {
     trustProxy: () => app.get('trust proxy fn'),
   });
   app.set('io', io);
+  runtime.server = server;
+  runtime.io = io;
+
+  // Rate limiting first (audit F-OPS-04): before CORS, JSON parsing and
+  // error logging, so a flood of requests from a disallowed origin or with a
+  // broken body is throttled instead of each one reaching the error handler.
+  //
+  // Login gets its own strict limit (20 req/15 min per IP) that sits on top
+  // of the per-username account lockout in authController.js, blocking
+  // credential-stuffing attacks that cycle across different usernames.
+  //
+  // The global limiter (500 req/min per IP) protects every other endpoint.
+  // At a 5-PC store a busy cashier generates ~25 req/min, so this leaves
+  // ample headroom while still stopping runaway clients or scanning loops.
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/setup/verify-code', setupLimiter);
+  app.use('/api/setup/complete', setupLimiter);
+  app.use('/api', apiLimiter);
 
   // Security headers via helmet.
   //
@@ -280,7 +304,12 @@ async function bootstrap() {
         if (isAllowedOrigin(origin)) {
           return cb(null, true);
         }
-        cb(Object.assign(new Error(`Origin "${origin}" not allowed by CORS`), { status: 403 }));
+        cb(
+          new AppError(ERROR_CODES.AUTH_NO_PERMISSION, `Origin "${origin}" not allowed by CORS`, {
+            status: 403,
+            severity: 'warning',
+          }),
+        );
       },
       credentials: true,
     }),
@@ -298,20 +327,6 @@ async function bootstrap() {
     ),
   );
 
-  // Rate limiting — applied before any route handler so the window counters
-  // are accurate regardless of which middleware runs next.
-  //
-  // Login gets its own strict limit (20 req/15 min per IP) that sits on top
-  // of the per-username account lockout in authController.js, blocking
-  // credential-stuffing attacks that cycle across different usernames.
-  //
-  // The global limiter (500 req/min per IP) protects every other endpoint.
-  // At a 5-PC store a busy cashier generates ~25 req/min, so this leaves
-  // ample headroom while still stopping runaway clients or scanning loops.
-  app.use('/api/auth/login', authLimiter);
-  app.use('/api/setup/verify-code', setupLimiter);
-  app.use('/api/setup/complete', setupLimiter);
-  app.use('/api', apiLimiter);
 
   // Phase 17 — short-circuit writes during a restore so the database isn't
   // mutated mid-restore. Mounted before any route so 503 is the universal
@@ -465,8 +480,16 @@ function printDbHelp(err) {
 // signal with no explicit handler is silently IGNORED rather than taking
 // its normal default action, so without this both paths would just hang
 // until Docker's grace period expires and force-kills the container.
-process.on('SIGTERM', () => process.exit(0));
-process.on('SIGINT', () => process.exit(0));
+// The handlers below shut down gracefully (utils/shutdown.js, audit F-OPS-01).
+const shutdown = createShutdown({
+  getServer: () => runtime.server,
+  getIo: () => runtime.io,
+  enterMaintenance: () => maintenanceMode.enable('The server is restarting. Please try again in a moment.'),
+  stopJobs: () => stopBackupScheduler(),
+  closePool,
+});
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 bootstrap().catch((err) => {
   console.error('[server] failed to start', err);

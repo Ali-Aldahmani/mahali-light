@@ -29,11 +29,16 @@ async function errorHandler(err, req, res, _next) {
   const classified = errorLogService.classifyError(err);
   const { code, message, status, details, field, severity, stack } = classified;
 
-  // Persist API errors (append-only). A request with no valid sign-in isn't
-  // recorded: anyone on the network could otherwise grow this table by sending
-  // requests with no token, up to 500 rows a minute each.
-  if (!(status === 401 && !req.user)) {
-    await errorLogService.logError({
+  // Persist API errors (append-only). A client error (4xx) from a request
+  // with no valid sign-in isn't recorded: anyone on the network could
+  // otherwise grow this table, and trigger admin escalations, by sending
+  // requests with no token or from a disallowed origin (audit F-OPS-04).
+  // Server faults (5xx) are always recorded.
+  //
+  // Not awaited (audit F-OPS-03): the reply must not wait on an extra
+  // database write, least of all when the database is the thing failing.
+  if (status >= 500 || req.user) {
+    errorLogService.logError({
       code,
       message,
       details,
@@ -44,6 +49,8 @@ async function errorHandler(err, req, res, _next) {
       endpoint: req.originalUrl || req.path,
       method: req.method,
       stackTrace: stack,
+    }).catch((logErr) => {
+      console.error('[error] could not record error log:', logErr?.message || logErr);
     });
   }
 
@@ -76,9 +83,25 @@ function registerProcessHandlers() {
       .catch(() => {});
   };
 
+  // After an uncaught exception the process is in an unknown state (a
+  // server that failed to listen, a half-run job). Record it, then exit so
+  // the restart policy brings up a clean process (audit F-OPS-02). The log
+  // write gets a moment to finish first.
   process.on('uncaughtException', (err) => {
     console.error('[uncaughtException]', err);
-    log(ERROR_CODES.INTERNAL_ERROR, err, 'scheduler');
+    const done = () => process.exit(1);
+    const timer = setTimeout(done, 1500);
+    if (typeof timer.unref === 'function') timer.unref();
+    errorLogService
+      .logError({
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: err?.message || String(err),
+        severity: 'critical',
+        source: 'scheduler',
+        stackTrace: err?.stack,
+      })
+      .catch(() => {})
+      .finally(done);
   });
 
   process.on('unhandledRejection', (reason) => {

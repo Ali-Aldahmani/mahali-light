@@ -177,6 +177,17 @@ async function cleanupResolvedOlderThan(days = 90) {
   return { deleted: rowCount };
 }
 
+// node-postgres server errors carry a five-character SQLSTATE plus the
+// server's severity text; connection failures carry a Node errno code.
+function isPgError(err) {
+  if (!err || typeof err !== 'object') return false;
+  const code = String(err.code || '');
+  if (/^[0-9A-Z]{5}$/.test(code) && (err.severity || err.routine || err.file)) return true;
+  if (['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND'].includes(code)) return true;
+  // Pool exhaustion / dropped connection from node-postgres (no code).
+  return /timeout exceeded when trying to connect|Connection terminated/i.test(err.message || '');
+}
+
 // Classify raw errors into our standard codes (used by middleware).
 function classifyError(err) {
   if (err instanceof AppError) {
@@ -203,6 +214,19 @@ function classifyError(err) {
       status: 409,
       details: { field: 'barcode', value: err.detail || null },
       field: 'barcode',
+      severity: 'warning',
+      stack: err.stack,
+    };
+  }
+
+  // One active category per name under the same parent (migration 071).
+  if (err?.code === '23505' && err?.constraint === 'uq_product_categories_active_name') {
+    return {
+      code: ERROR_CODES.RESOURCE_CONFLICT,
+      message: 'A category with this name already exists here.',
+      status: 409,
+      details: { field: 'name' },
+      field: 'name',
       severity: 'warning',
       stack: err.stack,
     };
@@ -304,6 +328,22 @@ function classifyError(err) {
       stack: err.stack,
     };
   }
+  // Deadlock victim (40P01), serialization failure (40001), lock_timeout
+  // (55P03) or statement_timeout (57014): PostgreSQL rolled the whole
+  // transaction back, so nothing was saved and the request can be sent again
+  // (audit F-TX-01 / F-OPS-03). Was a generic "database error" 500.
+  if (['40P01', '40001', '55P03', '57014'].includes(pgCode)) {
+    const e = new AppError(ERROR_CODES.DB_BUSY);
+    return {
+      code: e.code,
+      message: e.message,
+      status: 503,
+      details: { reason: pgCode },
+      field: null,
+      severity: 'warning',
+      stack: err.stack,
+    };
+  }
   if (pgCode === 'ECONNREFUSED' || pgCode === '57P01' || pgCode === '53300') {
     const e = new AppError(ERROR_CODES.DB_CONNECTION_FAILED);
     return {
@@ -329,6 +369,44 @@ function classifyError(err) {
       field: null,
       severity: 'warning',
       stack: null,
+    };
+  }
+
+  // A non-database error that carries an HTTP status (body-parser's 413/415,
+  // a plain Error with .status) keeps that status instead of becoming a
+  // "database failure" 500 that feeds the admin escalation (audit F-OPS-04).
+  const httpStatus = Number(err?.status || err?.statusCode);
+  if (!isPgError(err) && httpStatus >= 400 && httpStatus < 500) {
+    const code =
+      httpStatus === 403
+        ? ERROR_CODES.AUTH_NO_PERMISSION
+        : httpStatus === 404
+          ? ERROR_CODES.RESOURCE_NOT_FOUND
+          : httpStatus === 429
+            ? ERROR_CODES.RATE_LIMIT_EXCEEDED
+            : ERROR_CODES.VALIDATION_FAILED;
+    const e = new AppError(code);
+    return {
+      code,
+      message: err?.expose === false ? e.message : err?.message || e.message,
+      status: httpStatus,
+      details: null,
+      field: null,
+      severity: 'warning',
+      stack: null,
+    };
+  }
+
+  if (!isPgError(err)) {
+    const e = new AppError(ERROR_CODES.INTERNAL_ERROR);
+    return {
+      code: ERROR_CODES.INTERNAL_ERROR,
+      message: process.env.NODE_ENV === 'development' ? err?.message || e.message : e.message,
+      status: 500,
+      details: null,
+      field: null,
+      severity: 'error',
+      stack: err?.stack,
     };
   }
 
