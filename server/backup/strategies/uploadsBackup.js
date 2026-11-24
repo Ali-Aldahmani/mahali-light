@@ -2,12 +2,14 @@ const fs = require('fs');
 const path = require('path');
 // archiver v8 exports format classes ({ ZipArchive, ... }), not a factory.
 const { ZipArchive } = require('archiver');
+const { getUploadsRoot } = require('../../utils/paths');
 
 const SKIP_NAMES = new Set(['.DS_Store', 'Thumbs.db', '.tmp']);
 
+// The folder the app stores uploads in (utils/paths.js), so the backup
+// always contains what the app wrote.
 function uploadsDir() {
-  return process.env.MAHALI_UPLOADS_DIR
-    || path.join(process.cwd(), 'uploads');
+  return getUploadsRoot();
 }
 
 // Zip the entire /uploads directory. Skips OS junk + .tmp files. If the

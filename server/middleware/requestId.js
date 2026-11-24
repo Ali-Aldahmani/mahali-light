@@ -9,7 +9,10 @@ const crypto = require('crypto');
 // and echoes it back so the client can surface it too.
 function requestId(req, res, next) {
   const incoming = req.headers['x-request-id'];
-  req.id = (typeof incoming === 'string' && incoming.trim()) || crypto.randomUUID();
+  // A client-supplied id is only reused when it is short and plain, since
+  // it goes into logs and error rows (engineering audit F-SEC-03).
+  const clean = typeof incoming === 'string' ? incoming.trim() : '';
+  req.id = /^[A-Za-z0-9._:-]{1,100}$/.test(clean) ? clean : crypto.randomUUID();
   res.setHeader('X-Request-Id', req.id);
   next();
 }

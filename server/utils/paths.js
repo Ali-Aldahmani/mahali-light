@@ -1,10 +1,16 @@
 const path = require('path');
 const fs = require('fs');
 
-// Resolves to <repo>/uploads — overridable via UPLOADS_DIR env var.
+// Resolves to <repo>/uploads — overridable via UPLOADS_DIR (MAHALI_UPLOADS_DIR
+// is accepted as an older name). The app, backup and restore all use this one
+// function, so they can't disagree about where the files are (engineering
+// audit F-BAK-05: backup read MAHALI_UPLOADS_DIR or cwd/uploads while the app
+// wrote to UPLOADS_DIR, so a native install could back up an empty folder).
 function getUploadsRoot() {
   const root =
-    process.env.UPLOADS_DIR || path.resolve(__dirname, '..', '..', 'uploads');
+    process.env.UPLOADS_DIR
+    || process.env.MAHALI_UPLOADS_DIR
+    || path.resolve(__dirname, '..', '..', 'uploads');
   if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   return root;
 }

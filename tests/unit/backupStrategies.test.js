@@ -55,8 +55,10 @@ describe('backup zip strategies (archiver v8)', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mahali-zip-test-'));
   });
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const savedUploadsDir = process.env.UPLOADS_DIR;
   afterEach(() => {
     vi.restoreAllMocks();
+    process.env.UPLOADS_DIR = savedUploadsDir;
     delete process.env.MAHALI_UPLOADS_DIR;
   });
 
@@ -96,7 +98,7 @@ describe('backup zip strategies (archiver v8)', () => {
     write(up, 'logo.svg', '<svg/>');
     write(up, 'Thumbs.db', 'junk');
     write(up, '.DS_Store', 'junk');
-    process.env.MAHALI_UPLOADS_DIR = up;
+    process.env.UPLOADS_DIR = up;
 
     const out = path.join(dir, 'out', 'uploads.zip');
     const res = await backupUploads(out, { compressionLevel: 6 });
@@ -108,8 +110,20 @@ describe('backup zip strategies (archiver v8)', () => {
     expect(entries['products/1.png']).toBe(png);
   });
 
+  it('backs up the folder the app writes to when only UPLOADS_DIR is set (F-BAK-05)', async () => {
+    const up = path.join(dir, 'app-uploads');
+    write(up, 'store/logo.png', 'logo');
+    process.env.UPLOADS_DIR = up;
+    delete process.env.MAHALI_UPLOADS_DIR;
+    const { getUploadsRoot } = require('../../server/utils/paths');
+    expect(getUploadsRoot()).toBe(up);
+    const out = path.join(dir, 'out', 'uploads-app.zip');
+    await backupUploads(out);
+    expect(Object.keys(readZip(out))).toEqual(['store/logo.png']);
+  });
+
   it('backupUploads emits a valid empty zip on a fresh install', async () => {
-    process.env.MAHALI_UPLOADS_DIR = path.join(dir, 'no-such-uploads');
+    process.env.UPLOADS_DIR = path.join(dir, 'no-such-uploads');
     const out = path.join(dir, 'out', 'uploads-empty.zip');
     await backupUploads(out);
     expect(readZip(out)).toEqual({});

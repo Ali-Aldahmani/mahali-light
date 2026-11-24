@@ -43,7 +43,8 @@ function signToken(payload, opts = {}) {
 }
 
 function verifyToken(token) {
-  return jwt.verify(token, getJwtSecret());
+  // Pin the algorithm we sign with (engineering audit F-SEC-03).
+  return jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
 }
 
 async function loadUserContext(userId) {
