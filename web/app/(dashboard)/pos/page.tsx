@@ -60,6 +60,7 @@ import { useAppSettingsStore } from '@/store/appSettingsStore';
 import { useAuthStore } from '@/store/authStore';
 import Skeleton from '@/components/ui/skeleton';
 import { stockShortfall } from '@/lib/pos/stockGuard';
+import { findExactCodeMatch } from '@/lib/cashier/barcode';
 
 export default function POSPage() {
   return (
@@ -231,17 +232,26 @@ function POSPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, activeCategoryId]);
 
-  // Refresh stock when a stock_updated event fires elsewhere (rare on POS).
+  // Refresh stock when a stock_updated event fires elsewhere. Through a ref,
+  // so the refresh uses the current search and category: the listener used to
+  // keep the first render's fetchProducts, and a sale on another till
+  // replaced a cashier's search results with the unfiltered list
+  // (engineering audit F-FE-02). Same pattern as CashierTerminal.
+  const fetchProductsRef = useRef(fetchProducts);
+  fetchProductsRef.current = fetchProducts;
   useEffect(() => {
     let throttle: ReturnType<typeof setTimeout> | null = null;
-    return onStockUpdate(() => {
+    const off = onStockUpdate(() => {
       if (throttle) return;
       throttle = setTimeout(() => {
         throttle = null;
-        fetchProducts();
+        fetchProductsRef.current();
       }, 800);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      off();
+      if (throttle) clearTimeout(throttle);
+    };
   }, []);
 
   // Auto-print receipt if the operator has enabled the option AND this PC
@@ -259,21 +269,17 @@ function POSPageContent() {
   }, [pcIdentifier]);
 
   // Barcode scanner integration. On scan, look up the code via the search
-  // endpoint and add the first match directly. We also clear the manual
-  // search box so the cashier isn't surprised by an unrelated typed query.
+  // endpoint and add the product whose code matches exactly. An unknown code
+  // adds nothing: it used to fall back to the first fuzzy search result and
+  // could put the wrong product on the sale (engineering audit F-FE-03).
+  // We also clear the manual search box so the cashier isn't surprised by an
+  // unrelated typed query.
   const onScan = useCallback(async (code: string) => {
     if (!code) return;
     setSearch('');
     try {
       const matches = await searchProducts(code, 5);
-      const exact =
-        (matches || []).find(
-          (v: any) =>
-            v.barcode === code ||
-            v.internalBarcode === code ||
-            v.supplierBarcode === code ||
-            v.sku === code,
-        ) || matches?.[0];
+      const exact = findExactCodeMatch(matches || [], code);
       if (!exact) {
         toast.warning(`No product found for barcode ${code}.`);
         return;

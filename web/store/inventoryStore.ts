@@ -26,8 +26,7 @@ interface InventoryState {
 }
 
 // Inventory store keeps the small counters used by the sidebar and the
-// dashboard up-to-date in real time. The cache of variant quantities itself
-// lives in stockCacheService.
+// dashboard up-to-date in real time.
 // The refresh already running, so screens that ask at the same time share it.
 let refreshInFlight: Promise<void> | null = null;
 

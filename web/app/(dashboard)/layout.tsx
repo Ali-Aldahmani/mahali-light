@@ -22,8 +22,7 @@ import { useBackupStore } from '@/store/backupStore';
 import RestoreOverlay from '@/components/backup/RestoreOverlay';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import GlobalErrorShell from '@/components/errors/GlobalErrorShell';
-import { initStockCache } from '@/services/stockCacheService';
-import { syncAllCaches } from '@/services/localCacheService';
+import { clearLegacyBrowserCaches } from '@/lib/session/legacyCaches';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import KeyboardShortcutOverlay from '@/components/errors/KeyboardShortcutOverlay';
 import ShortcutEngine from '@/components/shortcuts/ShortcutEngine';
@@ -46,6 +45,7 @@ import {
   onCorrectionEvent,
   onBillEvent,
   onExpenseEvent,
+  onReconnect,
 } from '@/store/socketStore';
 
 const TITLES: Record<string, string> = {
@@ -135,42 +135,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!sessionKey) return undefined;
     connect();
+    // The whole catalogue and customer list (names, phones, balances) used
+    // to be copied into localStorage on every sign-in and never read or
+    // cleared, so it stayed on shared tills (engineering audit F-FE-05).
+    clearLegacyBrowserCaches();
     const hasStock = permissions.includes('stock.view') || permissions.includes('*');
-    if (hasStock) {
-      initStockCache({ force: true }).catch(() => {});
-      // Includes the customer list, and a 403 opens the "Access denied" box.
-      if (permissions.includes('customer.view')) syncAllCaches().catch(() => {});
-      refreshInventory();
-    }
-    fetchAppSettings?.().catch(() => {});
-    const hasSupplier = permissions.includes('supplier.view') || permissions.includes('*');
-    if (hasSupplier) refreshSupplierSummary?.();
-    const hasCustomer = permissions.includes('customer.view') || permissions.includes('*');
-    if (hasCustomer) refreshCustomerSummary?.();
-    const hasInvoice = permissions.includes('invoice.view') || permissions.includes('*');
-    if (hasInvoice) refreshInvoiceSummary?.();
-    const hasInvoiceApprove = permissions.includes('invoice.edit_approve') || permissions.includes('*');
-    if (hasInvoiceApprove) refreshEditRequestsCount?.();
-    const hasWarranty = permissions.includes('warranty.view') || permissions.includes('*');
-    if (hasWarranty) refreshWarrantySummary?.();
-    const hasReturn = permissions.includes('return.request') || permissions.includes('*');
-    if (hasReturn) refreshReturnSummary?.();
     const hasCashView = permissions.includes('cash.view') || permissions.includes('*');
-    if (hasCashView) refreshTreasury?.();
-    const hasAttendanceViewAll = permissions.includes('attendance.view_all') || permissions.includes('*');
-    if (hasAttendanceViewAll) {
-      refreshAttendanceToday?.();
-      refreshAttendancePending?.();
-    }
-    const hasBillView = permissions.includes('bills.view') || permissions.includes('*');
-    if (hasBillView) {
-      refreshUpcomingBills?.();
-      refreshExpenseSummary?.();
-    }
-
-    fetchPreferences?.();
-    fetchUnreadCount?.();
-    fetchMaintenance?.();
     const canViewApprovals =
       permissions.includes('*') ||
       [
@@ -180,7 +150,41 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         'stock.count_approve',
         'attendance.correction_approve',
       ].some((p) => permissions.includes(p));
-    if (canViewApprovals) fetchApprovalCount?.();
+    // Everything the layout shows; run again after a socket reconnect.
+    const refreshAll = () => {
+      if (hasStock) refreshInventory();
+      fetchAppSettings?.().catch(() => {});
+      const hasSupplier = permissions.includes('supplier.view') || permissions.includes('*');
+      if (hasSupplier) refreshSupplierSummary?.();
+      const hasCustomer = permissions.includes('customer.view') || permissions.includes('*');
+      if (hasCustomer) refreshCustomerSummary?.();
+      const hasInvoice = permissions.includes('invoice.view') || permissions.includes('*');
+      if (hasInvoice) refreshInvoiceSummary?.();
+      const hasInvoiceApprove = permissions.includes('invoice.edit_approve') || permissions.includes('*');
+      if (hasInvoiceApprove) refreshEditRequestsCount?.();
+      const hasWarranty = permissions.includes('warranty.view') || permissions.includes('*');
+      if (hasWarranty) refreshWarrantySummary?.();
+      const hasReturn = permissions.includes('return.request') || permissions.includes('*');
+      if (hasReturn) refreshReturnSummary?.();
+      if (hasCashView) refreshTreasury?.();
+      const hasAttendanceViewAll = permissions.includes('attendance.view_all') || permissions.includes('*');
+      if (hasAttendanceViewAll) {
+        refreshAttendanceToday?.();
+        refreshAttendancePending?.();
+      }
+      const hasBillView = permissions.includes('bills.view') || permissions.includes('*');
+      if (hasBillView) {
+        refreshUpcomingBills?.();
+        refreshExpenseSummary?.();
+      }
+
+      fetchPreferences?.();
+      fetchUnreadCount?.();
+      fetchMaintenance?.();
+      if (canViewApprovals) fetchApprovalCount?.();
+    };
+    refreshAll();
+    const unsubReconnect = onReconnect(() => refreshAll());
 
     const approvalsTimer = canViewApprovals
       ? setInterval(() => fetchApprovalCount?.(), 60_000)
@@ -225,6 +229,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     const unsubQ = onExpenseEvent(() => refreshExpenseSummary?.());
 
     return () => {
+      unsubReconnect();
       unsubA();
       unsubB();
       unsubC();

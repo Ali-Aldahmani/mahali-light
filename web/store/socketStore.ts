@@ -5,7 +5,6 @@ import { getSocketUrl } from '@/lib/config';
 import { useAuthStore } from './authStore';
 import { usePresenceStore } from './presenceStore';
 import { toast } from './toastStore';
-import { handleStockUpdate, syncOnReconnect } from '@/services/stockCacheService';
 import { useNotificationStore } from './notificationStore';
 import { useBackupStore } from './backupStore';
 
@@ -81,6 +80,9 @@ const correctionBus = makeBus();
 const holidayBus = makeBus();
 const billBus = makeBus();
 const expenseBus = makeBus();
+// Fired after the socket comes back from a drop. Events sent while it was
+// down are never replayed, so listeners re-read what they show.
+const reconnectBus = makeBus();
 
 export const onProductUpdate = (cb: EventCallback): Unsubscribe => productBus.on(cb);
 export const onStockUpdate = (cb: EventCallback): Unsubscribe => stockBus.on(cb);
@@ -108,6 +110,7 @@ export const onCorrectionEvent = (cb: EventCallback): Unsubscribe => correctionB
 export const onHolidayEvent = (cb: EventCallback): Unsubscribe => holidayBus.on(cb);
 export const onBillEvent = (cb: EventCallback): Unsubscribe => billBus.on(cb);
 export const onExpenseEvent = (cb: EventCallback): Unsubscribe => expenseBus.on(cb);
+export const onReconnect = (cb: EventCallback): Unsubscribe => reconnectBus.on(cb);
 
 interface SocketState {
   socket: Socket | null;
@@ -147,7 +150,6 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
 
     let firstConnect = true;
     socket.on('connect', () => {
-      const wasConnected = get().isConnected;
       set({ isConnected: true });
       // Connecting is not input: say right away whether there was any, so
       // the server shows this screen online or idle by what really happened.
@@ -158,19 +160,20 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
       if (auth.hasPermission?.('user.edit') || auth.hasPermission?.('user.force_logout')) {
         usePresenceStore.getState().refresh().catch(() => {});
       }
-      // First connect is handled by initStockCache() in AppLayout. Re-sync
-      // only on subsequent connections (i.e. socket reconnects).
+      // The first connect follows the layout's own initial load. After a
+      // drop, everything that may have changed meanwhile is re-read: the
+      // stock listeners, the open customer page, notifications, and the
+      // layout's badges and summaries (onReconnect). The stock signal used
+      // to depend on a flag that a disconnect always cleared, so it never
+      // fired (engineering audit F-FE-09).
       if (!firstConnect) {
-        syncOnReconnect().catch(() => {});
+        stockBus.emit({ reconnected: true });
         customerChangedBus.emit({ reconnected: true });
         // Notifications sent while disconnected are not replayed either.
         useNotificationStore.getState().fetchNotifications({ append: false }).catch(() => {});
+        reconnectBus.emit({ reconnected: true });
       }
       firstConnect = false;
-      if (wasConnected) {
-        // Notify listeners they may need to refresh after a reconnect.
-        stockBus.emit({ reconnected: true });
-      }
     });
     socket.on('disconnect', (reason) => {
       set({ isConnected: false });
@@ -210,7 +213,6 @@ export const useSocketStore = create<SocketState>()((set, get) => ({
     });
 
     socket.on('stock_updated', (payload) => {
-      handleStockUpdate(payload);
       stockBus.emit(payload);
     });
 
