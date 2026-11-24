@@ -373,6 +373,7 @@ async function createAccount(body, employeeId, { requestKey = null } = {}) {
     }
 
     await logActivity({
+      client,
       entityType: 'bank_account',
       entityId: account.id,
       action: 'bank_account.created',
@@ -429,6 +430,7 @@ async function updateAccount(id, body, employeeId) {
     );
 
     await logActivity({
+      client,
       entityType: 'bank_account',
       entityId: id,
       action: 'bank_account.updated',
@@ -464,6 +466,7 @@ async function deactivateAccount(id, employeeId) {
       [id],
     );
     await logActivity({
+      client,
       entityType: 'bank_account',
       entityId: id,
       action: 'bank_account.deactivated',

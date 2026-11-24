@@ -6,7 +6,7 @@ const { nextDocumentNumber } = require('../utils/docNumbers');
 const { checkSelection: checkBatchSelection } = require('./batchService');
 const paymentFeeService = require('./paymentFeeService');
 const lineCogs = require('./lineCogsService');
-const { applyStockMovement, lockVariants } = require('./stockService');
+const { applyStockMovement, lockVariants, emitDeferred } = require('./stockService');
 const { assertQuantity } = require('../utils/quantity');
 const { assertWithinCreditLimit } = require('./customerService');
 const { emitCustomerChanged } = require('../utils/customerEvents');
@@ -663,7 +663,7 @@ async function confirmInvoiceChecked({ invoiceId, employeeId, io = null, closedD
     // after we commit the outer transaction.
     const stockEmits = [];
     for (const it of catalogItems) {
-      const { variant, valueChange } = await applyStockMovement({
+      const { variant, valueChange, reorderResult } = await applyStockMovement({
         client,
         variantId: it.variant_id,
         productId: it.product_id,
@@ -698,6 +698,13 @@ async function confirmInvoiceChecked({ invoiceId, employeeId, io = null, closedD
           referenceId: invoiceId,
         },
       });
+      // A sale is the most common reason stock crosses its reorder point.
+      // The alert row is written in this transaction; the live event and
+      // the low-stock notification go out after commit (engineering audit
+      // F-TX-03: they were dropped for sales).
+      if (reorderResult?.created) {
+        stockEmits.push({ event: 'reorder_alert_created', payload: reorderResult.payload });
+      }
     }
 
     // Resolve payments. Credit requires a customer and respect of credit_limit.
@@ -870,9 +877,7 @@ async function confirmInvoiceChecked({ invoiceId, employeeId, io = null, closedD
   // Deferred socket emits. Stock first, then invoice_confirmed, then credit
   // delta if any.
   if (io) {
-    for (const e of result.stockEmits) {
-      emitEvent(io, e.event, e.payload);
-    }
+    emitDeferred(io, result.stockEmits);
     const payload = {
       invoiceId,
       invoiceNumber: result.invoice.invoice_number,

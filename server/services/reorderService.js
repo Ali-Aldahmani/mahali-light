@@ -106,17 +106,23 @@ async function checkReorderThreshold(variantId, client) {
     };
   }
 
+  // Another sale or the sweep job may have opened the alert since the
+  // check above: the partial unique index then skips this insert instead of
+  // failing the caller's transaction with 23505.
   const { rows: insertRows } = await run(
     client,
     `INSERT INTO reorder_alerts
        (product_id, variant_id, current_stock, reorder_point, recommended_order_qty, on_order, inventory_position)
      VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (variant_id) WHERE status = 'pending' DO NOTHING
      RETURNING id`,
     [v.product_id, variantId, current, threshold, recommended, advice.onOrder, advice.position],
   );
+  if (!insertRows.length) return { created: false, updated: false };
   const alertId = insertRows[0].id;
 
   await logActivity({
+    client,
     entityType: 'reorder_alert',
     entityId: alertId,
     action: 'stock.reorder_alert_created',

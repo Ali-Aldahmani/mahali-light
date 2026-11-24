@@ -33,19 +33,18 @@ async function assertDatabaseTestsCanRun() {
 }
 
 export default async function globalSetup() {
+  // The PostgreSQL suites create and drop databases on the server they are
+  // pointed at, so they run only against a server chosen explicitly with
+  // INVOICE_TEST_PG_PORT (+ _USER / _PASSWORD). They used to probe 5432 with
+  // postgres/postgres by default, which on a developer or shop PC is the
+  // real database server (engineering audit F-TST-02).
   if (process.env.INVOICE_TEST_PG_PORT) {
     await assertDatabaseTestsCanRun();
     return;
   }
-
-  // Never fall back to the app's own PG* settings from .env: the integration
-  // suites create and drop databases, and .env points at a real one.
-  const port = Number(process.env.PG_PROBE_PORT || 5432);
-  const reachable = await probePort('127.0.0.1', port);
-  if (reachable) {
-    process.env.INVOICE_TEST_PG_PORT = String(port);
-    if (!process.env.INVOICE_TEST_PG_USER) process.env.INVOICE_TEST_PG_USER = 'postgres';
-    if (!process.env.INVOICE_TEST_PG_PASSWORD) process.env.INVOICE_TEST_PG_PASSWORD = 'postgres';
-  }
   await assertDatabaseTestsCanRun();
+  console.warn(
+    '[tests] INVOICE_TEST_PG_PORT is not set: the PostgreSQL integration suites (money, stock, ' +
+      'migrations) will be SKIPPED. Point it at a disposable test server to run them.',
+  );
 }

@@ -1063,6 +1063,7 @@ async function closePeriod({ periodId, userId, force = false, notes = null }) {
     await ensureNextPeriodAfter(client, period);
 
     await logActivity({
+      client,
       entityType: 'financial_period',
       entityId: periodId,
       action: 'financial_period.closed',

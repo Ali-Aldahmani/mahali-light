@@ -391,12 +391,25 @@ async function applyStockMovement(params) {
   // ourselves (no params.client), it's already committed by this point, so
   // using the pool here is fine and keeps a reorder-check failure from being
   // able to poison the move.
+  //
+  // Inside the caller's transaction the check runs under a savepoint: a
+  // failing statement would otherwise leave that whole transaction aborted,
+  // and the sale would fail later with an unrelated error (engineering audit
+  // F-TX-04). The savepoint undoes only the check.
   let reorderResult = null;
   if (!skipReorderCheck) {
+    const outer = params.client;
     try {
-      reorderResult = await checkReorderThreshold(variantId, params.client);
+      if (outer) await outer.query('SAVEPOINT reorder_check');
+      reorderResult = await checkReorderThreshold(variantId, outer);
+      if (outer) await outer.query('RELEASE SAVEPOINT reorder_check');
     } catch (err) {
       console.error('[stockService] reorder check failed', err);
+      reorderResult = null;
+      if (outer) {
+        await outer.query('ROLLBACK TO SAVEPOINT reorder_check');
+        await outer.query('RELEASE SAVEPOINT reorder_check');
+      }
     }
   }
 

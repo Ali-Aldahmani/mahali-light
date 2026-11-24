@@ -92,6 +92,15 @@ describe.skipIf(!enabled)('create retries on real PostgreSQL', () => {
     expect(Number((await db.query(`SELECT stock_qty FROM product_variants WHERE id = $1`, [variantId])).rows[0].stock_qty)).toBe(19);
   });
 
+  it('refuses a supplier return sent without a request key (F-TX-05)', async () => {
+    const res = await request(app).post('/supplier-returns').auth(token, { type: 'bearer' }).send({
+      supplierId, reason: 'defective', items: [{ productId, variantId, quantity: 1, condition: 'defective' }],
+    });
+    expect(res.status).toBe(400);
+    expect(await count(`SELECT COUNT(*) AS n FROM supplier_returns`)).toBe(1);
+    expect(Number((await db.query(`SELECT stock_qty FROM product_variants WHERE id = $1`, [variantId])).rows[0].stock_qty)).toBe(19);
+  });
+
   it('return request', async () => {
     const { rows: [po] } = await db.query(`SELECT id FROM purchase_orders LIMIT 1`);
     // A return is capped by what the order received.

@@ -269,7 +269,9 @@ async function create(req, res, next) {
     // instead of moving the stock out twice.
     const { result, replayed } = await withTransaction((client) => runOnce(client, {
       scope: 'supplier_return_create',
-      key: requestKeyFrom(req),
+      // Required (engineering audit F-TX-05): this moves stock out and posts
+      // journals, so a retried request must never run twice.
+      key: requestKeyFrom(req, { required: true }),
       userId: req.user.id,
       payload: body,
     }, async () => {
